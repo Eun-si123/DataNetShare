@@ -1,139 +1,87 @@
-> [!WARNING]
-> **Fork hardening branch — not yet production verified.** The [reviewable Android source](android/) and [security notes](docs/SECURITY-REVIEW.md) were extracted from the upstream v5 ZIP and patched. SOCKS5 **local-only** mode now requires a per-session password; see [updated instructions](android/README.md). The custom TCP/UDP handling remains incomplete; a passing build does not guarantee traffic correctness. The [draft hardening PR](https://github.com/Eun-si123/DataNetShare/pull/1) must be reviewed before merging. The original upstream description below is retained for attribution and comparison.
+# DataNet Share · maintained fork
 
-# DataNet Share
+[한국어 사용 안내](docs/README.ko.md) · [Build](android/README.md) · [Tests and device checklist](docs/TESTING.md) · [Security and privacy](docs/SECURITY-REVIEW.md)
 
-> **This project was fully built with AI using GLM 5.2. The app works and that's all I know. Sorry if this readme or the code says or does anything stupid.**
+Share an Android phone’s connection through an **authenticated SOCKS5 proxy**, over Wi-Fi Direct, USB tethering, or a private Wi-Fi network. The same app also includes an **experimental Android IPv4 VPN receiver**.
 
-Share your Android phone's mobile data with other devices — without using your carrier's hotspot quota.
+This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Changes and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1).
 
-DataNet Share turns an Android phone with cellular data into a SOCKS5 proxy gateway. Other phones, tablets, or computers connect over **Wi-Fi Direct** (or USB/Wi-Fi for PC/Mac), and route their traffic through the host phone's cellular connection. Because the host phone simply appears to be using its own data — which it is — carrier hotspot caps never come into play.
+## What works and what still needs testing
 
-- **Version:** 5.0 (unified)
-- **Min Android:** 8.0 (API 26)
-- **Language:** Kotlin (pure — no native code)
-- **Build:** Gradle 8.2 + Android SDK 34
+| Path | Implemented behavior | Verification boundary |
+| --- | --- | --- |
+| Sender SOCKS5 TCP | Per-session authentication; half-close; bounded clients; closes sockets on Stop | Automated loopback data-integrity tests; Android/OEM/carrier tests pending |
+| Sender SOCKS5 UDP | RFC 1928 association; separate sockets per destination; association tied to control connection | Automated small/large datagram and concurrent-client tests |
+| USB / private Wi-Fi | Bind only the local interface address you select | USB drivers, tethering setup and device routing need real devices |
+| Wi-Fi Direct | Creates its own group; uses Android’s reported group-owner IP; shows SSID and Wi-Fi password | OEM group formation and legacy Wi-Fi client compatibility need real devices |
+| Android receiver | Configurable sender address/port/password; checks credentials before enabling VPN; separate UDP flows; bounded TCP buffering/retransmission and half-close | Experimental custom IPv4 stack; synthetic loss/duplicate tests do not replace interoperability testing |
+| IPv6 / ICMP / IP fragments | Not implemented by the receiver | The VPN receiver blocks IPv6 rather than providing an IPv6 tunnel; no ping support |
 
----
+**No claim is made that this app bypasses a carrier’s tethering accounting, guarantees VPN privacy, or works with every game or app.** Data use, tethering policy, VPN exclusions, Android routing and battery management depend on the actual environment.
 
-## Features
+## Get a build
 
-- **One APK for both phones** — install the same app on sender and receiver
-- **VPN-aware** — routes proxied traffic through your VPN when active (carrier sees only encrypted traffic)
-- **Link speed test** — measures the Wi-Fi Direct link speed between devices (10MB payload, no internet needed)
-- **Full TCP + UDP support** — apps, browsing, streaming, gaming, voice all work
-- **Works with iOS** — share with iPhones and iPads via the free Karing app (see Wi-Fi Direct mode below)
-- **No root required** — uses Android's VpnService and Wi-Fi Direct APIs
-- **Survives screen-off** — partial wake lock keeps the connection alive
-- **Privacy-focused** — Cloudflare DNS (1.1.1.1), notification hides credentials on lock screen, no telemetry
+Use the successful **Android source verification** run for the maintenance branch under [Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml). Download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
----
-
-## Download & install
-
-Download the latest APK from [Releases](../../releases), then:
-
-```bash
-adb uninstall com.datanet.share   # remove any old version
-adb install DataNetShare-v5.0-unified.apk
+```sh
+adb install -r app-debug.apk
 ```
 
-Install the **same APK on both phones** — sender and receiver.
+The development APK uses **`com.datanet.share.dev`** and can coexist with upstream `com.datanet.share`. Do not uninstall your current app just to try it. CI artifacts expire and may require a signed-in GitHub account. Do not treat an upstream release APK or the archived source ZIP as a build of this fork. Debug signatures from different machines/runners may differ; see [build instructions](android/README.md#install-and-signing).
 
----
+## Start sharing
 
-## Quick start
+1. Enable mobile data on the sender.
+2. For **Wi-Fi Direct**, enable Wi-Fi and tap **Share via Wi-Fi Direct**. Grant nearby-device permission on Android 13+, or location permission and enable Location services on Android 8–12. Join the displayed SSID using its **Wi-Fi password** from the other device’s normal Wi-Fi settings. Some OEMs instead require their Wi-Fi Direct settings.
+3. For **USB / Wi-Fi**, set up USB tethering or connect both devices to a trusted local network. Tap **Refresh addresses**, select the phone’s USB/Wi-Fi address, then **Share via USB / Wi-Fi**. No wildcard `0.0.0.0` listener is used.
+4. Configure your client for the displayed IPv4 address, port **8282**, username **`datanet`**, and the displayed **SOCKS5 password**. This differs from the Wi-Fi password and changes every session.
 
-### Sender phone (the one with data):
+The default upstream is **mobile data only**: DNS resolution and sockets use the selected cellular Android Network, with no silent default-route fallback. While mobile data is unavailable, the listener may remain active, but internet connections will fail.
 
-1. Turn ON your VPN (e.g., Google VPN) if you want carrier privacy
-2. Open the app → tap **START SHARING (WiFi Direct)**
-3. Note the SSID and password shown in the blue card
+To use an existing sender VPN, enable **Use Android default route** *before* sharing. This deliberately follows Android routing and **does not provide a VPN kill switch**. Verify that the VPN includes this app; its exclusions or disconnection can expose traffic. Stop and restart sharing after changing this option.
 
-### Receiver phone (the one getting data):
+### Computer or third-party SOCKS5 client
 
-1. Go to Android Settings → Wi-Fi → Wi-Fi Direct
-2. Tap the sender's network → enter the password
-3. Open the app → tap **START RECEIVING**
-4. Grant VPN permission when prompted
+Use a client that supports **SOCKS5 username/password authentication** and remote DNS. System proxy settings and browser proxy dialogs do not all support authentication or cover every app. For a connectivity check using curl:
 
-That's it. The receiver now has internet through the sender's cellular connection.
+```sh
+# Replace PHONE_IP with the address on the sender screen.
+# curl prompts for the session password; it is not written into the command.
+curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
+```
 
-### Link speed test:
+For system-wide routing on a computer or iOS device, use a compatible third-party VPN/tun client with SOCKS5 authentication; check that client’s documentation. iOS does not run this APK. There is no bundled universal iOS profile or verified list of compatible iOS clients.
 
-On the receiver, tap **LINK SPEED TEST** after connecting. It downloads a 10MB payload from the sender through the SOCKS5 proxy and reports the link speed in Mbps.
+### Android receiver in this app
 
----
+1. Join the sender’s network first. Keep it connected even if Android reports “no internet”.
+2. Enter the **sender IPv4 address, proxy port and SOCKS5 password** in the receiver section. Username is `datanet`.
+3. Tap **Start receiver VPN** and accept Android’s VPN prompt. A credential/link probe runs before VPN routes are installed.
+4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
-## Usage modes
-
-There are three sharing modes in the app, exposed as three buttons: **START SHARING (WiFi Direct)**, **START LOCAL ONLY**, and **START RECEIVING**. The first two run on the sender phone (the one with the data); the third runs on an Android receiver phone.
-
-### Wi-Fi Direct
-
-Creates a Wi-Fi Direct group with its own SSID and password. The sender becomes the group owner at `192.168.49.1` and exposes a SOCKS5 proxy on port 8282. This isn't limited to phone-to-phone — anything that can join a Wi-Fi network and speak SOCKS5 will work as a client: a PC, a Mac, another Android phone, or an iOS device. For an Android phone acting as the receiver, prefer the Receiver mode below instead of configuring SOCKS5 by hand.
-
-#### iOS via Wi-Fi Direct
-
-iOS connects to the sender's Wi-Fi Direct network just like any other client, but because there's no iOS app for DataNet Share, the SOCKS5 proxy has to be set up on the iOS side using a third-party app. First, join the sender's Wi-Fi Direct network from iOS Settings → Wi-Fi using the SSID and password shown in the sender's blue card. Then:
-
-To share with an iOS device, I'd recommend using the app "Karing" it is a completely free app that supports systemwide socks5 using a VPN setup. Simply install the app, accept the prompt asking to allow the app to setup vpn profiles, go to the app settings, click add profile, click import profile file, select the Json file you downloaded from the release section, go to the home page, toggle the switch from "Rules" to "Global" and then start the VPN
-
-then go the homepage and activate the VPN!
-
-### Local-only
-
-Shares the connection over USB tethering, or over whatever Wi-Fi network both devices are already mutually connected to — no Wi-Fi Direct group is created. The receiving device still needs to be configured with a SOCKS5 proxy pointing at the sender phone's IP on port 8282.
-
-**Mac:** System Settings → Network → Details → Proxies → SOCKS Proxy  
-**Firefox:** Settings → Network Settings → Manual proxy → SOCKS Host: phone's IP, Port: 8282, check "Proxy DNS when using SOCKS v5"
-
-### Receiver (Android app only)
-
-Built into the Android app and only available on an Android receiver phone — not for use with laptops, PCs, or iOS. The receiver phone runs a VpnService that captures all of its traffic and tunnels it through the sender's SOCKS5 proxy over the Wi-Fi Direct link. No manual proxy configuration is needed — just tap START RECEIVING and grant VPN permission when prompted.
-
----
+Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
 
 ## Troubleshooting
 
-**"createGroup failed: BUSY"** — Quick Share / Nearby Share may be holding Wi-Fi Direct. Disable both, toggle Wi-Fi, retry.
+- **Wrong password / sender check fails:** Use the SOCKS5 password, not the Wi-Fi password. Check the sender address; `192.168.49.1` is only a starting suggestion and is not universal. Make sure both devices share the local link.
+- **Wi-Fi Direct BUSY:** Another application/group may be using Wi-Fi Direct. Stop it or toggle Wi-Fi yourself, then retry. The app does not tear down another app’s group to take ownership.
+- **Active sender, no internet:** Check mobile data and the displayed route status. Turn off the default-route option for explicit cellular routing, or inspect your VPN’s exclusions if intentionally using it.
+- **Local address changed:** Stop, refresh addresses, select the new USB/Wi-Fi address and restart. The listener stays on its chosen address rather than automatically exposing a new interface.
+- **UDP test fails:** A network may block external STUN or UDP. The test contacts `stun.l.google.com:19302`; failure alone does not identify which link failed or prove that all UDP is broken.
+- **Unexpected VPN behavior:** Android permits one active VpnService per user/profile. Starting another VPN can revoke this receiver. Always-on/“block without VPN” settings and OEM battery restrictions require device testing.
+- **APK update says incompatible:** Different debug signing keys cannot update one another. Use a consistently signed local development build or a coordinated release key. Uninstalling removes app settings.
 
-**Nothing loads on receiver** — Make sure the sender's mobile data is ON and the sender shows "active" status. The receiver's notification should say "VPN tunnel active."
+## Development and provenance
 
-**Speeds are slow** — Wi-Fi Direct speeds vary by device. The link speed test button can help diagnose. For best speeds, keep both phones close together.
+- Kotlin/JVM; Android **8.0+ (API 26)**; compile/target SDK **34**.
+- JDK **17**, Gradle **8.5**, Android Gradle Plugin **8.2.2**, Kotlin **1.9.22**.
+- [`proxy-tests/`](proxy-tests/) runs real loopback socket tests without an Android SDK.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains routing, limits, credentials and service ownership.
+- [`docs/TESTING.md`](docs/TESTING.md) records automated evidence and the outstanding device test matrix.
+- The root `datnet-share-v5-final.zip` is retained only as an **unmodified historical source archive**. It includes obsolete code, README claims and legacy signing configuration. Do not execute its broken wrapper or reuse its signing material. The extracted maintained source and current docs supersede it.
 
-**Mac shows "no internet"** — Normal. macOS checks the default route, not the proxy. Set the SOCKS5 proxy and it works.
+## Privacy and license
 
-**VPN not capturing proxied traffic** — Stop and restart sharing after turning the VPN on/off. The app checks VPN state when sharing starts.
+No analytics or telemetry SDK is included. Normal proxy traffic goes to destinations the client requests; the receiver configures DNS `1.1.1.1` and the optional UDP diagnostic contacts Google STUN. DNS is not automatically DoH/DoT. SOCKS5 authentication is **not encryption**; prefer USB or a protected private Wi-Fi link. Credentials stay in process memory and on the unlocked screen unless you explicitly copy them. Receiver endpoint settings persist; proxy passwords do not.
 
----
-
-## Build from source
-
-Requires JDK 17, Android SDK 34, and Gradle 8.5+:
-
-```bash
-git clone https://github.com/Keggin-AI/DataNetShare.git
-cd DataNetShare
-./gradlew assembleRelease
-```
-
-Output: `app/build/outputs/apk/release/app-release.apk`
-
----
-
-## Privacy
-
-- No telemetry, no analytics, no trackers
-- No traffic contents logged (only byte counts)
-- DNS uses Cloudflare (1.1.1.1) instead of Google
-- Wi-Fi Direct password hidden on lock screen
-- When VPN is active on the sender, the carrier sees only encrypted traffic to your VPN endpoint — not the receiver's destinations, DNS queries, or SNI
-
-A full security audit report is included in the repository.
-
----
-
-## License
-
-MIT — do whatever you want with it.
+MIT. Original upstream attribution remains in [LICENSE](LICENSE). No independent security certification is claimed.

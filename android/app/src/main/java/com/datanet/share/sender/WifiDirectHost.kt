@@ -5,54 +5,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.wifi.WifiManager
-import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
-import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import com.datanet.share.common.Constants
 
+/** Cancels stale callbacks and only removes the group created by this session. */
 class WifiDirectHost(private val context: Context) {
-    companion object {
-        private const val TAG = "WifiDirectHost"
-        private const val MAX_ATTEMPTS = 4
-        private val BACKOFF_MS = longArrayOf(1000, 2000, 4000, 8000)
-    }
-
-    private val manager: WifiP2pManager? = context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
-    private val wifiManager: WifiManager? = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-    private var channel: WifiP2pManager.Channel? = null
+    private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
     private val handler = Handler(Looper.getMainLooper())
-    @Volatile private var running = false
-    @Volatile private var attempt = 0
-
-    private val _state = MutableLiveData<State>(State.Idle)
-    val state: LiveData<State> = _state
-
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, intent: Intent?) {
-            when (intent?.action) {
-                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO, WifiP2pInfo::class.java)
-                    } else { @Suppress("DEPRECATION") intent.getParcelableExtra<WifiP2pInfo>(WifiP2pManager.EXTRA_WIFI_P2P_INFO) }
-                    onConnectionInfo(info)
-                }
-                WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
-                    val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, WifiP2pManager.WIFI_P2P_STATE_DISABLED)
-                    if (state != WifiP2pManager.WIFI_P2P_STATE_ENABLED && running) {
-                        _state.postValue(State.Failed("WiFi Direct is disabled. Enable it in Android Settings."))
-                    }
-                }
-            }
-        }
-    }
-
+    private var channel: WifiP2pManager.Channel? = null
+    private var generation = 0
+    private var running = false
+    private var ownsGroup = false
+    private var ready = false
+    private var registered = false
+    private val mutableState = MutableLiveData<State>(State.Idle)
+    val state: LiveData<State> = mutableState
     sealed class State {
         object Idle : State()
         data class Initializing(val attempt: Int, val maxAttempts: Int) : State()
@@ -61,96 +33,92 @@ class WifiDirectHost(private val context: Context) {
         data class GroupReady(val groupOwnerIp: String, val ssid: String, val passphrase: String) : State()
         data class Failed(val reason: String, val hint: String = "") : State()
     }
-
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            if (!running) return
+            if (intent?.action == WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION &&
+                intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, 0) != WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
+                mutableState.value = State.Failed("Wi-Fi Direct is disabled", "Turn Wi-Fi on and start again.")
+            } else if (intent?.action == WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) query(generation)
+        }
+    }
     fun start() {
         if (running) return
-        running = true; attempt = 0
-        val mgr = manager ?: run { _state.postValue(State.Failed("WiFi P2P not available")); running = false; return }
-        if (wifiManager?.isWifiEnabled != true) {
-            _state.postValue(State.Failed("WiFi is turned off", "Turn WiFi ON in Android Settings, then tap Start again."))
-            running = false; return
+        val mgr = manager ?: run { mutableState.value = State.Failed("Wi-Fi Direct is not supported"); return }
+        if (context.getSystemService(WifiManager::class.java)?.isWifiEnabled != true) {
+            mutableState.value = State.Failed("Wi-Fi is off", "Enable Wi-Fi in Android settings."); return
         }
-        _state.postValue(State.Initializing(1, MAX_ATTEMPTS))
-        channel = mgr.initialize(context, context.mainLooper, null)
-        val filter = IntentFilter().apply { addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION); addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        else { @Suppress("DEPRECATION") context.registerReceiver(receiver, filter) }
-        _state.postValue(State.CreatingGroup(1, MAX_ATTEMPTS))
-        cleanAndCreate()
-    }
-
-    private fun cleanAndCreate() {
-        val mgr = manager ?: return
-        attempt++
-        _state.postValue(State.CreatingGroup(attempt, MAX_ATTEMPTS))
-        val cleanupsDone = CountDownLatch(3)
-        val next = Runnable { if (cleanupsDone.countDownAndCheckAllDone()) createGroup() }
-        try { mgr.clearLocalServices(channel, object : WifiP2pManager.ActionListener { override fun onSuccess() { next.run() }; override fun onFailure(r: Int) { next.run() } }) } catch (_: SecurityException) { next.run() }
-        try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { mgr.cancelConnect(channel, object : WifiP2pManager.ActionListener { override fun onSuccess() { next.run() }; override fun onFailure(r: Int) { next.run() } }) } else { @Suppress("DEPRECATION") mgr.cancelConnect(channel, null); next.run() } } catch (_: SecurityException) { next.run() }
-        try { mgr.removeGroup(channel, object : WifiP2pManager.ActionListener { override fun onSuccess() { next.run() }; override fun onFailure(r: Int) { next.run() } }) } catch (_: SecurityException) { next.run() }
-    }
-
-    private fun createGroup() {
-        val mgr = manager ?: return
-        try { mgr.createGroup(channel, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() { publishService(); mgr.requestConnectionInfo(channel) { info -> onConnectionInfo(info) } }
-            override fun onFailure(reason: Int) { handleCreateFailure(reason) }
-        }) } catch (e: SecurityException) { _state.postValue(State.Failed("No permission: ${e.message}")); running = false }
-    }
-
-    private fun handleCreateFailure(reason: Int) {
-        val reasonStr = reasonText(reason)
-        if (attempt >= MAX_ATTEMPTS) {
-            val hint = when (reason) {
-                WifiP2pManager.BUSY -> "Quick Share / Nearby Share may be holding WiFi Direct. Disable it, toggle WiFi, retry."
-                WifiP2pManager.P2P_UNSUPPORTED -> "This device does not support WiFi Direct."
-                else -> "Try toggling WiFi off/on and restarting the app."
+        running = true; val token = ++generation
+        try {
+            channel = mgr.initialize(context, context.mainLooper) {
+                if (running && token == generation) mutableState.value = State.Failed("Wi-Fi Direct channel disconnected")
             }
-            _state.postValue(State.Failed("createGroup failed after $MAX_ATTEMPTS attempts: $reasonStr", hint))
-            running = false; return
+            val filter = IntentFilter().apply { addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION); addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) }
+            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else { @Suppress("DEPRECATION") context.registerReceiver(receiver, filter) }
+            registered = true
+            create(token, 1)
+            handler.postDelayed({
+                if (running && token == generation && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
+            }, 25_000)
+        } catch (e: Exception) { mutableState.value = State.Failed("Wi-Fi Direct: ${e.message}") }
+    }
+    private fun create(token: Int, attempt: Int) {
+        if (!running || generation != token) return
+        mutableState.value = State.CreatingGroup(attempt, 4)
+        try {
+            manager?.createGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    if (!running || generation != token) return
+                    ownsGroup = true; query(token)
+                }
+                override fun onFailure(reason: Int) {
+                    if (!running || generation != token) return
+                    val name = when (reason) { WifiP2pManager.BUSY -> "BUSY"; WifiP2pManager.P2P_UNSUPPORTED -> "Unsupported"; else -> "Error $reason" }
+                    if (attempt < 4 && reason == WifiP2pManager.BUSY) {
+                        val delay = 1000L shl (attempt - 1)
+                        mutableState.value = State.Retrying(attempt, 4, delay, name)
+                        handler.postDelayed({ create(token, attempt + 1) }, delay)
+                    } else mutableState.value = State.Failed("Wi-Fi Direct: $name", "Another app or an existing group may be using Wi-Fi Direct. Stop it before retrying.")
+                }
+            })
+        } catch (e: SecurityException) { mutableState.value = State.Failed("Wi-Fi Direct permission missing", e.message ?: "") }
+    }
+    private fun query(token: Int) {
+        if (!running || generation != token) return
+        try { manager?.requestConnectionInfo(channel) { info -> onInfo(token, info) } }
+        catch (e: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct connection", e.message ?: "") }
+    }
+    private fun onInfo(token: Int, info: WifiP2pInfo?) {
+        if (!running || generation != token) return
+        if (info?.groupFormed != true) {
+            if (ready) mutableState.value = State.Failed("Wi-Fi Direct group disconnected")
+            return
         }
-        val delay = BACKOFF_MS[minOf(attempt, BACKOFF_MS.size - 1)]
-        _state.postValue(State.Retrying(attempt, MAX_ATTEMPTS, delay, reasonStr))
-        handler.postDelayed({ cleanAndCreate() }, delay)
+        if (!ownsGroup) return // Ignore events from a pre-existing group owned by another session.
+        if (!info.isGroupOwner) { mutableState.value = State.Failed("This phone is not the group owner"); return }
+        val ip = info.groupOwnerAddress?.hostAddress ?: return
+        try {
+            manager?.requestGroupInfo(channel) { group ->
+                if (!running || token != generation) return@requestGroupInfo
+                if (group == null || group.passphrase.isNullOrEmpty()) {
+                    if (!ready) handler.postDelayed({ query(token) }, 500)
+                    return@requestGroupInfo
+                }
+                ready = true; mutableState.value = State.GroupReady(ip, group.networkName ?: "", group.passphrase)
+            }
+        } catch (e: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct group", e.message ?: "") }
     }
-
-    private fun publishService() {
-        val mgr = manager ?: return
-        try { val info = WifiP2pDnsSdServiceInfo.newInstance("_datanetshare", "_tcp", mapOf("port" to Constants.SOCKS5_PORT.toString())); mgr.addLocalService(channel, info, null) } catch (_: Exception) {}
-    }
-
-    private fun onConnectionInfo(info: WifiP2pInfo?) {
-        if (info == null) return
-        if (info.groupFormed && info.isGroupOwner) fetchGroupInfo("192.168.49.1")
-    }
-
-    private fun fetchGroupInfo(groupOwnerIp: String) {
-        val mgr = manager ?: run { _state.postValue(State.GroupReady(groupOwnerIp, "DIRECT-xx-unknown", "")); return }
-        try { mgr.requestGroupInfo(channel) { group -> if (group == null) handler.postDelayed({ mgr.requestGroupInfo(channel) { g2 -> emitGroup(groupOwnerIp, g2) } }, 500) else emitGroup(groupOwnerIp, group) } } catch (_: SecurityException) { _state.postValue(State.GroupReady(groupOwnerIp, "DIRECT-xx-unknown", "")) }
-    }
-
-    private fun emitGroup(groupOwnerIp: String, group: WifiP2pGroup?) {
-        val ssid = group?.networkName ?: "DIRECT-xx-unknown"
-        val pass = group?.passphrase ?: ""
-        _state.postValue(State.GroupReady(groupOwnerIp, ssid, pass))
-    }
-
     fun stop() {
-        running = false; handler.removeCallbacksAndMessages(null)
-        try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
-        try { manager?.removeGroup(channel, null) } catch (_: SecurityException) {}
-        _state.postValue(State.Idle)
-    }
-
-    private fun reasonText(reason: Int): String = when (reason) {
-        WifiP2pManager.P2P_UNSUPPORTED -> "P2P_UNSUPPORTED"
-        WifiP2pManager.BUSY -> "BUSY"
-        WifiP2pManager.ERROR -> "ERROR"
-        else -> "UNKNOWN($reason)"
-    }
-
-    private class CountDownLatch(private val count: Int) {
-        private val done = java.util.concurrent.atomic.AtomicInteger(0)
-        fun countDownAndCheckAllDone(): Boolean = done.incrementAndGet() == count
+        running = false; ++generation; handler.removeCallbacksAndMessages(null)
+        if (registered) { try { context.unregisterReceiver(receiver) } catch (_: Exception) {}; registered = false }
+        val old = channel; channel = null
+        fun closeChannel() { if (Build.VERSION.SDK_INT >= 27) old?.close() }
+        if (ownsGroup && old != null) {
+            try { manager?.removeGroup(old, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { closeChannel() }; override fun onFailure(reason: Int) { closeChannel() }
+            }) } catch (_: Exception) { closeChannel() }
+        } else closeChannel()
+        ownsGroup = false; ready = false; mutableState.value = State.Idle
     }
 }

@@ -39,7 +39,10 @@ class SenderService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.SENDER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action !in listOf(ACTION_START, ACTION_START_LOCAL)) { stopSelf(); return START_NOT_STICKY }
-        if (!SessionStore.claim(SessionStore.Mode.SENDER)) return START_NOT_STICKY
+        if (!SessionStore.claim(SessionStore.Mode.SENDER)) {
+            if (SessionStore.current.mode != SessionStore.Mode.SENDER) stopSelf()
+            return START_NOT_STICKY
+        }
         try {
             ServiceCompat.startForeground(this, Constants.SENDER_NOTIFICATION_ID, notification("Starting sharing…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
@@ -53,7 +56,7 @@ class SenderService : Service() {
                 openProxy(token, host)
             } else {
                 val host = WifiDirectHost(this); wifiHost = host
-                observer = Observer { state ->
+                observer = Observer<WifiDirectHost.State> { state ->
                     if (token != session) return@Observer
                     when (state) {
                         is WifiDirectHost.State.GroupReady -> openProxy(token, state.groupOwnerIp, state.ssid, state.passphrase)

@@ -36,7 +36,10 @@ class ReceiverVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
-        if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) return START_NOT_STICKY
+        if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
+            if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
+            return START_NOT_STICKY
+        }
         try {
             check(prepare(this) == null) { "Allow the VPN connection before starting" }
             val host = intent.getStringExtra(EXTRA_SOCKS_HOST) ?: ""
@@ -50,7 +53,7 @@ class ReceiverVpnService : VpnService() {
             Thread({
                 try {
                     socket.use {
-                        check(protect(it)) { "Could not protect sender socket" }
+                        check(protect(it)) { "Could not protect sender socket" }; ReceiverLink(this, host).bind(it)
                         it.soTimeout = 10_000
                         it.connect(InetSocketAddress(host, port), 10_000)
                         Socks5.authenticateClient(DataInputStream(it.getInputStream()), it.getOutputStream(), password)
@@ -71,8 +74,10 @@ class ReceiverVpnService : VpnService() {
             pfd = descriptor
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() }
+            val link = ReceiverLink(this, host)
             bridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
-                { protect(it) }, { protect(it) },
+                { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
+                { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
                 onFailure = { message -> main.post { fail(message) } },
                 onStats = { active, rx, tx -> SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
                 .also { it.start() }

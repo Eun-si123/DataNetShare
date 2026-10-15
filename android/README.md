@@ -1,35 +1,46 @@
-# DataNetShare Android source (fork maintenance branch)
+# Build DataNet Share 5.1-dev
 
-This `android/` project is extracted from the upstream `datnet-share-v5-final.zip` source archive. The original ZIP remains in this repository for provenance. Unlike the upstream source README, the extracted v5.0 code contains **no native C++ build**.
+This directory is the maintained Kotlin Android project. The root upstream ZIP is provenance, not the build source.
 
-## Build & tests
+## Requirements
 
-Requires JDK 17, Android SDK platform 34, build tools 34.0.0, and Gradle 8.5. The upstream ZIP contained `gradle-wrapper.jar.broken` instead of a usable wrapper. We deliberately do **not** publish or execute that binary; use a locally installed verified Gradle 8.5, or the GitHub Actions workflow.
+- JDK 17 and a verified Gradle 8.5 installation.
+- Android SDK platform 34 and build tools 34.0.0.
+- Android Gradle Plugin 8.2.2 and Kotlin 1.9.22 (declared in this project).
+
+The upstream archive did not contain a valid Gradle wrapper JAR. This fork does not execute `gradle-wrapper.jar.broken`; use installed Gradle or the GitHub Actions workflow. `gradle/wrapper/gradle-wrapper.properties` alone is not an executable wrapper.
 
 ```sh
-cd android
-gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon
+git clone https://github.com/Eun-si123/DataNetShare.git
+cd DataNetShare
+# Until PR #1 is merged, switch to the maintained source branch:
+git switch hardening/source-ci-foundation
+# Set ANDROID_HOME to your SDK installation, or write sdk.dir in android/local.properties.
+gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
 ```
 
-This generates an **unsigned release** if `assembleRelease` is run. For distribution, sign the APK using a **new private signing key outside the repository**, or add a secure environment-based signing process. The original ZIP exposed a legacy default signing password; do not reuse those legacy credentials.
+Debug APK: `android/app/build/outputs/apk/debug/app-debug.apk`.
 
-## Changed local-only SOCKS5 authentication
+Fast protocol/relay tests with no Android SDK:
 
-`START LOCAL ONLY (USB/WiFi)` generates a new random 32-character password for each session. The app displays the password in its credentials panel. Configure your desktop SOCKS5 client with:
+```sh
+gradle -p proxy-tests test --no-daemon
+```
 
-- Proxy host: the phone's USB tethering or local Wi-Fi IP (shown under interfaces)
-- Port: `8282`
-- Username: `datanet`
-- Password: the random password shown in the sender app
+The host suite compiles the actual shared proxy, packet encoder/parser and receiver flow source files. It does not duplicate their implementation or run Android services.
 
-If your client supports only unauthenticated SOCKS5, **local-only mode will no longer connect**. This change is intentional. A SOCKS5 password does **not encrypt** the proxy protocol, so avoid untrusted/shared Wi-Fi; prefer USB or a private Wi-Fi Direct group. Wi-Fi Direct sender mode still uses unauthenticated SOCKS5 inside its WPA-protected P2P group and is not a fully authenticated transport.
+## Install and signing
 
-## Known limitations (do not treat as production-ready)
+```sh
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
 
-- TCP bridge implements in-order duplicate suppression, **not** complete TCP flow control, retransmission, congestion control, and half-close semantics.
-- UDP currently multiplexes upstream traffic by destination host/port. A defensive guard drops a conflicting second local client instead of allowing wrong-client responses. Full support requires separate per-flow upstream UDP sockets or a redesigned relay.
-- No IPv6 tunnel support.
-- Sender VPN routing is detected only when SOCKS server starts; VPN behavior can change later. Wi-Fi Direct traffic uses WPA protection only, no application-layer encryption.
-- Runtime testing across OEMs, Android releases, packet loss/reordering, prolonged idle, VPN combinations and Korean carrier plans remains outstanding.
+Debug builds use `com.datanet.share.dev`, so they do not overwrite upstream `com.datanet.share`. A runner-generated debug key is **not** a stable release signing identity: an APK from a different runner/machine can fail to update a prior debug installation. For repeated personal use, build with the same local debug key. For public distribution, provision a private signing key outside the repository and define a secure signing process before publishing.
 
-Refer to `docs/SECURITY-REVIEW.md` for a prioritized threat model and a safe test checklist. This branch has not been independently certified or tested on a real Android device.
+`assembleRelease` currently produces an **unsigned** release APK with application ID `com.datanet.share`. There is no committed release keystore or fallback password. Do not reuse the historical signing material in the upstream ZIP. A release is not published automatically by CI.
+
+## Runtime boundaries
+
+Use the [main guide](../README.md) for sharing/receiving setup. Both sender modes require a random per-session SOCKS5 password. The experimental built-in IPv4 receiver uses the same username/password as external clients. Only one mode runs at once; VPN consent and Wi-Fi Direct permissions are requested in their respective flows.
+
+[Architecture](../docs/ARCHITECTURE.md) · [Validation](../docs/TESTING.md) · [Security notes](../docs/SECURITY-REVIEW.md)

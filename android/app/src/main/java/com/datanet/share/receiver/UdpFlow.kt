@@ -47,7 +47,7 @@ class UdpFlow(
             val bound = Socks5.request(input, output, 3, Socks5.Address("0.0.0.0", 0))
             if (bound.port == 0) throw IOException("Invalid UDP relay port")
             val relayHost = if (bound.host == "0.0.0.0" || bound.host == "0:0:0:0:0:0:0:0") host else bound.host
-            val datagram = DatagramSocket()
+            val datagram = DatagramSocket(null)
             synchronized(this) { if (closed.get()) { datagram.close(); return }; udp = datagram }
             if (!protectDatagram(datagram)) throw IOException("UDP relay socket protection failed")
             datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000

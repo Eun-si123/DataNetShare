@@ -29,6 +29,7 @@ class Socks5Server(
         fun datagram(): DatagramSocket
     }
     private val permits = Semaphore(64)
+    private val datagramPermits = Semaphore(128)
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val associations = ConcurrentHashMap.newKeySet<UdpAssociate>()
@@ -165,12 +166,13 @@ class Socks5Server(
 
         private fun createRemote(destination: InetSocketAddress): DatagramSocket? {
             // One endpoint per socket prevents unsolicited remote responses; per-association cap bounds FDs.
-            if (remoteSockets.size >= 32 || closed || !running) return null
-            val socket = upstream.datagram()
+            if (remoteSockets.size >= 32 || closed || !running || !datagramPermits.tryAcquire()) return null
+            var allocated: DatagramSocket? = null
             try {
+                val socket = upstream.datagram(); allocated = socket
                 socket.connect(destination); socket.soTimeout = 1000
                 synchronized(this) {
-                    if (closed || !running) { socket.close(); return null }
+                    if (closed || !running) { socket.close(); datagramPermits.release(); return null }
                     remoteSockets[destination] = socket
                 }
                 Thread({
@@ -187,10 +189,10 @@ class Socks5Server(
                             tx.addAndGet(payload.size.toLong()); lastActivity.set(System.nanoTime())
                         }
                     } catch (_: IOException) { /* close() unblocks receive */ }
-                    finally { remoteSockets.remove(destination, socket); socket.close() }
+                    finally { remoteSockets.remove(destination, socket); socket.close(); datagramPermits.release() }
                 }, "socks-udp-upstream").apply { isDaemon = true; start() }
                 return socket
-            } catch (e: Exception) { socket.close(); throw e }
+            } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
         }
 
         @Synchronized fun close() {
