@@ -28,7 +28,10 @@ jobs:
           gradle-version: '8.5'
       - name: Install Android SDK 34
         run: |
-          sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0'
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
+          test -n "$SDK_MANAGER"
+          "$SDK_MANAGER" --install 'platforms;android-34' 'build-tools;34.0.0'
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
       - name: Unit tests and debug APK compile
         working-directory: android
