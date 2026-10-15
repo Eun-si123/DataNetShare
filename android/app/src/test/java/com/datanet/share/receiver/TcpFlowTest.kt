@@ -92,4 +92,28 @@ class TcpFlowTest {
             assertEquals(101, packets.poll(1, TimeUnit.SECONDS)!!.acknowledgement)
         } finally { flow.close() }
     }
+    @Test fun zeroReceiveWindowPausesDownloadsUntilWindowUpdate() = ProxyFixture().use { fixture ->
+        ServerSocket(0).use { destination ->
+            Thread({ destination.accept().use { it.getOutputStream().write(ByteArray(2048) { 7 }) } }, "test-window").apply { isDaemon = true; start() }
+            val key = FlowKey(0x0a000001, 2010, 0x7f000001, destination.localPort)
+            val packets = LinkedBlockingQueue<Ipv4Packet>()
+            val flow = TcpFlow(key, 100, "127.0.0.1", fixture.proxy.boundPort, fixture.password, { true },
+                { packets.add(Ipv4Packet.parse(it)!!) }, {}, {}, {}, initialSequence = 1000)
+            try {
+                flow.start(); packets.clear()
+                flow.receive(incoming(key, 101, 1001, window = 0))
+                Thread({ flow.openUpstream() }, "test-window-connect").apply { isDaemon = true; start() }
+                assertNull(packets.poll(250, TimeUnit.MILLISECONDS))
+                flow.receive(incoming(key, 101, 1001, window = 512))
+                val first = packets.poll(3, TimeUnit.SECONDS)!!
+                assertEquals(512, first.payload.size)
+                flow.receive(incoming(key, 101, 1513, window = 0))
+                assertNull(packets.poll(250, TimeUnit.MILLISECONDS))
+                flow.receive(incoming(key, 101, 1513, window = 512))
+                val second = packets.poll(3, TimeUnit.SECONDS)!!
+                assertEquals(1513, second.sequence); assertEquals(512, second.payload.size)
+            } finally { flow.close() }
+        }
+    }
+
 }

@@ -85,4 +85,33 @@ class Socks5ServerTest {
         }
         fixture.client().close()
     }
+    @Test fun activeTcpUpstreamIsClosedByStop() = ProxyFixture().use { fixture ->
+        ServerSocket(0).use { destination ->
+            fixture.client().use { client ->
+                val accepted = CompletableFuture<Socket>()
+                Thread({ accepted.complete(destination.accept()) }, "test-stop-accept").apply { isDaemon = true; start() }
+                Socks5.request(DataInputStream(client.getInputStream()), client.getOutputStream(), 1, Socks5.Address("127.0.0.1", destination.localPort))
+                accepted.get(3, TimeUnit.SECONDS).use { remote ->
+                    remote.soTimeout = 3000
+                    fixture.proxy.stop()
+                    assertEquals(-1, remote.getInputStream().read())
+                    assertEquals(-1, client.getInputStream().read())
+                }
+            }
+        }
+    }
+    @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture().use { fixture ->
+        val sockets = (1..64).map { Socket("127.0.0.1", fixture.proxy.boundPort).apply { soTimeout = 3000 } }
+        try {
+            val deadline = System.nanoTime() + 3_000_000_000L
+            while (fixture.proxy.clientCount < 64 && System.nanoTime() < deadline) Thread.yield()
+            assertEquals(64, fixture.proxy.clientCount)
+            Socket("127.0.0.1", fixture.proxy.boundPort).use { extra ->
+                extra.soTimeout = 3000; assertEquals(-1, extra.getInputStream().read())
+            }
+            fixture.proxy.stop()
+            sockets.forEach { assertEquals(-1, it.getInputStream().read()) }
+        } finally { sockets.forEach { it.close() } }
+    }
+
 }
