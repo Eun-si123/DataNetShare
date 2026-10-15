@@ -1,6 +1,7 @@
 package com.datanet.share.receiver
 
 import android.util.Log
+import com.datanet.share.common.TcpSequenceWindow
 import java.io.DataInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -39,10 +40,15 @@ class TcpFlow(
 
     fun handleData(payload: ByteArray, seq: Int) {
         if (closed || payload.isEmpty()) return
-        if (!sendQueue.offer(payload)) return
-        val ackNum = ((seq.toLong() and 0xFFFFFFFFL) + payload.size) and 0xFFFFFFFFL
-        nextExpectedAppSeq.set(ackNum)
-        sendAck(ackNum.toInt())
+        val expected = nextExpectedAppSeq.get()
+        val next = TcpSequenceWindow.advanceIfInOrder(expected, seq, payload.size)
+        if (next == null || !sendQueue.offer(payload)) {
+            // Duplicate/out-of-order data and full queues must NOT be acknowledged.
+            sendAck(expected.toInt())
+            return
+        }
+        nextExpectedAppSeq.set(next)
+        sendAck(next.toInt())
     }
 
     fun handleFin(seqAfterFin: Int) {

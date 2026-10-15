@@ -111,16 +111,20 @@ class SenderService : Service() {
 
     private fun onLocalReady() {
         if (socks != null) return
-        socks = Socks5Server(this, "0.0.0.0", Constants.SOCKS5_PORT) { clients, rx, tx ->
+        // Rotate local-only proxy credentials on every session.
+        val proxyPassword = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        socks = Socks5Server(this, "0.0.0.0", Constants.SOCKS5_PORT, authPassword = proxyPassword) { clients, rx, tx ->
             val cellular = if (CellularNetworkTracker.cellularAvailable()) "mobile data" else "no cellular!"
             updateNotification("Sharing mobile data (local)", "$clients client(s) - ${FormatBytes.formatRxTx(rx, tx)} - $cellular")
         }
-        speedTest = SpeedTestServer("0.0.0.0").also { it.start() }
+        // Do not expose an unauthenticated bulk-traffic service on public LANs.
+        speedTest = null
         try {
             socks?.start(); Thread.sleep(500)
             val cellular = if (CellularNetworkTracker.cellularAvailable()) "mobile data (${CellularNetworkTracker.describeNetwork()})" else "NO CELLULAR"
             val interfaces = InterfaceEnumerator.getSummary()
-            broadcast("active", "LOCAL-ONLY MODE (no WiFi Direct)\n\nSet SOCKS5 proxy to one of the IPs below, port ${Constants.SOCKS5_PORT}.\n\nUpstream: $cellular", proxyIp = "0.0.0.0", proxyPort = Constants.SOCKS5_PORT, interfaces = interfaces)
+            broadcast("active", "LOCAL-ONLY MODE (no WiFi Direct)\n\nSet SOCKS5 proxy to one of the IPs below, port ${Constants.SOCKS5_PORT}.\n\nUpstream: $cellular", proxyIp = "0.0.0.0", proxyPort = Constants.SOCKS5_PORT, passphrase = proxyPassword, interfaces = interfaces)
             val notif = NotificationCompat.Builder(this, Constants.CHANNEL_ID).setContentTitle("Sharing mobile data (local)").setContentText("SOCKS5 on 0.0.0.0:${Constants.SOCKS5_PORT}").setSmallIcon(android.R.drawable.stat_sys_data_bluetooth).setOngoing(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setStyle(NotificationCompat.BigTextStyle().bigText("Local-only mode (no WiFi Direct).\nSOCKS5: 0.0.0.0:${Constants.SOCKS5_PORT}\nUpstream: $cellular")).build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(Constants.SENDER_NOTIFICATION_ID, notif)
         } catch (e: Exception) { broadcast("failed", "SOCKS5 start: ${e.message}") }

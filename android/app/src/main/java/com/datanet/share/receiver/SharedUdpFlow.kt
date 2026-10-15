@@ -1,6 +1,7 @@
 package com.datanet.share.receiver
 
 import android.util.Log
+import com.datanet.share.common.UdpMappingPolicy
 import java.io.DataInputStream
 import java.io.IOException
 import java.net.DatagramPacket
@@ -71,8 +72,18 @@ class SharedUdpFlow(
     fun send(srcIp: ByteArray, srcPort: Int, dstIp: ByteArray, dstPort: Int, payload: ByteArray) {
         if (closed || !ready) return
         val dstHost = try { InetAddress.getByAddress(dstIp).hostAddress ?: return } catch (_: Exception) { return }
+        val key = "$dstHost:$dstPort"
+        val previous = natTable[key]
+        // A shared upstream UDP socket cannot disambiguate two local clients
+        // talking to the same remote endpoint. Fail closed instead of
+        // silently delivering one app's response to another app.
+        if (previous != null && System.currentTimeMillis() - previous.lastSeen < IDLE_CLEANUP_MS &&
+            !UdpMappingPolicy.isSameClient(previous.srcIp, previous.srcPort, srcIp, srcPort)) {
+            Log.w(TAG, "UDP endpoint collision: dropping second flow to $key")
+            return
+        }
         if (!sendQueue.offer(OutgoingPacket(srcIp, srcPort, dstHost, dstPort, payload))) return
-        natTable["$dstHost:$dstPort"] = NatEntry(srcIp, srcPort, System.currentTimeMillis())
+        natTable[key] = NatEntry(srcIp, srcPort, System.currentTimeMillis())
         lastActivity.set(System.currentTimeMillis())
     }
 

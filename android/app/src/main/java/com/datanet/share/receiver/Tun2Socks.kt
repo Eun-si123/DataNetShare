@@ -71,9 +71,9 @@ class Tun2Socks(
         val verIhl = buf.get(0).toInt() and 0xFF
         if ((verIhl shr 4) and 0x0F != 4) return
         val ihl = (verIhl and 0x0F) * 4
-        if (ihl < 20) return
+        if (ihl < 20 || ihl > buf.limit()) return
         val totalLen = (buf.get(2).toInt() and 0xFF shl 8) or (buf.get(3).toInt() and 0xFF)
-        if (totalLen > buf.limit()) return
+        if (totalLen < ihl || totalLen > buf.limit()) return
         buf.limit(totalLen)
         val protocol = buf.get(9).toInt() and 0xFF
         val srcIp = readIpv4(buf, 12); val dstIp = readIpv4(buf, 16)
@@ -81,10 +81,12 @@ class Tun2Socks(
     }
 
     private fun handleTcp(buf: ByteBuffer, ihl: Int, srcIp: ByteArray, dstIp: ByteArray) {
+        if (buf.limit() < ihl + 20) return
+        val dataOff = ((buf.get(ihl + 12).toInt() and 0xFF) shr 4) * 4
+        if (dataOff < 20 || ihl + dataOff > buf.limit()) return
         val srcPort = ((buf.get(ihl).toInt() and 0xFF) shl 8) or (buf.get(ihl + 1).toInt() and 0xFF)
         val dstPort = ((buf.get(ihl + 2).toInt() and 0xFF) shl 8) or (buf.get(ihl + 3).toInt() and 0xFF)
         val seq = readInt(buf, ihl + 4)
-        val dataOff = ((buf.get(ihl + 12).toInt() and 0xFF) shr 4) * 4
         val flags = buf.get(ihl + 13).toInt() and 0xFF
         val key = FlowKey(srcIp, srcPort, dstIp, dstPort)
         val isSyn = (flags and 0x02) != 0; val isFin = (flags and 0x01) != 0; val isRst = (flags and 0x04) != 0
@@ -105,10 +107,11 @@ class Tun2Socks(
     }
 
     private fun handleUdp(buf: ByteBuffer, ihl: Int, srcIp: ByteArray, dstIp: ByteArray) {
+        if (buf.limit() < ihl + 8) return
         val srcPort = ((buf.get(ihl).toInt() and 0xFF) shl 8) or (buf.get(ihl + 1).toInt() and 0xFF)
         val dstPort = ((buf.get(ihl + 2).toInt() and 0xFF) shl 8) or (buf.get(ihl + 3).toInt() and 0xFF)
         val len = ((buf.get(ihl + 4).toInt() and 0xFF) shl 8) or (buf.get(ihl + 5).toInt() and 0xFF)
-        if (len < 9) return
+        if (len < 8 || ihl + len > buf.limit()) return
         val payload = ByteArray(len - 8); buf.position(ihl + 8); buf.get(payload)
         val flow = getOrCreateSharedUdp() ?: return
         flow.send(srcIp, srcPort, dstIp, dstPort, payload)

@@ -28,6 +28,7 @@ class Socks5Server(
     private val context: Context,
     private val bindHost: String,
     private val port: Int = Constants.SOCKS5_PORT,
+    private val authPassword: String? = null,
     private val onStats: (clients: Int, rxBytes: Long, txBytes: Long) -> Unit
 ) {
     companion object { private const val TAG = "Socks5Server" }
@@ -113,8 +114,25 @@ class Socks5Server(
             if (ver != 5) throw IOException("Not SOCKS5: ver=$ver")
             val nMethods = dis.readUnsignedByte()
             val methods = ByteArray(nMethods); dis.readFully(methods)
-            if (nMethods == 0 || !methods.contains(0)) { output.write(byteArrayOf(0x05, 0xFF.toByte())); output.flush(); throw IOException("Client did not offer NO_AUTH") }
-            output.write(byteArrayOf(0x05, 0x00)); output.flush()
+            // Local-only access requires a per-session username/password.
+            // Wi-Fi Direct continues to use NO_AUTH inside its WPA-protected group.
+            val method: Byte = if (authPassword != null) 0x02 else 0x00
+            if (nMethods == 0 || !methods.contains(method)) {
+                output.write(byteArrayOf(0x05, 0xFF.toByte())); output.flush()
+                throw IOException("Unsupported SOCKS5 authentication method")
+            }
+            output.write(byteArrayOf(0x05, method)); output.flush()
+            if (authPassword != null) {
+                val authVer = dis.readUnsignedByte()
+                if (authVer != 1) throw IOException("Bad username/password auth version")
+                val user = ByteArray(dis.readUnsignedByte()).also { dis.readFully(it) }
+                val pass = ByteArray(dis.readUnsignedByte()).also { dis.readFully(it) }
+                val userOk = java.security.MessageDigest.isEqual(user, "datanet".toByteArray(Charsets.UTF_8))
+                val passOk = java.security.MessageDigest.isEqual(pass, authPassword.toByteArray(Charsets.UTF_8))
+                val authorized = userOk && passOk
+                output.write(byteArrayOf(0x01, if (authorized) 0x00 else 0x01)); output.flush()
+                if (!authorized) throw IOException("SOCKS5 authentication failed")
+            }
             val rVer = dis.readUnsignedByte()
             if (rVer != 5) throw IOException("Bad request ver=$rVer")
             val cmd = dis.readUnsignedByte(); dis.readUnsignedByte()
@@ -131,7 +149,8 @@ class Socks5Server(
                 }
                 3 -> {
                     val assoc = UdpAssociate(bindHost, client.inetAddress.hostAddress ?: "0.0.0.0")
-                    assoc.start(); udpAssoc = assoc
+                    try { assoc.start() } catch (e: Exception) { assoc.close(); throw e }
+                    udpAssoc = assoc
                     associateKey = "${client.remoteSocketAddress}"
                     udpAssociates[associateKey] = assoc
                     val udpPort = assoc.boundPort
@@ -176,18 +195,16 @@ class Socks5Server(
             Socket()
         } else {
             // No VPN — pin to cellular (original behavior)
-            CellularNetworkTracker.createCellularSocket() ?: Socket()
+            CellularNetworkTracker.createCellularSocket()
+                ?: throw IOException("Cellular network unavailable (refusing default-network fallback)")
         }
         sock.tcpNoDelay = true; sock.soTimeout = 60000
         // 4MB buffers for high throughput (was 512KB)
         try { sock.receiveBufferSize = 4 * 1024 * 1024; sock.sendBufferSize = 4 * 1024 * 1024 } catch (_: Exception) {}
         try { sock.connect(InetSocketAddress(host, port), 30000) } catch (e: Exception) {
             try { sock.close() } catch (_: IOException) {}
-            val fresh = Socket()
-            fresh.tcpNoDelay = true; fresh.soTimeout = 60000
-            try { fresh.receiveBufferSize = 4 * 1024 * 1024; fresh.sendBufferSize = 4 * 1024 * 1024 } catch (_: Exception) {}
-            fresh.connect(InetSocketAddress(host, port), 30000)
-            return fresh
+            // Never silently bypass cellular binding / VPN routing on failure.
+            throw IOException("Unable to connect upstream via selected network", e)
         }
         return sock
     }
@@ -207,6 +224,7 @@ class Socks5Server(
         @Volatile private var running = false
         private var upstreamSocket: DatagramSocket? = null
         private val natTable = ConcurrentHashMap<String, InetSocketAddress>()
+        private val lastActivity = AtomicLong(System.currentTimeMillis())
         private var relayThread: Thread? = null
         private var upstreamThread: Thread? = null
 
@@ -221,11 +239,12 @@ class Socks5Server(
                 // kernel route through tun0. The DatagramSocket() default
                 // routes via the kernel's routing table, which the VPN has
                 // modified to capture all traffic.
-                if (!vpnActiveAtStart && net != null) {
+                if (!vpnActiveAtStart) {
+                    if (net == null) throw IOException("No cellular network available for UDP")
                     net.bindSocket(upstreamSocket)
                 }
                 Log.d(TAG, "UdpAssociate.start: VPN active=$vpnActiveAtStart, bindSocket=${!vpnActiveAtStart && net != null}")
-            } catch (_: Exception) {}
+            } catch (e: Exception) { close(); throw e }
             relayThread = Thread({ relayLoop() }, "socks-udp-$boundPort-relay").apply { isDaemon = true; start() }
             upstreamThread = Thread({ upstreamLoop() }, "socks-udp-$boundPort-upstream").apply { isDaemon = true; start() }
         }
@@ -234,9 +253,7 @@ class Socks5Server(
 
         fun awaitIdleOrClientClose(clientInput: InputStream) {
             val idleTimeoutMs = 120_000L
-            val lastActivity = AtomicLong(System.currentTimeMillis())
             Thread({ while (running) { try { Thread.sleep(5000) } catch (_: InterruptedException) { break }; if (System.currentTimeMillis() - lastActivity.get() > idleTimeoutMs) { running = false; try { relaySocket.close() } catch (_: Exception) {}; try { upstreamSocket?.close() } catch (_: Exception) {}; return@Thread } } }, "socks-udp-$boundPort-idle").apply { isDaemon = true; start() }
-            Thread({ val iRx = rxBytes.get(); val iTx = txBytes.get(); while (running) { try { Thread.sleep(2000) } catch (_: InterruptedException) { break }; if (rxBytes.get() > iRx || txBytes.get() > iTx) lastActivity.set(System.currentTimeMillis()) } }, "socks-udp-$boundPort-hook").apply { isDaemon = true; start() }
             try { val buf = ByteArray(64); while (running) { if (clientInput.read(buf) < 0) break } } catch (_: IOException) {}
             running = false; try { relaySocket.close() } catch (_: Exception) {}; try { upstreamSocket?.close() } catch (_: Exception) {}
         }
@@ -246,6 +263,7 @@ class Socks5Server(
             while (running) {
                 try { relaySocket.receive(pkt) } catch (_: IOException) { break }
                 val from = pkt.socketAddress as? InetSocketAddress ?: continue
+                lastActivity.set(System.currentTimeMillis())
                 // M9 fix: enforce clientHost — only accept UDP relay packets from the client
                 // that opened the association.
                 val fromHost = from.address.hostAddress
@@ -264,6 +282,7 @@ class Socks5Server(
             while (running) {
                 try { upSock.receive(pkt) } catch (_: IOException) { break }
                 val from = pkt.socketAddress as? InetSocketAddress ?: continue
+                lastActivity.set(System.currentTimeMillis())
                 val data = pkt.data.copyOfRange(0, pkt.length)
                 val srcHost = from.address.hostAddress ?: continue
                 val srcPort = from.port

@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
                     val interfaces = intent.getStringExtra(Constants.EXTRA_INTERFACES)
                     statusText.text = if (ip != null && port != 0) "Sharing on $ip:$port" else "Active"
                     if (!ssid.isNullOrBlank()) { credsCard.visibility = View.VISIBLE; ssidText.text = ssid; passText.text = if (pass.isNullOrBlank()) "(no password)" else pass }
-                    else if (interfaces != null) { credsCard.visibility = View.VISIBLE; ssidText.text = "(local mode)"; passText.text = "-" }
+                    else if (interfaces != null) { credsCard.visibility = View.VISIBLE; ssidText.text = "SOCKS5 user: datanet"; passText.text = if (pass.isNullOrBlank()) "(missing)" else pass }
                     if (!interfaces.isNullOrBlank()) { interfacesText.text = interfaces; interfacesText.visibility = View.VISIBLE } else interfacesText.visibility = View.GONE
                     setButtonsBusy(false)
                 }
