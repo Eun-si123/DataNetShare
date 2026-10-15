@@ -1,6 +1,7 @@
 package com.datanet.share.receiver
 
 import android.system.Os
+import android.system.ErrnoException
 import android.system.OsConstants
 import android.system.StructPollfd
 import com.datanet.share.common.FlowKey
@@ -47,22 +48,22 @@ class Tun2Socks(
         // ReceiverVpnService owns/closes the descriptor. readLoop polls with a finite timeout.
     }
     private fun readLoop() {
-        val input = FileInputStream(Os.dup(tunFd))
-        val buffer = ByteArray(65535)
-        val poll = StructPollfd().apply { fd = input.fd; events = OsConstants.POLLIN.toShort() }
         try {
-            while (running) {
-                if (Os.poll(arrayOf(poll), 500) == 0) continue
-                if (!running) break
-                if (poll.revents.toInt() and (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL) != 0) error("VPN interface disconnected")
-                if (poll.revents.toInt() and OsConstants.POLLIN == 0) continue
-                val count = input.read(buffer)
-                if (count < 0) error("VPN interface ended")
-                val packet = Ipv4Packet.parse(buffer, count) ?: continue
-                if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
+            FileInputStream(Os.dup(tunFd)).use { input ->
+                val buffer = ByteArray(65535)
+                val poll = StructPollfd().apply { fd = input.fd; events = OsConstants.POLLIN.toShort() }
+                while (running) {
+                    if (Os.poll(arrayOf(poll), 500) == 0) continue
+                    if (!running) break
+                    if (poll.revents.toInt() and (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL) != 0) error("VPN interface disconnected")
+                    if (poll.revents.toInt() and OsConstants.POLLIN == 0) continue
+                    val count = input.read(buffer)
+                    if (count < 0) error("VPN interface ended")
+                    val packet = Ipv4Packet.parse(buffer, count) ?: continue
+                    if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
+                }
             }
         } catch (e: Exception) { if (running) { stop(); onFailure("VPN packet loop stopped: ${e.message}") } }
-        finally { input.close() }
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
@@ -90,7 +91,15 @@ class Tun2Socks(
     }
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {
         if (!running) return@synchronized
-        try { Os.write(tunFd, ByteBuffer.wrap(packet)) }
-        catch (e: Exception) { if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") } }
+        try {
+            val written = Os.write(tunFd, ByteBuffer.wrap(packet))
+            check(written == packet.size) { "Incomplete VPN packet write" }
+        } catch (e: ErrnoException) {
+            // A full nonblocking TUN queue is packet loss, not a dead interface.
+            // TCP keeps unacknowledged packets for retransmission; UDP is best effort.
+            if (e.errno != OsConstants.EAGAIN && e.errno != OsConstants.EINTR && running) {
+                running = false; onFailure("VPN packet write failed: ${e.message}")
+            }
+        } catch (e: Exception) { if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") } }
     }
 }

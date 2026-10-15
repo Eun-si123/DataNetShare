@@ -33,7 +33,7 @@ class SenderService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var defaultRoute = false
     private val main = Handler(Looper.getMainLooper())
-    private var session = 0
+    @Volatile private var session = 0
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

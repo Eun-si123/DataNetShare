@@ -35,8 +35,9 @@ class MainActivity : AppCompatActivity() {
     private var candidates = emptyList<InterfaceEnumerator.InterfaceInfo>()
     private var pendingReceiver: Intent? = null
     private val preferences by lazy { getSharedPreferences("connection", MODE_PRIVATE) }
-    private val wifiPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startSender(true) else showMessage(getString(R.string.permission_required))
+    private val wifiPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val required = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
+        if (grants[required] == true) startSender(true) else showMessage(getString(R.string.permission_required))
     }
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -116,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         if (SessionStore.current.busy) return
         if (p2p) {
             val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) { wifiPermission.launch(permission); return }
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) { wifiPermission.launch(if (Build.VERSION.SDK_INT >= 33) arrayOf(permission) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)); return }
         }
         val bind = candidates.getOrNull(addresses.selectedItemPosition)?.ip
         if (!p2p && bind == null) { showMessage(getString(R.string.pick_address)); return }

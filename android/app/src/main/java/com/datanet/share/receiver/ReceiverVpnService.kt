@@ -31,7 +31,7 @@ class ReceiverVpnService : VpnService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var probe: Socket? = null
     private val main = Handler(Looper.getMainLooper())
-    private var generation = 0
+    @Volatile private var generation = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
@@ -74,12 +74,13 @@ class ReceiverVpnService : VpnService() {
             pfd = descriptor
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() }
+            val token = generation
             val link = ReceiverLink(this, host)
             bridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
                 { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
                 { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
-                onFailure = { message -> main.post { fail(message) } },
-                onStats = { active, rx, tx -> SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
+                onFailure = { message -> main.post { if (generation == token) fail(message) } },
+                onStats = { active, rx, tx -> if (generation == token) SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
                 .also { it.start() }
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))

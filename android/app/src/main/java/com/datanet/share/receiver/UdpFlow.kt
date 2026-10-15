@@ -77,7 +77,7 @@ class UdpFlow(
                 try { socket.receive(packet) } catch (_: SocketTimeoutException) { continue }
                 val decoded = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                 if (decoded.address.port != key.destinationPort ||
-                    !InetAddress.getByName(decoded.address.host).address.contentEquals(key.destinationBytes)) continue
+                    decoded.address.host != InetAddress.getByAddress(key.destinationBytes).hostAddress) continue
                 // Oversize datagrams require IP fragmentation, which this IPv4 receiver does not implement.
                 if (decoded.payload.size > 1472) continue
                 writePacket(IpPackets.udp(key, decoded.payload)); onRx(decoded.payload.size)
