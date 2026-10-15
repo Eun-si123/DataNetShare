@@ -2,7 +2,7 @@ name: Android source verification
 
 on:
   push:
-    branches: [main, 'hardening/**']
+    branches: [main]
   pull_request:
     paths:
       - 'android/**'
@@ -10,6 +10,11 @@ on:
 
 permissions:
   contents: read
+
+# A PR already verifies feature branches; avoid duplicate push builds.
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   android:
