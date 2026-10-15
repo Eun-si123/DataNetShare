@@ -21,12 +21,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # Hosted Ubuntu runners already have Android command-line tools.
+      # setup-android@v3 calls the removed SDK package "tools" and fails in 2026.
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
       - name: Install Android SDK 34
-        run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0'
+        run: |
+          sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0'
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
       - name: Unit tests and debug APK compile
         working-directory: android
         run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace --no-daemon
