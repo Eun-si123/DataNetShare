@@ -11,8 +11,8 @@ android {
         applicationId = "com.datanet.share"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
-        versionName = "5.0-unified"
+        versionCode = 31
+        versionName = "5.1-dev"
     }
 
     buildTypes {
@@ -21,12 +21,9 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
+            applicationIdSuffix = ".dev"
             isMinifyEnabled = false
         }
-    }
-
-    externalNativeBuild {
-        // No native build — unified version uses pure-Kotlin receiver code (v3.5 style)
     }
 
     compileOptions {
@@ -56,6 +53,5 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-service:2.7.0")
-    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

@@ -33,9 +33,14 @@ object InterfaceEnumerator {
             n.startsWith("p2p") -> InterfaceType.WIFI_DIRECT
             n.contains("rndis") || n.startsWith("usb") || n.startsWith("ncm") -> InterfaceType.USB_TETHERING
             n.startsWith("wlan") -> InterfaceType.WIFI
-            n.startsWith("rmnet") || n.startsWith("ccmni") || n.startsWith("eth") -> InterfaceType.CELLULAR
+            n.startsWith("rmnet") || n.startsWith("ccmni") -> InterfaceType.CELLULAR
             else -> InterfaceType.OTHER
         }
+    }
+
+    fun localCandidates(): List<InterfaceInfo> = getAllInterfaces().filter {
+        it.type in listOf(InterfaceType.WIFI, InterfaceType.WIFI_DIRECT, InterfaceType.USB_TETHERING) ||
+            (it.type == InterfaceType.OTHER && java.net.InetAddress.getByName(it.ip).isSiteLocalAddress)
     }
 
     fun getSummary(): String {

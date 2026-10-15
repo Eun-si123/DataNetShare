@@ -1,157 +1,177 @@
 package com.datanet.share.receiver
 
-import android.util.Log
-import com.datanet.share.common.TcpSequenceWindow
+import com.datanet.share.common.FlowKey
+import com.datanet.share.common.IpPackets
+import com.datanet.share.common.Ipv4Packet
+import com.datanet.share.common.Socks5
 import java.io.DataInputStream
 import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.security.SecureRandom
+import java.util.ArrayDeque
 
+/** Bounded IPv4 TCP bridge. Deliberately experimental; see docs/TESTING.md. */
 class TcpFlow(
-    val id: Int,
-    val key: Tun2Socks.FlowKey,
-    private val initialSeq: Int,
+    val key: FlowKey,
+    initialAppSequence: Int,
     private val socksHost: String,
     private val socksPort: Int,
+    private val password: String,
     private val protect: (Socket) -> Boolean,
-    private val onTx: (Int) -> Unit,
+    private val writePacket: (ByteArray) -> Unit,
     private val onRx: (Int) -> Unit,
-    private val writePacket: (ByteArray) -> Unit
+    private val onTx: (Int) -> Unit,
+    private val onClose: () -> Unit,
+    initialSequence: Int = SecureRandom().nextInt()
 ) {
-    companion object { private const val TAG = "TcpFlow"; private const val MSS = 1460; private const val QUEUE_CAPACITY = 500 }
-
-    private val nextExpectedAppSeq = AtomicLong((initialSeq + 1).toLong() and 0xFFFFFFFFL)
-    private val ourSeq = AtomicLong(1L)
-    private var upstream: Socket? = null
-    private var upIn: InputStream? = null
-    private var upOut: OutputStream? = null
+    companion object {
+        private const val CAPACITY = 65_535
+        private const val MSS = 1200
+        private const val MASK = 0xffffffffL
+        private fun unsigned(value: Int) = value.toLong() and MASK
+        private fun distance(from: Long, to: Long) = (to - from) and MASK
+    }
+    private data class Segment(val sequence: Long, val flags: Int, val payload: ByteArray,
+                               var sent: Long, var attempts: Int = 0) {
+        val length: Int get() = payload.size + (if (flags and 3 != 0) 1 else 0)
+    }
+    private data class Write(val payload: ByteArray?, val fin: Boolean = false)
+    private val lock = Object()
+    private val pending = ArrayDeque<Segment>()
+    private val writes = ArrayDeque<Write>()
+    private var queuedBytes = 0
+    private var expected = (unsigned(initialAppSequence) + 1) and MASK
+    private var next = unsigned(initialSequence)
+    private var acknowledged = next
+    private var peerWindow = CAPACITY
+    private var appFin = false
+    private var outputFinished = false
+    private var remoteFin = false
+    private var finAcknowledged = false
+    private var established = false
+    private var lastActivity = System.nanoTime()
+    private var lastProbe = 0L
     @Volatile private var closed = false
-    @Volatile private var upstreamReady = false
-    private val sendQueue = LinkedBlockingQueue<ByteArray>(QUEUE_CAPACITY)
-    private var writerThread: Thread? = null
+    private var socket: Socket? = null
 
-    fun handleData(payload: ByteArray, seq: Int) {
-        if (closed || payload.isEmpty()) return
-        val expected = nextExpectedAppSeq.get()
-        val next = TcpSequenceWindow.advanceIfInOrder(expected, seq, payload.size)
-        if (next == null || !sendQueue.offer(payload)) {
-            // Duplicate/out-of-order data and full queues must NOT be acknowledged.
-            sendAck(expected.toInt())
-            return
-        }
-        nextExpectedAppSeq.set(next)
-        sendAck(next.toInt())
-    }
+    fun start() = synchronized(lock) { if (!closed) sendTracked(0x12, ByteArray(0)) }
+    fun retransmitSyn() = synchronized(lock) { pending.firstOrNull { it.flags and 2 != 0 }?.let(::emit) }
 
-    fun handleFin(seqAfterFin: Int) {
-        if (closed) return
-        Thread({
-            var waited = 0
-            while (sendQueue.isNotEmpty() && waited < 5000 && !closed) { try { Thread.sleep(20) } catch (_: InterruptedException) {}; waited += 20 }
-            try { upOut?.flush() } catch (_: IOException) {}
-            try { upstream?.shutdownOutput() } catch (_: IOException) {}
-            sendFinAck(seqAfterFin); close()
-        }, "tcp-${id}-fin").start()
-    }
-
-    fun openUpstream(dstIp: ByteArray, dstPort: Int) {
-        val host = InetAddress.getByAddress(dstIp).hostAddress
-        val sock = Socket()
-        try {
-            sock.tcpNoDelay = true; sock.soTimeout = 0
-            sock.sendBufferSize = 256 * 1024; sock.receiveBufferSize = 256 * 1024
-            if (!protect(sock)) Log.w(TAG, "[$id] protect() failed")
-            sock.connect(InetSocketAddress(socksHost, socksPort), 15000)
-            val out = sock.getOutputStream(); val inp = sock.getInputStream(); val dis = DataInputStream(inp)
-            out.write(byteArrayOf(0x05, 0x01, 0x00)); out.flush()
-            if (dis.readUnsignedByte() != 5 || dis.readUnsignedByte() != 0) throw IOException("SOCKS5 handshake failed")
-            out.write(byteArrayOf(0x05, 0x01, 0x00, 0x03))
-            val hb = host.toByteArray(Charsets.US_ASCII)
-            out.write(byteArrayOf(hb.size.toByte())); out.write(hb)
-            out.write(byteArrayOf((dstPort ushr 8).toByte(), dstPort.toByte())); out.flush()
-            if (dis.readUnsignedByte() != 5) throw IOException("bad reply ver")
-            if (dis.readUnsignedByte() != 0) throw IOException("SOCKS5 reply code")
-            dis.readUnsignedByte()
-            val atyp = dis.readUnsignedByte()
-            when (atyp) { 1 -> dis.readFully(ByteArray(4)); 3 -> { val l = dis.readUnsignedByte(); dis.readFully(ByteArray(l)) }; 4 -> dis.readFully(ByteArray(16)) }
-            dis.readUnsignedShort()
-            upstream = sock; upIn = inp; upOut = out; upstreamReady = true
-            writerThread = Thread({ writerLoop() }, "tcp-${id}-writer").apply { isDaemon = true; start() }
-            Thread({ pumpUpstream() }, "tcp-${id}-reader").apply { isDaemon = true; start() }
-        } catch (e: Exception) {
-            try { sock.close() } catch (_: IOException) {}
-            try { sendRst() } catch (_: Throwable) {}
-            close()
-        }
-    }
-
-    private fun writerLoop() {
-        val out = upOut ?: return
-        try { while (!closed && upstreamReady) {
-            val data = sendQueue.poll(100, TimeUnit.MILLISECONDS) ?: continue
-            try { out.write(data); out.flush(); onRx(data.size) } catch (e: IOException) { if (!closed) Log.d(TAG, "[$id] writer: ${e.message}"); break } catch (t: Throwable) { break }
-        } } catch (_: InterruptedException) {} catch (t: Throwable) { Log.w(TAG, "[$id] writerLoop crashed: ${t.message}") }
-    }
-
-    private fun pumpUpstream() {
-        val buf = ByteArray(64 * 1024)
-        try { while (!closed) {
-            val n = upIn?.read(buf) ?: -1
-            if (n <= 0) break
-            var off = 0
-            while (off < n && !closed) {
-                val chunkLen = minOf(n - off, MSS)
-                val chunk = buf.copyOfRange(off, off + chunkLen)
-                try { sendData(chunk) } catch (t: Throwable) { break }
-                onTx(chunkLen); off += chunkLen
+    fun receive(packet: Ipv4Packet) = synchronized(lock) {
+        if (closed) return@synchronized
+        lastActivity = System.nanoTime()
+        if (packet.flags and 0x10 != 0) {
+            val ack = unsigned(packet.acknowledgement)
+            if (distance(acknowledged, ack) <= distance(acknowledged, next)) {
+                acknowledged = ack; peerWindow = packet.window
+                while (pending.isNotEmpty()) {
+                    val segment = pending.first()
+                    if (distance(segment.sequence, ack) < segment.length || distance(segment.sequence, ack) >= 0x80000000L) break
+                    pending.removeFirst()
+                    if (segment.flags and 2 != 0) established = true
+                    if (segment.flags and 1 != 0) finAcknowledged = true
+                }
+                lock.notifyAll()
             }
-        } } catch (e: IOException) { if (!closed) Log.d(TAG, "[$id] reader EOF: ${e.message}") } catch (t: Throwable) {} finally { try { sendFin() } catch (_: Throwable) {} }
+        }
+        if (established && !appFin) {
+            val sequence = unsigned(packet.sequence)
+            val overlap = distance(sequence, expected)
+            val data = if (overlap <= packet.payload.size) packet.payload.copyOfRange(overlap.toInt(), packet.payload.size) else null
+            if (data != null && data.isNotEmpty() && queuedBytes + data.size <= CAPACITY) {
+                writes.add(Write(data)); queuedBytes += data.size
+                expected = (expected + data.size) and MASK; onTx(data.size); lock.notifyAll()
+            }
+            val finSequence = (sequence + packet.payload.size) and MASK
+            if (packet.flags and 1 != 0 && finSequence == expected) {
+                expected = (expected + 1) and MASK; appFin = true
+                writes.add(Write(null, true)); lock.notifyAll()
+            }
+        }
+        if (packet.payload.isNotEmpty() || packet.flags and 1 != 0) sendAck()
+        if (appFin && finAcknowledged && outputFinished) close()
     }
 
-    fun sendSynAck(ackNum: Int) { writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, 0, ackNum, 0x12, ByteArray(0))); ourSeq.set(1L) }
-    fun sendAck(ackNum: Int) { writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, ourSeq.get().toInt(), ackNum, 0x10, ByteArray(0))) }
-    fun sendData(data: ByteArray) { writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, ourSeq.get().toInt(), nextExpectedAppSeq.get().toInt(), 0x18, data)); ourSeq.addAndGet(data.size.toLong()) }
-    fun sendFin() { if (closed) return; writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, ourSeq.get().toInt(), nextExpectedAppSeq.get().toInt(), 0x11, ByteArray(0))); ourSeq.incrementAndGet() }
-    fun sendFinAck(ackNum: Int) { writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, ourSeq.get().toInt(), ackNum, 0x11, ByteArray(0))) }
-    fun sendRst() { writePacket(buildTcpPacket(key.dstIp, key.dstPort, key.srcIp, key.srcPort, ourSeq.get().toInt(), nextExpectedAppSeq.get().toInt(), 0x04, ByteArray(0))) }
-
-    fun close() { if (closed) return; closed = true; try { upstream?.close() } catch (_: IOException) {}; writerThread?.interrupt() }
-
-    private fun buildTcpPacket(srcIp: ByteArray, srcPort: Int, dstIp: ByteArray, dstPort: Int, seq: Int, ack: Int, flags: Int, payload: ByteArray): ByteArray {
-        val tcpLen = 20 + payload.size; val totalLen = 20 + tcpLen
-        val pkt = ByteArray(totalLen); val bb = ByteBuffer.wrap(pkt).order(ByteOrder.BIG_ENDIAN)
-        bb.put(0, ((4 shl 4) or 5).toByte()); bb.put(1, 0); bb.putShort(2, totalLen.toShort()); bb.putShort(4, 0); bb.putShort(6, 0x4000.toShort()); bb.put(8, 64.toByte()); bb.put(9, 6); bb.putShort(10, 0)
-        bb.put(12, srcIp[0]); bb.put(13, srcIp[1]); bb.put(14, srcIp[2]); bb.put(15, srcIp[3]); bb.put(16, dstIp[0]); bb.put(17, dstIp[1]); bb.put(18, dstIp[2]); bb.put(19, dstIp[3])
-        bb.putShort(20, srcPort.toShort()); bb.putShort(22, dstPort.toShort()); bb.putInt(24, seq); bb.putInt(28, ack); bb.put(32, ((5 shl 4).toByte())); bb.put(33, flags.toByte()); bb.putShort(34, 0xFFFF.toShort()); bb.putShort(36, 0); bb.putShort(38, 0)
-        if (payload.isNotEmpty()) { bb.position(40); bb.put(payload) }
-        bb.putShort(36, tcpChecksum(pkt, 20, tcpLen, srcIp, dstIp).toShort())
-        bb.putShort(10, ipChecksum(pkt, 20).toShort())
-        return pkt
+    fun openUpstream() {
+        val remote = Socket()
+        synchronized(lock) { if (closed) { remote.close(); return }; socket = remote }
+        try {
+            if (!protect(remote)) throw IOException("Could not protect proxy socket")
+            remote.tcpNoDelay = true; remote.soTimeout = 10_000
+            remote.connect(InetSocketAddress(socksHost, socksPort), 10_000)
+            val input = DataInputStream(remote.getInputStream()); val output = remote.getOutputStream()
+            Socks5.authenticateClient(input, output, password)
+            Socks5.request(input, output, 1, Socks5.Address(InetAddress.getByAddress(key.destinationBytes).hostAddress!!, key.destinationPort))
+            remote.soTimeout = 0
+            Thread({ writer(remote) }, "tun-tcp-writer").apply { isDaemon = true; start() }
+            val buffer = ByteArray(MSS)
+            while (!closed) {
+                val available = synchronized(lock) {
+                    while (!closed && (!established || distance(acknowledged, next) >= peerWindow)) lock.wait(1000)
+                    if (closed) 0 else minOf(MSS.toLong(), peerWindow - distance(acknowledged, next)).toInt()
+                }
+                if (available <= 0) break
+                val count = input.read(buffer, 0, available)
+                if (count < 0) { synchronized(lock) { if (!closed && !remoteFin) { remoteFin = true; sendTracked(0x11, ByteArray(0)) } }; break }
+                synchronized(lock) {
+                    // A peer can shrink its window while read() is blocked. Keep this one chunk bounded.
+                    while (!closed && distance(acknowledged, next) + count > peerWindow) lock.wait(1000)
+                    if (!closed) { sendTracked(0x18, buffer.copyOf(count)); onRx(count) }
+                }
+            }
+        } catch (_: Exception) { if (!closed) abort() }
     }
 
-    private fun tcpChecksum(pkt: ByteArray, off: Int, len: Int, srcIp: ByteArray, dstIp: ByteArray): Int {
-        val pseudo = ByteArray(12 + len)
-        pseudo[0] = srcIp[0]; pseudo[1] = srcIp[1]; pseudo[2] = srcIp[2]; pseudo[3] = srcIp[3]; pseudo[4] = dstIp[0]; pseudo[5] = dstIp[1]; pseudo[6] = dstIp[2]; pseudo[7] = dstIp[3]; pseudo[8] = 0; pseudo[9] = 6
-        pseudo[10] = ((len ushr 8) and 0xFF).toByte(); pseudo[11] = (len and 0xFF).toByte()
-        System.arraycopy(pkt, off, pseudo, 12, len); pseudo[12 + 16] = 0; pseudo[12 + 17] = 0
-        return checksum(pseudo, pseudo.size)
+    private fun writer(remote: Socket) {
+        try {
+            val output = remote.getOutputStream()
+            while (!closed) {
+                val item = synchronized(lock) {
+                    while (!closed && writes.isEmpty()) lock.wait(1000)
+                    if (closed) null else writes.removeFirst()
+                } ?: break
+                if (item.fin) {
+                    remote.shutdownOutput()
+                    synchronized(lock) { outputFinished = true; if (finAcknowledged) close() }
+                    return
+                }
+                val bytes = item.payload ?: continue
+                output.write(bytes)
+                synchronized(lock) { queuedBytes -= bytes.size; sendAck(); lock.notifyAll() }
+            }
+        } catch (_: Exception) { if (!closed) abort() }
     }
 
-    private fun ipChecksum(pkt: ByteArray, len: Int): Int { val s1 = pkt[10]; val s2 = pkt[11]; pkt[10] = 0; pkt[11] = 0; val c = checksum(pkt, len); pkt[10] = s1; pkt[11] = s2; return c }
-
-    private fun checksum(buf: ByteArray, len: Int): Int {
-        var sum = 0L; var i = 0
-        while (i + 1 < len) { sum += ((buf[i].toInt() and 0xFF) shl 8) or (buf[i + 1].toInt() and 0xFF); i += 2 }
-        if (i < len) sum += (buf[i].toInt() and 0xFF) shl 8
-        while (sum ushr 16 != 0L) sum = (sum and 0xFFFF) + (sum ushr 16)
-        return sum.inv().toInt() and 0xFFFF
+    /** Called by the single bridge maintenance thread, including when the upstream reader blocks. */
+    fun tick(now: Long = System.nanoTime()) = synchronized(lock) {
+        if (closed) return@synchronized
+        if (now - lastActivity > 120_000_000_000L) { abort(); return@synchronized }
+        val oldest = pending.firstOrNull()
+        if (oldest != null && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
+            if (++oldest.attempts > 8) { abort(); return@synchronized }
+            oldest.sent = now; emit(oldest)
+        }
+        if (peerWindow == 0 && now - lastProbe > 1_000_000_000L) {
+            lastProbe = now
+            writePacket(IpPackets.tcp(key, ((next - 1) and MASK).toInt(), expected.toInt(), 0x10, CAPACITY - queuedBytes, ByteArray(0)))
+        }
+    }
+    private fun sendTracked(flags: Int, payload: ByteArray) {
+        if (closed) return
+        val segment = Segment(next, flags, payload, System.nanoTime())
+        pending.add(segment); next = (next + segment.length) and MASK; emit(segment)
+    }
+    private fun emit(segment: Segment) { writePacket(IpPackets.tcp(key, segment.sequence.toInt(), expected.toInt(), segment.flags, CAPACITY - queuedBytes, segment.payload)) }
+    private fun sendAck() { if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x10, CAPACITY - queuedBytes, ByteArray(0))) }
+    fun abort() = synchronized(lock) {
+        if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x14, 0, ByteArray(0)))
+        close()
+    }
+    fun close() = synchronized(lock) {
+        if (closed) return@synchronized
+        closed = true; try { socket?.close() } catch (_: IOException) {}
+        writes.clear(); pending.clear(); lock.notifyAll(); onClose()
     }
 }

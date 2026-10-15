@@ -1,142 +1,96 @@
 package com.datanet.share.receiver
 
-import android.util.Log
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
+import com.datanet.share.common.FlowKey
+import com.datanet.share.common.Ipv4Packet
 import java.io.FileDescriptor
 import java.io.FileInputStream
+import java.net.DatagramSocket
 import java.net.Socket
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class Tun2Socks(
     private val tunFd: FileDescriptor,
     private val socksHost: String,
     private val socksPort: Int,
+    private val password: String,
     private val protect: (Socket) -> Boolean,
-    private val protectDatagram: ((java.net.DatagramSocket) -> Boolean)?,
-    private val onStats: (active: Int, rx: Long, tx: Long) -> Unit
+    private val protectDatagram: (DatagramSocket) -> Boolean,
+    private val onFailure: (String) -> Unit,
+    private val onStats: (Int, Long, Long) -> Unit
 ) {
-    companion object { private const val TAG = "Tun2Socks" }
-
     @Volatile private var running = false
-    private val connections = ConcurrentHashMap<FlowKey, TcpFlow>()
-    private val flowId = AtomicInteger(0)
-    @Volatile private var sharedUdp: SharedUdpFlow? = null
-    private val udpLock = Any()
-    @Volatile private var udpCreationInProgress = false
-    private val rxBytes = AtomicLong(0)
-    private val txBytes = AtomicLong(0)
-    private val packetCount = AtomicLong(0)
-    private val tcpSynCount = AtomicLong(0)
-    private lateinit var tunInput: FileInputStream
+    private val tcp = ConcurrentHashMap<FlowKey, TcpFlow>()
+    private val udp = ConcurrentHashMap<FlowKey, UdpFlow>()
+    private val rx = AtomicLong(); private val tx = AtomicLong()
+    private val writeLock = Any()
 
     fun start() {
-        if (running) return
-        running = true
-        tunInput = FileInputStream(tunFd)
-        Thread({ readLoop() }, "tun2socks-read").start()
-        Thread({ statsLoop() }, "tun2socks-stats").start()
+        check(!running); running = true
+        Thread({ readLoop() }, "tun-read").apply { isDaemon = true; start() }
+        Thread({
+            while (running) {
+                try { Thread.sleep(250) } catch (_: InterruptedException) { break }
+                tcp.values.forEach { it.tick() }
+                if (running) onStats(tcp.size, rx.get(), tx.get())
+            }
+        }, "tun-maintenance").apply { isDaemon = true; start() }
     }
-
     fun stop() {
         running = false
-        for (f in connections.values) f.close()
-        connections.clear()
-        try { sharedUdp?.close() } catch (_: Exception) {}
-        sharedUdp = null
-        try { tunInput.close() } catch (_: Exception) {}
+        tcp.values.toList().forEach { it.close() }; tcp.clear()
+        udp.values.toList().forEach { it.close() }; udp.clear()
+        // ReceiverVpnService owns/closes the descriptor. readLoop polls with a finite timeout.
     }
-
-    private fun statsLoop() {
-        while (running) {
-            try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-            onStats(connections.size, rxBytes.get(), txBytes.get())
-        }
-    }
-
     private fun readLoop() {
-        val buf = ByteArray(32 * 1024)
-        while (running) {
-            val n = try { tunInput.read(buf) } catch (e: Throwable) { if (running) Log.w(TAG, "TUN read failed: ${e.message}"); break }
-            if (n <= 0) continue
-            packetCount.incrementAndGet()
-            try { handlePacket(ByteBuffer.wrap(buf, 0, n).order(ByteOrder.BIG_ENDIAN)) } catch (t: Throwable) { Log.w(TAG, "packet handle: ${t.message}") }
-        }
+        val input = FileInputStream(Os.dup(tunFd))
+        val buffer = ByteArray(65535)
+        val poll = StructPollfd().apply { fd = input.fd; events = OsConstants.POLLIN.toShort() }
+        try {
+            while (running) {
+                if (Os.poll(arrayOf(poll), 500) == 0) continue
+                if (!running) break
+                if (poll.revents.toInt() and (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL) != 0) error("VPN interface disconnected")
+                if (poll.revents.toInt() and OsConstants.POLLIN == 0) continue
+                val count = input.read(buffer)
+                if (count < 0) error("VPN interface ended")
+                val packet = Ipv4Packet.parse(buffer, count) ?: continue
+                if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
+            }
+        } catch (e: Exception) { if (running) { stop(); onFailure("VPN packet loop stopped: ${e.message}") } }
+        finally { input.close() }
     }
-
-    private fun handlePacket(buf: ByteBuffer) {
-        if (buf.limit() < 20) return
-        val verIhl = buf.get(0).toInt() and 0xFF
-        if ((verIhl shr 4) and 0x0F != 4) return
-        val ihl = (verIhl and 0x0F) * 4
-        if (ihl < 20 || ihl > buf.limit()) return
-        val totalLen = (buf.get(2).toInt() and 0xFF shl 8) or (buf.get(3).toInt() and 0xFF)
-        if (totalLen < ihl || totalLen > buf.limit()) return
-        buf.limit(totalLen)
-        val protocol = buf.get(9).toInt() and 0xFF
-        val srcIp = readIpv4(buf, 12); val dstIp = readIpv4(buf, 16)
-        when (protocol) { 6 -> handleTcp(buf, ihl, srcIp, dstIp); 17 -> handleUdp(buf, ihl, srcIp, dstIp) }
+    private fun handleTcp(packet: Ipv4Packet) {
+        val key = packet.key
+        if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
+        if (packet.flags and 2 != 0) {
+            tcp[key]?.let { it.retransmitSyn(); return }
+            if (tcp.size >= 64) return
+            lateinit var flow: TcpFlow
+            flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
+                { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) })
+            tcp[key] = flow; flow.start()
+            Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
+        } else tcp[key]?.receive(packet)
     }
-
-    private fun handleTcp(buf: ByteBuffer, ihl: Int, srcIp: ByteArray, dstIp: ByteArray) {
-        if (buf.limit() < ihl + 20) return
-        val dataOff = ((buf.get(ihl + 12).toInt() and 0xFF) shr 4) * 4
-        if (dataOff < 20 || ihl + dataOff > buf.limit()) return
-        val srcPort = ((buf.get(ihl).toInt() and 0xFF) shl 8) or (buf.get(ihl + 1).toInt() and 0xFF)
-        val dstPort = ((buf.get(ihl + 2).toInt() and 0xFF) shl 8) or (buf.get(ihl + 3).toInt() and 0xFF)
-        val seq = readInt(buf, ihl + 4)
-        val flags = buf.get(ihl + 13).toInt() and 0xFF
-        val key = FlowKey(srcIp, srcPort, dstIp, dstPort)
-        val isSyn = (flags and 0x02) != 0; val isFin = (flags and 0x01) != 0; val isRst = (flags and 0x04) != 0
-        val payloadStart = ihl + dataOff; val payloadLen = buf.limit() - payloadStart
-        if (isRst) { connections.remove(key)?.close(); return }
-        if (isSyn) {
-            tcpSynCount.incrementAndGet()
-            if (connections.containsKey(key)) return
-            val flow = TcpFlow(flowId.incrementAndGet(), key, seq, socksHost, socksPort, protect, { n -> txBytes.addAndGet(n.toLong()) }, { n -> rxBytes.addAndGet(n.toLong()) }, this::writePacket)
-            connections[key] = flow
-            try { flow.sendSynAck(seq + 1) } catch (_: Throwable) {}
-            Thread({ try { flow.openUpstream(dstIp, dstPort) } catch (t: Throwable) { try { flow.sendRst() } catch (_: Throwable) {}; connections.remove(key); try { flow.close() } catch (_: Throwable) {} } }, "tcp-${key.hashCode()}").apply { isDaemon = true }.start()
-            return
-        }
-        val flow = connections[key] ?: return
-        if (payloadLen > 0) { try { val p = ByteArray(payloadLen); buf.position(payloadStart); buf.get(p); flow.handleData(p, seq) } catch (_: Throwable) {} }
-        if (isFin) { try { flow.handleFin(seq + payloadLen + 1) } catch (_: Throwable) {}; connections.remove(key) }
+    private fun handleUdp(packet: Ipv4Packet) {
+        val key = packet.key
+        val existing = udp[key]
+        if (existing != null) { existing.send(packet.payload); return }
+        if (udp.size >= 32) return
+        lateinit var flow: UdpFlow
+        flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
+            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) })
+        udp[key] = flow; flow.send(packet.payload)
+        Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
     }
-
-    private fun handleUdp(buf: ByteBuffer, ihl: Int, srcIp: ByteArray, dstIp: ByteArray) {
-        if (buf.limit() < ihl + 8) return
-        val srcPort = ((buf.get(ihl).toInt() and 0xFF) shl 8) or (buf.get(ihl + 1).toInt() and 0xFF)
-        val dstPort = ((buf.get(ihl + 2).toInt() and 0xFF) shl 8) or (buf.get(ihl + 3).toInt() and 0xFF)
-        val len = ((buf.get(ihl + 4).toInt() and 0xFF) shl 8) or (buf.get(ihl + 5).toInt() and 0xFF)
-        if (len < 8 || ihl + len > buf.limit()) return
-        val payload = ByteArray(len - 8); buf.position(ihl + 8); buf.get(payload)
-        val flow = getOrCreateSharedUdp() ?: return
-        flow.send(srcIp, srcPort, dstIp, dstPort, payload)
-    }
-
-    private fun getOrCreateSharedUdp(): SharedUdpFlow? {
-        sharedUdp?.let { if (!it.isClosed()) return it }
-        synchronized(udpLock) { sharedUdp?.let { if (!it.isClosed()) return it }; if (udpCreationInProgress) return null; udpCreationInProgress = true }
-        Thread({
-            try {
-                val flow = SharedUdpFlow(socksHost, socksPort, protect, protectDatagram, this::writePacket, { n -> rxBytes.addAndGet(n.toLong()) }, { n -> txBytes.addAndGet(n.toLong()) })
-                flow.start()
-                synchronized(udpLock) { sharedUdp = flow; udpCreationInProgress = false }
-            } catch (e: Exception) { synchronized(udpLock) { udpCreationInProgress = false } }
-        }, "udp-shared-init").start()
-        return null
-    }
-
-    fun writePacket(packet: ByteArray) { try { android.system.Os.write(tunFd, ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN)) } catch (t: Throwable) { if (running) Log.w(TAG, "TUN write: ${t.message}") } }
-
-    private fun readIpv4(buf: ByteBuffer, off: Int): ByteArray = byteArrayOf(buf.get(off), buf.get(off + 1), buf.get(off + 2), buf.get(off + 3))
-    private fun readInt(buf: ByteBuffer, off: Int): Int = ((buf.get(off).toInt() and 0xFF) shl 24) or ((buf.get(off + 1).toInt() and 0xFF) shl 16) or ((buf.get(off + 2).toInt() and 0xFF) shl 8) or (buf.get(off + 3).toInt() and 0xFF)
-
-    data class FlowKey(val srcIp: ByteArray, val srcPort: Int, val dstIp: ByteArray, val dstPort: Int) {
-        override fun hashCode(): Int { var h = srcPort * 31 + dstPort; for (b in srcIp) h = h * 31 + b; for (b in dstIp) h = h * 31 + b; return h }
-        override fun equals(other: Any?): Boolean { if (this === other) return true; if (other !is FlowKey) return false; return srcPort == other.srcPort && dstPort == other.dstPort && srcIp.contentEquals(other.srcIp) && dstIp.contentEquals(other.dstIp) }
+    private fun writePacket(packet: ByteArray) = synchronized(writeLock) {
+        if (!running) return@synchronized
+        try { Os.write(tunFd, ByteBuffer.wrap(packet)) }
+        catch (e: Exception) { if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") } }
     }
 }

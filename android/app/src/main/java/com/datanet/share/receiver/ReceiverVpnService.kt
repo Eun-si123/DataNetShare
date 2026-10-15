@@ -1,113 +1,100 @@
 package com.datanet.share.receiver
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
-import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.datanet.share.common.Constants
+import com.datanet.share.common.ServiceNotifications
+import com.datanet.share.common.SessionStore
+import com.datanet.share.common.Socks5
+import java.io.DataInputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class ReceiverVpnService : VpnService() {
     companion object {
-        private const val TAG = "ReceiverVpnService"
         const val ACTION_START = "com.datanet.share.receiver.VPN_START"
         const val ACTION_STOP = "com.datanet.share.receiver.VPN_STOP"
-        const val ACTION_QUERY_STATE = "com.datanet.share.receiver.QUERY_STATE"
         const val EXTRA_SOCKS_HOST = "socks_host"
         const val EXTRA_SOCKS_PORT = "socks_port"
+        const val EXTRA_PASSWORD = "proxy_password"
     }
-
     private var pfd: ParcelFileDescriptor? = null
-    private var tun2socks: Tun2Socks? = null
-    @Volatile private var running = false
-    @Volatile private var foregroundStarted = false
+    private var bridge: Tun2Socks? = null
     private var wakeLock: PowerManager.WakeLock? = null
-
-    // Cached state for re-broadcasting when the activity reconnects (QUERY_STATE).
-    @Volatile private var lastStatus: String = "stopped"
-    @Volatile private var lastDetails: String = ""
+    private var probe: Socket? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var generation = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
+        if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
+        if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) return START_NOT_STICKY
         try {
-            tryStartForeground()
-            when (action) {
-                ACTION_START -> { val host = intent.getStringExtra(EXTRA_SOCKS_HOST) ?: "192.168.49.1"; val port = intent.getIntExtra(EXTRA_SOCKS_PORT, Constants.SOCKS5_PORT); startTunnel(host, port) }
-                ACTION_STOP -> { stopTunnel(); stopSelf(); return START_NOT_STICKY }
-                ACTION_QUERY_STATE -> { rebroadcastState() }
-            }
-        } catch (t: Throwable) {
-            broadcast("failed", "ReceiverVpnService crash: ${t.javaClass.simpleName}: ${t.message}")
-            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {}
-            stopSelf(); return START_NOT_STICKY
-        }
-        // START_NOT_STICKY: if the OS kills the service under memory pressure,
-        // do not resurrect it with a null intent. A null-intent resurrection would
-        // leave the VPN up but pointing at no SOCKS server, breaking all connectivity.
+            check(prepare(this) == null) { "Allow the VPN connection before starting" }
+            val host = intent.getStringExtra(EXTRA_SOCKS_HOST) ?: ""
+            val port = intent.getIntExtra(EXTRA_SOCKS_PORT, Constants.SOCKS5_PORT)
+            val password = intent.getStringExtra(EXTRA_PASSWORD) ?: ""
+            require(com.datanet.share.common.Endpoint.isIpv4(host) && port in 1..65535) { "Enter the sender's IPv4 address and port" }
+            ServiceCompat.startForeground(this, Constants.RECEIVER_NOTIFICATION_ID, notification("Checking sender and proxy password…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            val token = ++generation
+            // Probe before installing routes so wrong addresses/passwords do not black-hole other apps.
+            val socket = Socket(); probe = socket
+            Thread({
+                try {
+                    socket.use {
+                        check(protect(it)) { "Could not protect sender socket" }
+                        it.soTimeout = 10_000
+                        it.connect(InetSocketAddress(host, port), 10_000)
+                        Socks5.authenticateClient(DataInputStream(it.getInputStream()), it.getOutputStream(), password)
+                    }
+                    main.post { if (generation == token) { probe = null; startTunnel(host, port, password) } }
+                } catch (e: Exception) { main.post { if (generation == token) fail("Sender check failed: ${e.message}") } }
+            }, "receiver-check").apply { isDaemon = true; start() }
+        } catch (e: Exception) { fail(e.message ?: "Receiver could not start") }
         return START_NOT_STICKY
     }
 
-    private fun tryStartForeground() {
-        if (foregroundStarted) return
-        try { ServiceCompat.startForeground(this, Constants.RECEIVER_NOTIFICATION_ID, buildNotification("DataNet Share Receiver", "VPN tunnel active"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE); foregroundStarted = true } catch (e: Throwable) {
-            try { startForeground(Constants.RECEIVER_NOTIFICATION_ID, buildNotification("DataNet Share Receiver", "VPN tunnel active")); foregroundStarted = true } catch (_: Throwable) {}
-        }
-    }
-
-    private fun startTunnel(socksHost: String, socksPort: Int) {
-        if (running) return
-        acquireWakeLock()
-        val builder = Builder().setSession("DataNet Share Receiver").addAddress(Constants.VPN_ADDRESS, 24).addDnsServer(Constants.TUNNELED_DNS).setMtu(1500)
-        builder.addRoute("0.0.0.0", 1); builder.addRoute("128.0.0.0", 1)
-        try { pfd = builder.establish() } catch (e: Throwable) { broadcast("failed", "VPN establish failed: ${e.javaClass.simpleName}: ${e.message}"); stopSelf(); return }
-        if (pfd == null) { broadcast("failed", "VPN permission denied"); stopSelf(); return }
-        running = true
+    private fun startTunnel(host: String, port: Int, password: String) {
         try {
-            tun2socks = Tun2Socks(pfd!!.fileDescriptor, socksHost, socksPort, { s -> protect(s) }, { d -> protect(d) }) { active, rx, tx -> broadcast("stats", "active=$active rx=${rx/1024}KB tx=${tx/1024}KB") }
-            tun2socks?.start()
-            broadcast("active", "Tunneling via $socksHost:$socksPort")
-        } catch (t: Throwable) {
-            broadcast("failed", "Tun2Socks start: ${t.javaClass.simpleName}: ${t.message}")
-            stopTunnel(); stopSelf()
-        }
+            val descriptor = Builder().setSession("DataNet Share · experimental receiver")
+                .addAddress(Constants.VPN_ADDRESS, 24).addRoute("0.0.0.0", 0)
+                .addDnsServer(Constants.TUNNELED_DNS).setMtu(1500)
+                .setBlocking(false).establish() ?: error("VPN permission was revoked")
+            pfd = descriptor
+            wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() }
+            bridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
+                { protect(it) }, { protect(it) },
+                onFailure = { message -> main.post { fail(message) } },
+                onStats = { active, rx, tx -> SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
+                .also { it.start() }
+            SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
+            getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
+        } catch (e: Exception) { fail("VPN could not start: ${e.message}") }
     }
 
-    private fun stopTunnel() {
-        running = false
-        try { tun2socks?.stop() } catch (_: Throwable) {}
-        tun2socks = null
-        try { pfd?.close() } catch (_: Throwable) {}
-        pfd = null
-        releaseWakeLock()
-        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {}
-        try { (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(Constants.RECEIVER_NOTIFICATION_ID) } catch (_: Throwable) {}
-        broadcast("stopped", "Tunnel stopped")
+    private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Receiver", text,
+        Intent(this, ReceiverVpnService::class.java).setAction(ACTION_STOP))
+    private fun fail(message: String) {
+        cleanup()
+        SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "failed", message)); stopSelf()
     }
-
-    // No wake lock timeout — relies on stopTunnel/stopSelf to release.
-    // Previous 10-hour timeout caused silent session death after 10h.
-    private fun acquireWakeLock() { if (wakeLock == null) { try { val pm = getSystemService(Context.POWER_SERVICE) as PowerManager; wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() } } catch (_: Throwable) {} } }
-    private fun releaseWakeLock() { try { wakeLock?.release() } catch (_: Throwable) {}; wakeLock = null }
-
-    private fun rebroadcastState() {
-        try { LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(Constants.ACTION_RECEIVER_STATE).apply { putExtra(Constants.EXTRA_STATUS, lastStatus); putExtra(Constants.EXTRA_DETAILS, lastDetails) }) } catch (_: Throwable) {}
+    private fun cleanup() {
+        ++generation
+        try { probe?.close() } catch (_: Exception) {}; probe = null
+        bridge?.stop(); bridge = null
+        try { pfd?.close() } catch (_: Exception) {}; pfd = null
+        wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
-
-    private fun broadcast(status: String, details: String) {
-        lastStatus = status; lastDetails = details
-        try { LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(Constants.ACTION_RECEIVER_STATE).apply { putExtra(Constants.EXTRA_STATUS, status); putExtra(Constants.EXTRA_DETAILS, details) }) } catch (_: Throwable) {}
-    }
-
-    private fun buildNotification(title: String, text: String): android.app.Notification {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) { val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager; nm.createNotificationChannel(android.app.NotificationChannel(Constants.CHANNEL_ID, "DataNet Share", android.app.NotificationManager.IMPORTANCE_LOW)) }
-        return NotificationCompat.Builder(this, Constants.CHANNEL_ID).setContentTitle(title).setContentText(text).setSmallIcon(android.R.drawable.stat_sys_download).setOngoing(true).build()
-    }
-
-    override fun onDestroy() { super.onDestroy(); stopTunnel(); try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {} }
-    override fun onRevoke() { stopTunnel(); stopSelf() }
+    override fun onDestroy() { cleanup(); if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.RECEIVER); super.onDestroy() }
+    override fun onRevoke() { fail("Android revoked this VPN connection") }
 }

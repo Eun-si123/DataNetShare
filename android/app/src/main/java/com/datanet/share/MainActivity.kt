@@ -1,216 +1,153 @@
 package com.datanet.share
 
 import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.text.method.ScrollingMovementMethod
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
+import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.datanet.share.common.Constants
-import com.datanet.share.common.SpeedTestClient
+import com.datanet.share.common.Endpoint
+import com.datanet.share.common.InterfaceEnumerator
+import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
-import com.datanet.share.receiver.ReceiverService
 import com.datanet.share.receiver.ReceiverVpnService
 import com.datanet.share.sender.SenderService
 
 class MainActivity : AppCompatActivity() {
-
-    private lateinit var statusText: TextView
-    private lateinit var logText: TextView
-    private lateinit var senderBtn: Button
-    private lateinit var localOnlyBtn: Button
-    private lateinit var receiverBtn: Button
-    private lateinit var forceStopBtn: Button
-    private lateinit var udpTestBtn: Button
-    private lateinit var speedTestBtn: Button
-    private lateinit var refreshInterfacesBtn: Button
-    private lateinit var credsCard: View
-    private lateinit var ssidText: TextView
-    private lateinit var passText: TextView
-    private lateinit var interfacesText: TextView
-
-    private val pendingLogs = StringBuilder()
-    private val logLock = Any()
-    private val logHandler = Handler(Looper.getMainLooper())
-    private val logFlushRunnable = Runnable { flushLogs() }
-
-    private var mode: Mode = Mode.NONE
-    private enum class Mode { NONE, SENDER, RECEIVER }
-
-    private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) startReceiverService() else appendLog("VPN permission denied")
+    private lateinit var host: EditText
+    private lateinit var port: EditText
+    private lateinit var password: EditText
+    private lateinit var addresses: Spinner
+    private lateinit var defaultRoute: Switch
+    private var candidates = emptyList<InterfaceEnumerator.InterfaceInfo>()
+    private var pendingReceiver: Intent? = null
+    private val preferences by lazy { getSharedPreferences("connection", MODE_PRIVATE) }
+    private val wifiPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startSender(true) else showMessage(getString(R.string.permission_required))
     }
-
-    private val permsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
-
-    private val stateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, intent: Intent?) {
-            val status = intent?.getStringExtra(Constants.EXTRA_STATUS) ?: return
-            val details = intent.getStringExtra(Constants.EXTRA_DETAILS) ?: ""
-            appendLog("[${now()}] ${status.uppercase()}  $details")
-            when (status) {
-                "active" -> {
-                    val ip = intent.getStringExtra(Constants.EXTRA_PROXY_IP)
-                    val port = intent.getIntExtra(Constants.EXTRA_PROXY_PORT, 0)
-                    val ssid = intent.getStringExtra(Constants.EXTRA_SSID)
-                    val pass = intent.getStringExtra(Constants.EXTRA_PASSPHRASE)
-                    val interfaces = intent.getStringExtra(Constants.EXTRA_INTERFACES)
-                    statusText.text = if (ip != null && port != 0) "Sharing on $ip:$port" else "Active"
-                    if (!ssid.isNullOrBlank()) { credsCard.visibility = View.VISIBLE; ssidText.text = ssid; passText.text = if (pass.isNullOrBlank()) "(no password)" else pass }
-                    else if (interfaces != null) { credsCard.visibility = View.VISIBLE; ssidText.text = "SOCKS5 user: datanet"; passText.text = if (pass.isNullOrBlank()) "(missing)" else pass }
-                    if (!interfaces.isNullOrBlank()) { interfacesText.text = interfaces; interfacesText.visibility = View.VISIBLE } else interfacesText.visibility = View.GONE
-                    setButtonsBusy(false)
-                }
-                "failed" -> { statusText.text = "Failed"; credsCard.visibility = View.GONE; setButtonsBusy(false) }
-                "starting" -> { statusText.text = "Starting..."; setButtonsBusy(true) }
-                "stopped" -> { statusText.text = "Stopped"; credsCard.visibility = View.GONE; setButtonsBusy(false) }
-                "needs_permission" -> requestVpnPermission()
-                "stats" -> {}
-            }
-        }
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val intent = pendingReceiver; pendingReceiver = null
+        if (result.resultCode == RESULT_OK && intent != null) launchService(intent)
+        else showMessage(getString(R.string.vpn_denied))
     }
-
-    private fun setButtonsBusy(busy: Boolean) { runOnUiThread { senderBtn.isEnabled = !busy || mode != Mode.SENDER; localOnlyBtn.isEnabled = !busy || mode != Mode.SENDER; receiverBtn.isEnabled = !busy || mode != Mode.RECEIVER } }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        bindViews()
-        requestPermissionsIfNeeded()
+        super.onCreate(savedInstanceState); setContentView(R.layout.activity_main)
+        host = findViewById(R.id.receiverHost); port = findViewById(R.id.receiverPort)
+        password = findViewById(R.id.receiverPassword); addresses = findViewById(R.id.bindAddress)
+        defaultRoute = findViewById(R.id.defaultRoute)
+        if (savedInstanceState == null) {
+            host.setText(preferences.getString("host", "192.168.49.1"))
+            port.setText(preferences.getString("port", "8282"))
+            defaultRoute.isChecked = preferences.getBoolean("default_route", false)
+        }
+        refreshAddresses()
+        findViewById<Button>(R.id.btnSender).setOnClickListener { startSender(true) }
+        findViewById<Button>(R.id.btnLocal).setOnClickListener { startSender(false) }
+        findViewById<Button>(R.id.btnRefresh).setOnClickListener { refreshAddresses() }
+        findViewById<Button>(R.id.btnReceiver).setOnClickListener { startReceiver() }
+        findViewById<Button>(R.id.btnStop).setOnClickListener {
+            // stopService does not create a new foreground service just to stop it.
+            stopService(Intent(this, SenderService::class.java))
+            stopService(Intent(this, ReceiverVpnService::class.java))
+        }
+        findViewById<Button>(R.id.btnCopy).setOnClickListener {
+            val text = findViewById<TextView>(R.id.credentialsText).text
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("DataNet Share", text))
+            showMessage(getString(R.string.copied))
+        }
+        findViewById<Button>(R.id.btnDiagnostics).setOnClickListener {
+            val panel = findViewById<View>(R.id.diagnosticsPanel)
+            panel.visibility = if (panel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        findViewById<Button>(R.id.btnUdpTest).setOnClickListener {
+            if (SessionStore.current.mode != SessionStore.Mode.RECEIVER || SessionStore.current.status != "active") {
+                showMessage(getString(R.string.test_receiver_first)); return@setOnClickListener
+            }
+            it.isEnabled = false
+            UdpTest.runTest({ message -> log(message) }, { message -> log(message) }, {
+                runOnUiThread { if (!isDestroyed) it.isEnabled = true }
+            })
+        }
+        val version = packageManager.getPackageInfo(packageName, 0).versionName
+        findViewById<TextView>(R.id.versionText).text = getString(R.string.version_label, version)
+        SessionStore.state.observe(this) { state -> render(state) }
+        SessionStore.stats.observe(this) { text -> findViewById<TextView>(R.id.statsText).text = text }
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
-
-    private fun bindViews() {
-        statusText = findViewById(R.id.statusText)
-        logText = findViewById<TextView?>(R.id.logText).also { it?.movementMethod = ScrollingMovementMethod() }!!
-        senderBtn = findViewById(R.id.btnSender)
-        localOnlyBtn = findViewById(R.id.btnLocalOnly)
-        receiverBtn = findViewById(R.id.btnReceiver)
-        forceStopBtn = findViewById(R.id.btnForceStop)
-        udpTestBtn = findViewById(R.id.btnUdpTest)
-        speedTestBtn = findViewById(R.id.btnSpeedTest)
-        refreshInterfacesBtn = findViewById(R.id.btnRefreshInterfaces)
-        credsCard = findViewById(R.id.credsCard)
-        ssidText = findViewById(R.id.ssidText)
-        passText = findViewById(R.id.passText)
-        interfacesText = findViewById(R.id.interfacesText)
-        senderBtn.setOnClickListener { startSender() }
-        localOnlyBtn.setOnClickListener { startLocalOnly() }
-        receiverBtn.setOnClickListener { startReceiver() }
-        forceStopBtn.setOnClickListener { forceStopAll() }
-        udpTestBtn.setOnClickListener { runUdpTest() }
-        speedTestBtn.setOnClickListener { runSpeedTest() }
-        refreshInterfacesBtn.setOnClickListener { refreshInterfaces() }
+    private fun render(state: SessionStore.State) {
+        findViewById<TextView>(R.id.statusText).setText(when (state.status) {
+            "starting" -> R.string.starting; "active" -> R.string.active; "failed" -> R.string.failed; else -> R.string.idle
+        })
+        findViewById<TextView>(R.id.detailsText).text = state.details
+        listOf(R.id.btnSender, R.id.btnLocal, R.id.btnReceiver, R.id.bindAddress, R.id.defaultRoute, R.id.receiverHost, R.id.receiverPort, R.id.receiverPassword)
+            .forEach { findViewById<View>(it).isEnabled = !state.busy }
+        findViewById<View>(R.id.btnStop).isEnabled = state.busy
+        val hasCredentials = state.mode == SessionStore.Mode.SENDER && state.status == "active"
+        findViewById<View>(R.id.credsCard).visibility = if (hasCredentials) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.credentialsText).text = if (hasCredentials) buildString {
+            if (state.ssid.isNotEmpty()) append("SSID: ${state.ssid}\n${getString(R.string.wifi_password)}: ${state.wifiPassword}\n\n")
+            append("SOCKS5: ${state.proxyHost}:8282\nUsername: datanet\n${getString(R.string.proxy_password)}: ${state.proxyPassword}")
+        } else ""
     }
-
-    private fun startLocalOnly() {
-        mode = Mode.SENDER
-        statusText.text = "Starting local-only..."
-        appendLog("[${now()}] LOCAL-ONLY mode starting (no WiFi Direct)")
-        val intent = Intent(this, SenderService::class.java).apply { action = SenderService.ACTION_START_LOCAL }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+    private fun refreshAddresses() {
+        val selected = candidates.getOrNull(addresses.selectedItemPosition)?.ip ?: preferences.getString("bind", "")
+        candidates = InterfaceEnumerator.localCandidates()
+        val labels = candidates.map { "${it.name}: ${it.ip}" }.ifEmpty { listOf(getString(R.string.no_addresses)) }
+        addresses.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        candidates.indexOfFirst { it.ip == selected }.takeIf { it >= 0 }?.let(addresses::setSelection)
     }
-
-    private fun refreshInterfaces() {
-        val interfaces = com.datanet.share.common.InterfaceEnumerator.getSummary()
-        interfacesText.text = interfaces
-        appendLog("[${now()}] Interfaces refreshed:\n$interfaces")
+    private fun startSender(p2p: Boolean) {
+        if (SessionStore.current.busy) return
+        if (p2p) {
+            val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) { wifiPermission.launch(permission); return }
+        }
+        val bind = candidates.getOrNull(addresses.selectedItemPosition)?.ip
+        if (!p2p && bind == null) { showMessage(getString(R.string.pick_address)); return }
+        preferences.edit().putBoolean("default_route", defaultRoute.isChecked).putString("bind", bind).apply()
+        launchService(Intent(this, SenderService::class.java).apply {
+            action = if (p2p) SenderService.ACTION_START else SenderService.ACTION_START_LOCAL
+            putExtra(SenderService.EXTRA_BIND_HOST, bind); putExtra(SenderService.EXTRA_DEFAULT_ROUTE, defaultRoute.isChecked)
+        })
     }
-
-    private fun runUdpTest() {
-        appendLog("[${now()}] === UDP TEST STARTING ===")
-        UdpTest.runTest({ msg -> appendLog("[UDP TEST] $msg") }, { msg -> appendLog("[UDP TEST] $msg") })
-    }
-
-    private fun runSpeedTest() {
-        appendLog("[${now()}] === LINK SPEED TEST STARTING ===")
-        SpeedTestClient.runTest(
-            host = "192.168.49.1",
-            port = com.datanet.share.sender.SpeedTestServer.DEFAULT_PORT,
-            onProgress = { msg -> appendLog("[SPEED TEST] $msg") },
-            onComplete = { msg -> appendLog("[SPEED TEST] $msg") }
-        )
-    }
-
-    private fun forceStopAll() {
-        appendLog("[${now()}] FORCE STOP")
-        // Use ContextCompat.startForegroundService for STOP actions to avoid
-        // BackgroundServiceStartNotAllowedException on Android 12+ when app is backgrounded.
-        try { androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, SenderService::class.java).apply { action = SenderService.ACTION_STOP }) } catch (_: Exception) {}
-        try { androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, ReceiverService::class.java).apply { action = ReceiverService.ACTION_STOP }) } catch (_: Exception) {}
-        try { androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, ReceiverVpnService::class.java).apply { action = ReceiverVpnService.ACTION_STOP }) } catch (_: Exception) {}
-        // Give the STOP intents a moment to be processed, then reset UI.
-        // No killProcess — let Android handle process lifecycle normally so
-        // onDestroy runs and resources are released cleanly.
-        Handler(Looper.getMainLooper()).postDelayed({
-            statusText.text = "Stopped"; credsCard.visibility = View.GONE; setButtonsBusy(false); mode = Mode.NONE
-        }, 300)
-    }
-
-    private fun startSender() {
-        mode = Mode.SENDER
-        statusText.text = "Starting sender..."
-        appendLog("[${now()}] SENDER mode starting")
-        val intent = Intent(this, SenderService::class.java).apply { action = SenderService.ACTION_START }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
-    }
-
     private fun startReceiver() {
-        mode = Mode.RECEIVER
-        statusText.text = "Starting receiver..."
-        appendLog("[${now()}] RECEIVER mode starting")
-        val prepare = VpnService.prepare(this)
-        if (prepare != null) vpnPermissionLauncher.launch(prepare) else startReceiverService()
-    }
-
-    private fun startReceiverService() {
-        val intent = Intent(this, ReceiverService::class.java).apply { action = ReceiverService.ACTION_START; putExtra(ReceiverService.EXTRA_SOCKS_HOST, "192.168.49.1"); putExtra(ReceiverService.EXTRA_SOCKS_PORT, Constants.SOCKS5_PORT) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
-    }
-
-    private fun requestVpnPermission() { val p = VpnService.prepare(this); if (p != null) vpnPermissionLauncher.launch(p) else startReceiverService() }
-
-    private fun requestPermissionsIfNeeded() {
-        val needed = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.NEARBY_WIFI_DEVICES
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.POST_NOTIFICATIONS
+        if (SessionStore.current.busy) return
+        val address = host.text.toString().trim(); val proxyPort = port.text.toString().toIntOrNull()
+        if (!Endpoint.isIpv4(address) || proxyPort == null || proxyPort !in 1..65535) { showMessage(getString(R.string.invalid_endpoint)); return }
+        val proxyPassword = password.text.toString()
+        if (proxyPassword.isEmpty()) { showMessage(getString(R.string.password_required)); return }
+        preferences.edit().putString("host", address).putString("port", proxyPort.toString()).apply()
+        val intent = Intent(this, ReceiverVpnService::class.java).apply {
+            action = ReceiverVpnService.ACTION_START; putExtra(ReceiverVpnService.EXTRA_SOCKS_HOST, address)
+            putExtra(ReceiverVpnService.EXTRA_SOCKS_PORT, proxyPort); putExtra(ReceiverVpnService.EXTRA_PASSWORD, proxyPassword)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.ACCESS_FINE_LOCATION
-        }
-        if (needed.isNotEmpty()) permsLauncher.launch(needed.toTypedArray())
+        val permission = VpnService.prepare(this)
+        if (permission == null) launchService(intent) else { pendingReceiver = intent; vpnPermission.launch(permission) }
     }
-
-    override fun onResume() { super.onResume(); val filter = IntentFilter().apply { addAction(Constants.ACTION_SENDER_STATE); addAction(Constants.ACTION_RECEIVER_STATE) }; LocalBroadcastManager.getInstance(this).registerReceiver(stateReceiver, filter) }
-    override fun onPause() { super.onPause(); try { LocalBroadcastManager.getInstance(this).unregisterReceiver(stateReceiver) } catch (_: Exception) {} }
-    override fun onDestroy() { super.onDestroy(); logHandler.removeCallbacks(logFlushRunnable) }
-
-    private fun appendLog(line: String) { synchronized(logLock) { pendingLogs.append(line).append('\n') }; logHandler.removeCallbacks(logFlushRunnable); logHandler.postDelayed(logFlushRunnable, 200) }
-
-    private fun flushLogs() {
-        val toWrite: String
-        synchronized(logLock) { if (pendingLogs.isEmpty()) return; toWrite = pendingLogs.toString(); pendingLogs.setLength(0) }
-        runOnUiThread {
-            logText.append(toWrite)
-            val fullText = logText.text
-            if (fullText.length > 8000) logText.text = fullText.substring(fullText.length - 6000)
-            val scroll = logText.layout
-            if (scroll != null) { val y = scroll.getLineTop(scroll.lineCount) - logText.height; if (y > 0) logText.scrollTo(0, y + 20) }
+    private fun launchService(intent: Intent) {
+        try { ContextCompat.startForegroundService(this, intent) } catch (e: Exception) { showMessage(e.message ?: "Could not start service") }
+    }
+    private fun showMessage(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+    private fun log(message: String) = runOnUiThread {
+        if (!isDestroyed) {
+            val view = findViewById<TextView>(R.id.logText)
+            view.text = (view.text.toString() + message + "\n").takeLast(6000)
         }
     }
-
-    private fun now(): String = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
 }

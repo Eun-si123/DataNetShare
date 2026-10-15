@@ -1,0 +1,37 @@
+<resources>
+    <string name="app_name">DataNet Share Dev</string>
+    <string name="tagline">로컬 SOCKS5 프록시로 모바일 데이터 공유</string>
+    <string name="sender_heading">이 휴대폰에서 공유하기</string>
+    <string name="bind_label">USB / Wi-Fi 수신 주소</string>
+    <string name="refresh">주소 새로고침</string>
+    <string name="no_addresses">USB 테더링이나 Wi-Fi에 연결한 뒤 새로고침하세요</string>
+    <string name="default_route">안드로이드 기본 경로 사용 (기존 VPN용)</string>
+    <string name="route_help">끄면 모바일 데이터만 사용합니다. 켜면 안드로이드 경로를 따르며, VPN 제외 설정이나 연결 해제 시 트래픽이 노출될 수 있습니다. SOCKS5 비밀번호는 로컬 통신을 암호화하지 않으므로 USB나 신뢰하는 네트워크를 사용하세요.</string>
+    <string name="start_p2p">Wi-Fi Direct로 공유</string>
+    <string name="start_local">USB / Wi-Fi로 공유</string>
+    <string name="receiver_heading">이 휴대폰에서 받기 · 실험 기능</string>
+    <string name="receiver_help">먼저 송신 휴대폰의 네트워크에 연결하세요. 표시된 IPv4 주소와 SOCKS5 비밀번호를 입력하세요. Wi-Fi 비밀번호와는 다릅니다. IPv4 TCP/UDP를 처리하며 호환성 검증이 진행 중입니다.</string>
+    <string name="host_hint">송신 휴대폰의 IPv4 주소</string>
+    <string name="port_hint">프록시 포트</string>
+    <string name="password_hint">SOCKS5 비밀번호 (아이디: datanet)</string>
+    <string name="start_receiver">수신 VPN 시작</string>
+    <string name="stop">연결 중지</string>
+    <string name="credentials">연결 정보 · 외부에 공개하지 마세요</string>
+    <string name="copy_credentials">연결 정보 복사</string>
+    <string name="copied">연결 정보를 복사했어요</string>
+    <string name="diagnostics">진단 정보 펼치기 / 접기</string>
+    <string name="udp_test">수신 UDP 테스트 (외부 STUN)</string>
+    <string name="idle">준비됨</string>
+    <string name="starting">시작 중…</string>
+    <string name="active">연결됨</string>
+    <string name="failed">연결 실패</string>
+    <string name="permission_required">Wi-Fi Direct 그룹을 만들려면 Android 13 이상은 근처 Wi-Fi 기기 권한, Android 8~12는 위치 권한을 허용해 주세요.</string>
+    <string name="vpn_denied">VPN 연결 권한이 허용되지 않았어요</string>
+    <string name="invalid_endpoint">송신 휴대폰의 IPv4 주소와 1~65535 사이 포트를 입력하세요.</string>
+    <string name="password_required">송신 화면에 표시된 SOCKS5 비밀번호를 입력하세요.</string>
+    <string name="pick_address">USB 테더링이나 Wi-Fi에 연결하고 먼저 주소를 선택하세요.</string>
+    <string name="wifi_password">Wi-Fi 비밀번호</string>
+    <string name="proxy_password">SOCKS5 비밀번호</string>
+    <string name="test_receiver_first">수신 VPN을 시작한 뒤 UDP를 테스트하세요.</string>
+    <string name="version_label">개발 빌드 · %1$s</string>
+</resources>
