@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Fork hardening branch — not yet production verified.** The [reviewable Android source](android/) and [security notes](docs/SECURITY-REVIEW.md) were extracted from the upstream v5 ZIP and patched. SOCKS5 **local-only** mode now requires a per-session password; see [updated instructions](android/README.md). The custom TCP/UDP handling remains incomplete; a passing build does not guarantee traffic correctness. The [draft hardening PR](https://github.com/Eun-si123/DataNetShare/pull/1) must be reviewed before merging. The original upstream description below is retained for attribution and comparison.
+
 # DataNet Share
 
 > **This project was fully built with AI using GLM 5.2. The app works and that's all I know. Sorry if this readme or the code says or does anything stupid.**
