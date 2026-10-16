@@ -94,12 +94,12 @@ class ReceiverVpnService : VpnService() {
                             " · TUN waits ${metrics.tunWriteWaits} (${metrics.tunWriteWaitMs} ms total)"
                         SessionStore.telemetry.postValue(
                             "Receiver TCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
-                            "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected}" +
+                            "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             "\nTUN drops ${metrics.tunDropped} · $perf" +
                             "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B")
                         SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
                             "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
-                            " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected}" +
+                            " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             " · TUN drops ${metrics.tunDropped}" +
                             "\n$perf" +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
@@ -123,9 +123,12 @@ class ReceiverVpnService : VpnService() {
                 onUdpError = { error ->
                     if (generation == token) {
                         recentUdpError = error
-                        SessionStore.note(if (error.contains("capacity")) NetworkEvent.UDP_FLOW_LIMIT
-                            else if (error.contains("read")) NetworkEvent.UDP_RELAY
-                            else NetworkEvent.UDP_SETUP)
+                        SessionStore.note(when {
+                            error.contains("capacity") -> NetworkEvent.UDP_FLOW_LIMIT
+                            error.contains("queue full") -> NetworkEvent.UDP_QUEUE
+                            error.contains("read") -> NetworkEvent.UDP_RELAY
+                            else -> NetworkEvent.UDP_SETUP
+                        })
                     }
                 })
                 .also { it.start() }
@@ -151,6 +154,14 @@ class ReceiverVpnService : VpnService() {
             while (generation == token && !Thread.currentThread().isInterrupted) {
                 try { Thread.sleep(5_000) } catch (_: InterruptedException) { break }
                 if (generation != token) break
+                // A protected peer probe may still succeed over Wi-Fi Direct
+                // even after Android has replaced/revoked this app's system VPN.
+                if (prepare(this) != null) {
+                    main.post {
+                        if (generation == token) fail("Android VPN permission was revoked or another VPN replaced it.")
+                    }
+                    break
+                }
                 val alive = SenderHealthProbe.check(host, port, password,
                     setup = { socket ->
                         ReceiverSocketSetup.bindThenProtect(socket,
@@ -194,6 +205,18 @@ class ReceiverVpnService : VpnService() {
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
-    override fun onDestroy() { cleanup(); if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.RECEIVER); super.onDestroy() }
+    override fun onDestroy() {
+        // If Android destroys the running VPN service without the app/notification
+        // STOP action, do not silently present "Ready" while connectivity is gone.
+        val unexpected = SessionStore.current.mode == SessionStore.Mode.RECEIVER &&
+            SessionStore.current.busy
+        cleanup()
+        if (unexpected) {
+            SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
+            SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "failed",
+                "Receiver VPN service stopped unexpectedly. Reconnect to resume sharing."))
+        }
+        super.onDestroy()
+    }
     override fun onRevoke() { fail("Android revoked this VPN connection") }
 }
