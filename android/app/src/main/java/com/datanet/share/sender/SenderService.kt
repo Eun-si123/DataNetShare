@@ -32,6 +32,7 @@ class SenderService : Service() {
     private var observer: Observer<WifiDirectHost.State>? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var defaultRoute = false
+    @Volatile private var recentUpstreamFailure: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var session = 0
     override fun onBind(intent: Intent?): IBinder? = null
@@ -48,6 +49,7 @@ class SenderService : Service() {
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Sender").apply { acquire() }
             defaultRoute = intent?.getBooleanExtra(EXTRA_DEFAULT_ROUTE, false) ?: false
+            recentUpstreamFailure = null
             CellularNetworkTracker.start(this)
             val token = ++session
             if (intent?.action == ACTION_START_LOCAL) {
@@ -79,9 +81,12 @@ class SenderService : Service() {
             onStats = { clients, rx, tx ->
                 if (token == session) {
                     val route = if (defaultRoute) "Android default route (VPN depends on settings)" else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
-                    SessionStore.stats.postValue("$clients connection(s) · ${FormatBytes.formatRxTx(rx, tx)}\n$route")
+                    val recent = recentUpstreamFailure
+                    SessionStore.stats.postValue("$clients connection(s) · ${FormatBytes.formatRxTx(rx, tx)}\n$route" +
+                        (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
                 }
-            }, onFailure = { error -> main.post { if (token == session) fail(error) } })
+            }, onFailure = { error -> main.post { if (token == session) fail(error) } },
+            onUpstreamFailure = { error -> if (token == session) recentUpstreamFailure = error })
         socks = server
         try {
             server.start()
