@@ -35,7 +35,21 @@ class UdpFlow(
     private var control: Socket? = null
     private var udp: DatagramSocket? = null
     @Volatile private var lastActivity = System.nanoTime()
-    fun send(payload: ByteArray) { if (!closed.get()) { queue.offer(payload); lastActivity = System.nanoTime() } }
+    /**
+     * Only an accepted packet counts as activity. When the queue is full, the
+     * caller gets a sanitized warning instead of a silent UDP datagram loss.
+     */
+    fun send(payload: ByteArray) {
+        if (closed.get()) return
+        if (queue.offer(payload)) lastActivity = System.nanoTime()
+        else onError("UDP packet queue full")
+    }
+
+    fun idleForAtLeast(nowNanos: Long, thresholdNanos: Long): Boolean {
+        require(thresholdNanos > 0)
+        return !closed.get() && nowNanos - lastActivity >= thresholdNanos
+    }
+
 
     fun start() {
         try {
@@ -93,7 +107,9 @@ class UdpFlow(
                 writePacket(IpPackets.udp(key, decoded.payload)); onRx(decoded.payload.size)
                 lastActivity = System.nanoTime()
             }
-        } catch (_: IOException) {} finally { close() }
+        } catch (e: IOException) {
+            if (!closed.get()) onError("UDP relay read failed (${e.javaClass.simpleName})")
+        } finally { close() }
     }
     @Synchronized fun close() {
         if (!closed.compareAndSet(false, true)) return

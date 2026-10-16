@@ -14,11 +14,14 @@ enum class NetworkEvent(val description: String) {
     TCP_IDLE("Receiver TCP flow timed out"),
     TCP_RETRANSMIT("Receiver TCP retransmissions exhausted"),
     TCP_FLOW_LIMIT("Receiver TCP capacity reached (80 concurrent flows)"),
-    UDP_FLOW_LIMIT("Receiver UDP capacity reached (32 concurrent flows)"),
+    UDP_FLOW_LIMIT("Receiver UDP capacity reached (40 concurrent flows)"),
+    UDP_QUEUE("Receiver UDP packet queue overflowed"),
     UDP_SETUP("Receiver UDP proxy setup failed"),
     UDP_RELAY("Receiver UDP relay failed"),
     TUN_CONGESTION("VPN tunnel output temporarily congested"),
     TUN_PACKET("VPN packet loop failed"),
+    VPN_SERVICE_ENDED("Receiver VPN service unexpectedly ended"),
+    SENDER_DISCONNECTED("Paired sender disconnected or became unreachable"),
 }
 
 class DiagnosticJournal(private val maxKinds: Int = 12) {

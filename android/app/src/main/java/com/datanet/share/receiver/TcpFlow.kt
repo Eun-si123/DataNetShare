@@ -60,6 +60,7 @@ class TcpFlow(
     private var established = false
     private var lastActivity = System.nanoTime()
     private var lastProbe = 0L
+    private var duplicateAcks = 0
     @Volatile private var closed = false
     private var socket: Socket? = null
 
@@ -72,6 +73,8 @@ class TcpFlow(
         if (packet.flags and 0x10 != 0) {
             val ack = unsigned(packet.acknowledgement)
             if (distance(acknowledged, ack) <= distance(acknowledged, next)) {
+                val previousAck = acknowledged
+                val previousWindow = peerWindow
                 acknowledged = ack; peerWindow = packet.window
                 while (pending.isNotEmpty()) {
                     val segment = pending.first()
@@ -79,6 +82,21 @@ class TcpFlow(
                     pending.removeFirst()
                     if (segment.flags and 2 != 0) established = true
                     if (segment.flags and 1 != 0) finAcknowledged = true
+                }
+                // Fast-retransmit only once on the third true duplicate ACK
+                // for the oldest outstanding data segment. This avoids waiting
+                // for the 500ms RTO when Android has received later packets.
+                // Window updates, SYN/FIN ACKs and payload packets do not count.
+                val oldest = pending.firstOrNull()
+                val isDuplicate = established && ack == previousAck &&
+                    packet.window == previousWindow && packet.payload.isEmpty() &&
+                    oldest != null && oldest.payload.isNotEmpty()
+                duplicateAcks = if (isDuplicate) (duplicateAcks + 1).coerceAtMost(4) else 0
+                if (duplicateAcks == 3 && oldest != null) {
+                    oldest.sent = System.nanoTime()
+                    oldest.attempts++
+                    onRetransmit()
+                    emit(oldest)
                 }
                 lock.notifyAll()
             }

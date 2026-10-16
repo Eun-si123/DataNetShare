@@ -2,6 +2,27 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.11 — UDP flow pressure and unexpected Android VPN teardown
+
+A real two-phone 5.1-dev.10 diagnostic (2026-10-16) reported **113 receiver TCP attempts / 110 connected; 35 UDP attempts / 35 associated; 10 denied UDP admissions at the 32-flow ceiling; 67 TCP retransmits with one retry exhaustion; 2 TCP upload failures, 2 upstream failures; 0 TUN drops and waits; 72,034,500 B received / 45,763,960 B sent.** The user reported throughput still being slow and an Android VPN disconnect not clearly reflected as a stopped/failed app state. The sender's cellular data route had been independently confirmed against its other infrastructure Wi-Fi public IP.
+
+Implemented in [PR #13](https://github.com/Eun-si123/DataNetShare/pull/13):
+
+- Increase bounded UDP admission from 32 to **40**; worst-case 80 TCP + 40 UDP leaves **8 of 128** sender client slots available to sender watchdog/probes. At full capacity, reclaim only UDP associations idle for 15+ seconds before dropping new flows, instead of waiting for their regular 30-second timeout.
+- Report previously invisible UDP queue overflow and relay socket read failures, plus active UDP count. `TUN drops = 0` did not measure per-UDP-flow queue drops.
+- Trigger TCP fast retransmit after three valid duplicate ACKs on outstanding data, rather than always waiting ~500 ms. This is limited loss recovery, not Linux-like congestion control.
+- Preserve explicit failed VPN state when Android unexpectedly destroys `ReceiverVpnService` while active, check revoked permission during the 5-second sender health probe and classify an actual lost sender. Explicit STOP remains graceful. **An OS process kill cannot be reported from dead in-process callbacks**; Android Always-on VPN may also affect system UI behavior.
+
+| Check | Result / evidence |
+| --- | --- |
+| Host protocol/UDP admission/recovery tests | **60 passed**, including [PR CI 38858374352](https://github.com/Eun-si123/DataNetShare/actions/runs/38858374352) |
+| Android JVM unit tests, Lint, APK compile | **Passed** in same PR CI |
+| On-device Android Settings VPN disconnect, sender-first Stop and race | **Not yet verified**; report button/state and system VPN indicator separately |
+| Physical-device loaded latency, FAST.com, Ookla, UDP slot saturation | **Not yet retested**; capture receiver safe diagnostics before/after the same test |
+| Production-grade TCP congestion, IPv6, IP fragment handling and HTTP/3 compatibility | **Not provided by this preview** |
+
+Do not claim that the user's speed has been fixed based solely on JVM tests. Physical retest should note Android Settings VPN indicator, app status after system disconnect, sender watchdog result, current `UDP active`, `UDP capacity reached`, TCP retransmission delta, real down/up speed and loaded RTT. Never share QR codes or passwords.
+
 ## 5.1-dev.10 — stop from UI and sender-first disconnect
 
 **Verification:** [PR CI 38852680309](https://github.com/Eun-si123/DataNetShare/actions/runs/38852680309) passed **55 host socket/protocol/health-policy regression tests**, Android unit tests, lint and debug APK compilation. [Release CI 38852834944](https://github.com/Eun-si123/DataNetShare/actions/runs/38852834944) published the public, debug-signed [v5.1-dev.10](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.10) preview and SHA256SUMS. APK: `DataNetShare-5.1-dev.10-debug.apk` (6,268,492 bytes), SHA-256 `9f3d2c720f19b97ab8d64105557269b1ac4eb1df652f7b7e943e9506373586fc`. Hardware VPN teardown and sender-first disconnect **still require user verification**.
