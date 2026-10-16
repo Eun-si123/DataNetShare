@@ -50,28 +50,34 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='33' versionName='5.1-dev.3'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='34' versionName='5.1-dev.4'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.3-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.4-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.3-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.4-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.3"
+          TAG="v5.1-dev.4"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.3 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.4 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.3-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.4-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### Connection reset diagnosis and route fixes
+          - When the sender is using "mobile-data only", another connected Wi-Fi is *not* used for Internet egress. If mobile data is missing, new connections now report SOCKS network unreachable (3), rather than a generic connection refused.
+          - When "Use Android default route" is selected, the sender no longer unnecessarily requests a separate cellular Network and now displays Android's selected Wi-Fi/VPN/cellular path in stats.
+          - Recent upstream errors appear on the sender; the receiver surfaces recent TCP failure categories to aid diagnosis without logging destinations or passwords.
+          - A multi-megabyte TCP download regression test now exercises speed-test-like traffic.
 
           ### New in this preview
           - Session-scoped QR shown only on an active sender. The receiving app has an in-app camera scanner to fill the sender IP, SOCKS port, and session password.
@@ -103,10 +109,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.3-debug.apk \
+            dist/DataNetShare-5.1-dev.4-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.3 (Android preview)" \
+            --title "DataNet Share 5.1-dev.4 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
