@@ -119,11 +119,15 @@ class MainActivity : AppCompatActivity() {
                 ConnectionAction.START_LOCAL -> startSender(false)
                 ConnectionAction.START_RECEIVER -> startReceiver()
                 ConnectionAction.STOP -> {
-                    // Stop only the running role; the same button is the
-                    // explicit cancel action during startup.
+                    // Match notification STOP: let the active foreground
+                    // service execute its explicit, idempotent cleanup path.
+                    // In particular, the receiver must close its TUN fd and
+                    // revoke the app's VPN routing, not just hide the UI.
                     when (current.mode) {
-                        SessionStore.Mode.SENDER -> stopService(Intent(this, SenderService::class.java))
-                        SessionStore.Mode.RECEIVER -> stopService(Intent(this, ReceiverVpnService::class.java))
+                        SessionStore.Mode.SENDER -> stopRunningService(
+                            Intent(this, SenderService::class.java).setAction(SenderService.ACTION_STOP))
+                        SessionStore.Mode.RECEIVER -> stopRunningService(
+                            Intent(this, ReceiverVpnService::class.java).setAction(ReceiverVpnService.ACTION_STOP))
                         SessionStore.Mode.NONE -> Unit
                     }
                 }
@@ -323,6 +327,18 @@ class MainActivity : AppCompatActivity() {
         val permission = VpnService.prepare(this)
         if (permission == null) launchService(intent) else { form.pendingReceiver = intent; vpnPermission.launch(permission) }
     }
+    private fun stopRunningService(intent: Intent) {
+        try {
+            // The app is visible; the target service is already foregrounded.
+            // Explicit STOP is the same command used by the notification action.
+            startService(intent)
+        } catch (e: Exception) {
+            // Fallback if Android rejects the dispatch during a lifecycle race.
+            stopService(Intent(intent).apply { action = null })
+            showMessage(e.message ?: "Could not send stop command")
+        }
+    }
+
     private fun launchService(intent: Intent) {
         try { ContextCompat.startForegroundService(this, intent) } catch (e: Exception) { showMessage(e.message ?: "Could not start service") }
     }

@@ -1,5 +1,14 @@
 # Changes
 
+## 5.1-dev.10 — 2026-10-16
+
+- Fix a real phone-to-phone shutdown bug: the sender can be stopped first while the receiver continues retrying with Android VPN routing still installed. The receiver now probes the paired, authenticated SOCKS5 endpoint every **5 seconds** and disconnects the VPN after **3 consecutive failures** rather than leaving an Internet black-hole. A single transient failure does not stop the VPN.
+- The Android app's contextual Stop button now dispatches the **same explicit ACTION_STOP service intent** as the persistent notification's Stop button. Both use the receiver's one cleanup path.
+- On receiver Stop, failed startup, Android VPN permission revocation, or peer watchdog expiry, **close the TUN/Android VPN descriptor before cleaning up transport workers**. Previously, blocked TCP/UDP bridge cleanup could delay route removal.
+- Receiver bridge shutdown now iterates ConcurrentHashMap flows directly rather than Kotlin `toList()` snapshots, preventing removal-vs-stop `NoSuchElementException` races.
+- Add deterministic JVM tests for live/wrong-password/offline sender SOCKS5 liveness and consecutive failure threshold. Android UI+VPN teardown and varying OEM settings still need real-device verification.
+- No change to TCP throughput/congestion logic. Android system **Always-on VPN** settings may override app-level stop behavior and must be inspected separately if system UI still shows a persistent VPN.
+
 ## 5.1-dev.9 — 2026-10-16
 
 - Real recipient speed test: 28.6 Mbps download / 17.1 Mbps upload; unloaded RTT 38 ms, loaded RTT 729 ms (download) and 251 ms (upload); jitter 7 ms. This strongly suggests queueing or flow-control pressure under load, but the bottleneck layer is unconfirmed.
