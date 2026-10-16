@@ -1,5 +1,14 @@
 # Changes
 
+## 5.1-dev.3 — 2026-10-16
+
+- Add sender-only active-session QR connection handoff with a strict versioned payload: IPv4 address, proxy port, rotated SOCKS5 password and optional Wi-Fi Direct SSID/passphrase.
+- Add offline in-app camera QR scanning to fill the Android receiver form without typing. Show Wi-Fi details, copy Wi-Fi password and link to Android Wi-Fi settings; do not join Wi-Fi or start a VPN without user action.
+- Reject untrusted/malformed/oversized/unknown-field QR inputs with automated tests; no public deep-link handler, credential logging, or preference storage.
+- Retain the pending VPN permission intent and scanned credentials in an in-memory ViewModel across Activity rotation.
+- QR is **session-scoped, not a one-scan token**. Stop and restart the sender to revoke an old QR. Physical-device camera, Wi-Fi Direct and VPN interoperability tests are still outstanding.
+- Add the ZXing Android Embedded library 4.3.0 (camera permission used only when scanning).
+
 ## 5.1-dev.2 — 2026-10-16
 
 Hotfix preview for Android phone-to-phone receiver startup after a reported `Sender check failed: Could not protect sender socket` on 5.1-dev.1.
