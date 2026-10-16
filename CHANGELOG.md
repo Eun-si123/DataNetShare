@@ -1,5 +1,16 @@
 # Changes
 
+## 5.1-dev.11 — 2026-10-16
+
+Follow-up to a real phone-to-phone 5.1-dev.10 diagnostic report: **113 TCP attempts / 110 SOCKS CONNECT successes, 35 UDP associations, 10 rejects at the fixed 32-UDP-flow cap, 67 TCP retransmissions (one flow exhausted recovery), 0 TUN drops/waits, 72 MB RX / 46 MB TX**. The receiver also had two TCP upload failures and two upstream connection failures. Mobile-data egress was already independently established.
+
+- Increase **bounded receiver UDP association capacity from 32 to 40**, deliberately leaving 8 slots below the sender's 128-client cap with up to 80 TCP flows. Only when admission is full, reclaim 15+-second inactive UDP associations to allow fresh DNS/QUIC connections, instead of waiting for the existing 30-second timeout.
+- Report previously silent UDP queue overflows and relay receive errors. Add a compact active-UDP count to receiver performance telemetry. A zero TUN-drop count does not cover UDP queue losses.
+- Add TCP fast retransmit after **three duplicate ACKs** for an unacknowledged data segment, avoiding the default ~500 ms retransmission timer for that particular loss pattern; it does **not** implement full TCP congestion control or SACK.
+- On unexpected Android `VpnService.onDestroy()` while connected, show a **failed/disconnected** state instead of silently switching to `Ready`. Poll VPN permission during sender health checks to notice cases where local peer protection still works but Android has revoked or replaced the active VPN. Keep explicit user Stop clean. Record revocation/sender disconnection as diagnostic events.
+- Add JVM regression tests covering UDP bounds/eviction/overflow and immediate TCP loss recovery; Android unit/Lint/APK CI guards builds. Physical OEM VPN disconnect events and browser throughput **still require real-phone validation**.
+- Loaded RTT and throughput limits of the home-grown experimental IPv4 TCP stack remain: these changes should not be described as guaranteed speed/latency fixes. Review Android always-on VPN settings if the OS retains a persistent VPN indicator.
+
 ## 5.1-dev.10 — 2026-10-16
 
 - Fix a real phone-to-phone shutdown bug: the sender can be stopped first while the receiver continues retrying with Android VPN routing still installed. The receiver now probes the paired, authenticated SOCKS5 endpoint every **5 seconds** and disconnects the VPN after **3 consecutive failures** rather than leaving an Internet black-hole. A single transient failure does not stop the VPN.
