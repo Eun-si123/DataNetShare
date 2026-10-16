@@ -39,6 +39,30 @@ class UdpFlowTest {
         assertFalse(errors[0].contains("Private destination"))
     }
 
+    @Test fun fullUdpQueueReportsOverflowInsteadOfSilentDrop() {
+        val errors = mutableListOf<String>()
+        val flow = UdpFlow(FlowKey(1, 1025, 2, 53), "127.0.0.1", 1,
+            "test-only", { true }, { true }, {}, {}, {}, {},
+            onError = { errors.add(it) })
+        try {
+            repeat(32) { flow.send(byteArrayOf(it.toByte())) }
+            assertTrue(errors.isEmpty())
+            flow.send(byteArrayOf(0x55))
+            assertEquals(listOf("UDP packet queue full"), errors)
+        } finally { flow.close() }
+    }
+
+    @Test fun expiredUdpFlowMayBeEvictedButNotActiveFlow() {
+        val flow = UdpFlow(FlowKey(1, 1000, 2, 53), "127.0.0.1", 1,
+            "test-only", { true }, { true }, {}, {}, {}, {})
+        try {
+            assertFalse(flow.idleForAtLeast(System.nanoTime(), 15_000_000_000L))
+            assertTrue(flow.idleForAtLeast(System.nanoTime() + 20_000_000_000L, 15_000_000_000L))
+            flow.send(byteArrayOf(1))
+            assertFalse(flow.idleForAtLeast(System.nanoTime(), 15_000_000_000L))
+        } finally { flow.close() }
+    }
+
     @Test fun closeBeforeConnectIsIdempotent() {
         var callbacks = 0
         val flow = UdpFlow(FlowKey(1, 1234, 2, 53), "127.0.0.1", 1, "x", { true }, { true }, {}, {}, {}, { callbacks++ })
