@@ -50,27 +50,33 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='32' versionName='5.1-dev.2'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.1-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.2-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.1-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.2-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.1"
+          TAG="v5.1-dev.2"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.1 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.2 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.1-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.2-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### Fix in this preview
+          - Fix a reported Android receiver startup failure: `Sender check failed: Could not protect sender socket`.
+          - Select/bind the local Wi-Fi socket before calling Android VPN protection for the credential probe, TCP and UDP flows.
+          - Four JVM regression tests cover socket setup and failures. Android device verification remains pending.
 
           ### Implemented
           - Authenticated SOCKS5 TCP/UDP sharing over Wi-Fi Direct, USB tethering, or a private Wi-Fi network.
@@ -90,10 +96,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.1-debug.apk \
+            dist/DataNetShare-5.1-dev.2-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.1 (Android preview)" \
+            --title "DataNet Share 5.1-dev.2 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md

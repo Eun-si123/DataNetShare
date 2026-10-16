@@ -1,5 +1,14 @@
 # Changes
 
+## 5.1-dev.2 — 2026-10-16
+
+Hotfix preview for Android phone-to-phone receiver startup after a reported `Sender check failed: Could not protect sender socket` on 5.1-dev.1.
+
+- Prepare/bind the outbound socket to the selected local Wi-Fi link *before* calling Android `VpnService.protect()`. On some Android implementations, a newly constructed `Socket()` has no kernel file descriptor until a bind/network operation initializes it.
+- Use the same bind-then-protect sequence for sender credential probes, receiver per-flow TCP and UDP control sockets, and UDP relay sockets, before any outgoing connection.
+- Add JVM regression coverage for ordering, refusal and bind failures. Host tests and Android build are necessary but **do not** prove the issue is fixed on a physical phone.
+- Raise development APK versionCode to 32. The debug signing key is still **not stable**, so 5.1-dev.1 may need to be uninstalled before 5.1-dev.2 can install. No APK credentials are backed up.
+
 ## 5.1-dev — 2026-10-16
 
 Development candidate based on upstream v5. The built-in IPv4 receiver remains experimental; real phone-to-phone/OEM/carrier testing is outstanding.
