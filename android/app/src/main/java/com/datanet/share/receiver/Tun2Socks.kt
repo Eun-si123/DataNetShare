@@ -23,14 +23,15 @@ class Tun2Socks(
     private val protectDatagram: (DatagramSocket) -> Boolean,
     private val onFailure: (String) -> Unit,
     private val onStats: (Int, Long, Long) -> Unit,
-    private val onTcpError: (String) -> Unit = {}
+    private val onTcpError: (String) -> Unit = {},
+    private val onUdpError: (String) -> Unit = {}
 ) {
     @Volatile private var running = false
     private val tcp = ConcurrentHashMap<FlowKey, TcpFlow>()
     private val udp = ConcurrentHashMap<FlowKey, UdpFlow>()
     private val rx = AtomicLong(); private val tx = AtomicLong()
     private val tunWriteDrops = AtomicLong()
-    private val reportedDropBatch = AtomicLong()
+    private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
 
     fun start() {
@@ -45,7 +46,7 @@ class Tun2Socks(
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
-                    if (batch > 0 && batch != reportedDropBatch.getAndSet(batch)) {
+                    if ((dropped == 1L || batch > 0) && batch != reportedDropBatch.getAndSet(batch)) {
                         onTcpError("VPN write congestion: $dropped dropped TUN packets")
                     }
                 }
@@ -81,7 +82,7 @@ class Tun2Socks(
         if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
-            if (tcp.size >= 64) return
+            if (tcp.size >= 64) { onTcpError("Receiver TCP capacity reached (64 flows)"); return }
             lateinit var flow: TcpFlow
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
@@ -94,10 +95,11 @@ class Tun2Socks(
         val key = packet.key
         val existing = udp[key]
         if (existing != null) { existing.send(packet.payload); return }
-        if (udp.size >= 32) return
+        if (udp.size >= 32) { onUdpError("Receiver UDP capacity reached (32 flows)"); return }
         lateinit var flow: UdpFlow
         flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
-            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) })
+            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) },
+            onError = onUdpError)
         udp[key] = flow; flow.send(packet.payload)
         Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
     }
