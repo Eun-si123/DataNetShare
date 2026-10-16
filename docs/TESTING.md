@@ -27,6 +27,36 @@ Coverage includes:
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
 - Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
+## 5.1-dev.7 — sender 64-client exhaustion during speed-test attempts
+
+**Grounded physical-device observation:** On the user's sender phone (with cellular-only upstream), the sender reached **64 concurrent connections**, reporting **200 proxy client-capacity rejections** in the new Network diagnostics. The receiving phone could sometimes use FAST.com at ~30 Mbps, but Ookla browser Speedtest still failed with a latency-server connection error. The user has an unlimited 5G plan, which alone does not specify the achievable speed through this app.
+
+**Code-level causes identified:**
+
+1. Sender SOCKS TCP relay removed read timeouts (`soTimeout=0`) and joined a relay direction without an idle expiry. Stale/half-closed keep-alive connections could occupy a semaphore permit indefinitely.
+2. Receiver started a SOCKS5 connection immediately upon an app SYN, *before* the app's final ACK in the TCP handshake. Every retry/half-open session could occupy sender capacity.
+3. Sender and receiver UDP association idle expiry was 120 seconds, allowing many abandoned UDP sessions to consume client slots during DNS/QUIC bursts.
+4. Both sender and receiver had separate 64-concurrent TCP/client caps, with the sender's combined TCP/UDP cap directly observed exhausted.
+
+**Changes in [PR #8](https://github.com/Eun-si123/DataNetShare/pull/8)**, merge SHA `4ca77c15f2c1176e6d164797ed95f46f408ff31d`:
+
+- Wait for client TCP SYN-ACK acknowledgement before dialing sender SOCKS. SOCKS starts only for established client-side TCP.
+- Reclaim sender TCP relays when **no bytes pass in either direction for 45 seconds**, using 2-second socket read timeouts and a shared monotonic timer; return the semaphore slot and increment a safe idle-reclamation diagnostic once per connection. Preserve ordinary TCP half-close/ongoing transfer behavior.
+- Expire *idle* UDP associations after **30 seconds** on both sides, retaining active session updates.
+- Raise bounded sender proxy cap 64→128 and receiver TCP flow cap 64→80. Receiver UDP remains capped at 32; neither thread count nor memory use is unrestricted.
+- Add actual-loopback tests asserting idle slot reclamation (including ability to accept the next connection), preventing orphan SYN from opening a SOCKS socket, and preserving pre-existing large downloads and TCP FIN handling.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Host protocol, IPv4, proxy, QR and relay lifetime regression tests | **45 passed** | [PR CI 38846131295](https://github.com/Eun-si123/DataNetShare/actions/runs/38846131295) |
+| Android unit tests, lint and debug APK build | **Passed** | Same PR CI |
+| Published 5.1-dev.7 release and package/signature verification | [Release workflow 38846357526](https://github.com/Eun-si123/DataNetShare/actions/runs/38846357526) | Verify latest run result |
+| On-device 5.1-dev.7 post-fix FAST.com / Ookla latency / battery / RAM | **Not yet run** | Requires user retest |
+
+**Next device test:** Both phones should run `5.1-dev.7` with a fresh sender session and QR. Record sender active connections and `Sender reached its concurrent-client limit` vs `Sender reclaimed idle TCP connections` after a browser/FAST.com/Ookla test, plus receiver `TCP attempts / connected`, `UDP attempts / associated`, `TUN drops` and diagnostic failure categories. Compare sender-native mobile data speed to receiver VPN speed under similar network conditions rather than assuming any specific minimum from the carrier plan.
+
+**Still open:** A thread-per-relay Kotlin TCP stack is not a production-grade tun2socks. Evaluate a mature implementation behind a feature flag, with license/security/build provenance review and controlled measurements. Avoid claiming that 30 Mbps is fixed or that browser speed-test traffic is fully supported until real-device measurements confirm it.
+
 ## 5.1-dev.6 — observable failures during phone-to-phone speed tests
 
 User-provided real-device evidence (2026-10-16): Chrome repeatedly showed `ERR_CONNECTION_RESET` opening FAST.com; after repeated reload, FAST.com opened but speed stayed `0` with a network/test-server error. Ookla browser Speedtest showed `LATENCY TEST ERROR`. The user confirmed the sending phone's **mobile-data public IP** differed from its simultaneously connected Wi-Fi's public IP, so the sender egress should be investigated as mobile data, not assumed to be the other Wi-Fi. Neither phone displayed the previously advertised `Last ... error` messages, which revealed a coverage and UX problem.
