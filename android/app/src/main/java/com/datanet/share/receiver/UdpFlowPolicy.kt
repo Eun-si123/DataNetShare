@@ -12,6 +12,6 @@ internal object UdpFlowPolicy {
     const val MAX_FLOWS = 40
     const val EVICT_IDLE_NANOS = 15_000_000_000L
 
-    fun shouldEvictAtCapacity(active: Int, idleNanos: Long): Boolean =
-        active >= MAX_FLOWS && idleNanos >= EVICT_IDLE_NANOS
+    fun shouldEvictAtCapacity(active: Int, stale: Boolean): Boolean =
+        active >= MAX_FLOWS && stale
 }
