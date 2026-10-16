@@ -2,6 +2,16 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## Field-loaded latency and safe transport counters (5.1-dev.9)
+
+**User evidence:** Receiver via DataNetShare on a real two-device setup measured download **28.6 Mbps**, upload **17.1 Mbps**, unloaded RTT **38ms**, loaded download RTT **729ms**, loaded upload RTT **251ms**, jitter **7ms**. Sender UI showed 10 normally reclaimed idle TCP relays, no error. Receiver had no recorded errors. A prior sender-native 5G baseline to the VultKR Seoul server was 273.73/37.50 Mbps with 32ms unloaded and 88ms download-loaded RTT; the receiver's exact server for the newer measurement was not provided. These are **not controlled contemporaneous A/B tests**.
+
+Loaded download RTT is ~19.2× unloaded; queue/backpressure is a plausible explanation, **not a localized diagnosis**. A blank error journal is expected for stalls, buffer queues, flow-control limits and successful cleanup; it does not establish healthy traffic.
+
+**Instrumentation change:** receiver aggregate counters now include TCP retransmitted segments, number of nonblocking VPN TUN output wait polls, and cumulative time spent waiting for writable TUN output. They are available in live receiver stats and secret-free clipboard diagnostic text. Normal sender idle cleanup moved from the failure journal into regular sender client/byte activity metrics. This is not a performance fix or proof of native cellular/Wi-Fi Direct queueing.
+
+**Next physical test:** same phone pair, same Ookla destination/server, three paired runs; measure native sender loaded RTT versus receiver VPN loaded RTT. Record before/after deltas for TCP retransmits, TUN waits and milliseconds, TUN drops, TCP attempts/connected, UDP attempts/associated, sender active client peak and client-limit errors. Compare plain SOCKS transfer without TUN and Wi-Fi Direct pure throughput separately to isolate the costly layer. Zero observed waits/retransmits does *not* eliminate cellular or Wi-Fi Direct radio bufferbloat, unscaled TCP window limitations, or userspace ACK overhead.
+
 ## 5.1-dev.8 — one-button Android setup UI and sender stop race
 
 **User UX finding:** The app previously showed three separate Start actions (sender Wi-Fi Direct, sender USB/Wi-Fi, receiver VPN) and an unrelated global Stop control, while both complete sender/receiver forms were visible on one long screen.
