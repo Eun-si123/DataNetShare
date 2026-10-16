@@ -6,7 +6,7 @@
 
 ## 설치
 
-**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.1` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.1-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.2` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.2-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 
@@ -45,6 +45,7 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 
 ## 종료와 문제 해결
 
+- **`Sender check failed: Could not protect sender socket` 오류:** `5.1-dev.1`에서 보고된 소켓 초기화 순서 문제를 `5.1-dev.2`에서 수정했습니다([PR #3](https://github.com/Eun-si123/DataNetShare/pull/3)). 새 버전 설치가 안 된다면 기존 **개발판**을 제거하고 재설치해야 할 수 있습니다(앱 설정 초기화). 실제 기기에서 오류가 사라지는지 추가 검증이 필요합니다. 수정판에서도 반복되면 Android VPN 권한 및 다른 VPN·항상 켜기 VPN 충돌 여부를 확인하세요.
 - **연결 중지** 또는 알림의 **Stop**으로 종료한 뒤 모드를 바꾸세요. 앱을 다시 열어도 진행 중인 상태를 표시합니다.
 - 인증 실패 시 Wi-Fi 암호가 아닌 SOCKS5 암호인지 확인하세요. 재시작하면 새 암호가 생깁니다.
 - Wi-Fi Direct가 BUSY면 다른 공유 앱이나 기존 그룹을 종료한 뒤 다시 시도하세요. 이 앱은 다른 앱의 그룹을 강제로 제거하지 않습니다.
