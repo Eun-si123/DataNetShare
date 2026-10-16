@@ -24,7 +24,7 @@ class DiagnosticJournalTest {
         journal.record(NetworkEvent.UDP_SETUP)
         journal.record(NetworkEvent.TUN_CONGESTION)
         assertFalse(journal.snapshot().contains("TCP upstream"))
-        assertTrue(journal.snapshot().contains("TUN"))
+        assertTrue(journal.snapshot().contains("temporarily congested"))
         journal.clear()
         assertTrue(journal.snapshot().contains("No internal"))
     }
