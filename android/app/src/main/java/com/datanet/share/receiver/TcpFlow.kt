@@ -24,7 +24,8 @@ class TcpFlow(
     private val onRx: (Int) -> Unit,
     private val onTx: (Int) -> Unit,
     private val onClose: () -> Unit,
-    initialSequence: Int = SecureRandom().nextInt()
+    initialSequence: Int = SecureRandom().nextInt(),
+    private val onError: (String) -> Unit = {}
 ) {
     companion object {
         private const val CAPACITY = 65_535
@@ -121,7 +122,27 @@ class TcpFlow(
                     if (!closed) { sendTracked(0x18, buffer.copyOf(count)); onRx(count) }
                 }
             }
-        } catch (_: Exception) { if (!closed) abort() }
+        } catch (e: Exception) {
+            if (!closed) {
+                onError(classifyUpstreamError(e))
+                abort()
+            }
+        }
+    }
+
+    private fun classifyUpstreamError(e: Exception): String {
+        val detail = e.message.orEmpty()
+        // No destination host, user credentials or packet bytes appear in diagnostics.
+        return when {
+            detail.contains("Mobile data", true) -> "Sender mobile-data route unavailable"
+            detail.contains("SOCKS error 3", true) -> "Sender network unreachable (SOCKS 3)"
+            detail.contains("SOCKS error 4", true) -> "Sender destination unreachable (SOCKS 4)"
+            detail.contains("SOCKS error 5", true) -> "Sender upstream connection refused/unavailable (SOCKS 5)"
+            detail.contains("password", true) || detail.contains("authentication", true) -> "Sender proxy authentication failed"
+            detail.contains("protect", true) || detail.contains("local link", true) -> "Receiver local Wi-Fi/VPN socket error"
+            e is java.net.SocketTimeoutException -> "Sender proxy connection timed out"
+            else -> "TCP upstream failed (${e.javaClass.simpleName})"
+        }
     }
 
     private fun writer(remote: Socket) {
@@ -141,16 +162,16 @@ class TcpFlow(
                 output.write(bytes)
                 synchronized(lock) { queuedBytes -= bytes.size; sendAck(); lock.notifyAll() }
             }
-        } catch (_: Exception) { if (!closed) abort() }
+        } catch (e: Exception) { if (!closed) { onError("TCP upload failed (${e.javaClass.simpleName})"); abort() } }
     }
 
     /** Called by the single bridge maintenance thread, including when the upstream reader blocks. */
     fun tick(now: Long = System.nanoTime()) = synchronized(lock) {
         if (closed) return@synchronized
-        if (now - lastActivity > 120_000_000_000L) { abort(); return@synchronized }
+        if (now - lastActivity > 120_000_000_000L) { onError("TCP flow idle timeout"); abort(); return@synchronized }
         val oldest = pending.firstOrNull()
         if (oldest != null && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
-            if (++oldest.attempts > 8) { abort(); return@synchronized }
+            if (++oldest.attempts > 8) { onError("TCP peer did not acknowledge retransmissions"); abort(); return@synchronized }
             oldest.sent = now; emit(oldest)
         }
         if (peerWindow == 0 && now - lastProbe > 1_000_000_000L) {

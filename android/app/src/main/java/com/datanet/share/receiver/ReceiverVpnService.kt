@@ -30,12 +30,14 @@ class ReceiverVpnService : VpnService() {
     private var bridge: Tun2Socks? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var probe: Socket? = null
+    @Volatile private var recentTcpError: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var generation = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
+        recentTcpError = null
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
@@ -80,7 +82,14 @@ class ReceiverVpnService : VpnService() {
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 onFailure = { message -> main.post { if (generation == token) fail(message) } },
-                onStats = { active, rx, tx -> if (generation == token) SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
+                onStats = { active, rx, tx ->
+                    if (generation == token) {
+                        val recent = recentTcpError
+                        SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB" +
+                            if (recent.isNullOrEmpty()) "" else "\nLast TCP error: $recent")
+                    }
+                },
+                onTcpError = { error -> if (generation == token) recentTcpError = error })
                 .also { it.start() }
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))

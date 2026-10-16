@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.3` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.3-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.4` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.4-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,14 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Sender Internet path: mobile data versus Wi-Fi
+
+**Connected to Wi-Fi on the sending phone does not imply Wi-Fi egress.** With **Use Android default route** off (default), DataNet Share explicitly resolves/connects over Android's selected **cellular Network**; if that Network is not available, outbound SOCKS5 requests fail even though the proxy and receiver VPN are connected. The sender displays `Mobile data` or `Waiting for mobile data` and its last upstream failure.
+
+If you want the sending phone's other Wi-Fi connection to be used, stop sharing, enable **Use Android default route**, and restart. The sender now reports the current Android default transport (Wi-Fi, VPN or cellular). The Android default may change on Wi-Fi Direct startup, especially on single-radio/OEM configurations. The app does not guarantee that Wi-Fi Direct and an existing infrastructure Wi-Fi connection can coexist.
+
+An upstream route failure can be translated by the experimental receiver into an ordinary TCP reset reported as `ERR_CONNECTION_RESET`. Read **Last upstream error** on the sender and **Last TCP error** on the receiver to distinguish route, SOCKS authentication, and TCP retransmission failures. The 5.1-dev.4 regression suite additionally checks a continuous 2 MiB+ download; Chrome speed test and actual handset throughput are still not certified.
 
 ## Troubleshooting
 

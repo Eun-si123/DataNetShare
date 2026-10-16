@@ -21,7 +21,8 @@ class Socks5Server(
     private val authPassword: String,
     private val upstream: Upstream,
     private val onStats: (clients: Int, rxBytes: Long, txBytes: Long) -> Unit = { _, _, _ -> },
-    private val onFailure: (String) -> Unit = {}
+    private val onFailure: (String) -> Unit = {},
+    private val onUpstreamFailure: (String) -> Unit = {}
 ) {
     interface Upstream {
         fun connect(host: String, port: Int): Socket
@@ -91,7 +92,22 @@ class Socks5Server(
             when (command) {
                 1 -> {
                     val remote = try { upstream.connect(address.host, address.port) }
-                    catch (_: IOException) { Socks5.reply(output, 5); return }
+                    catch (e: IOException) {
+                        val missingCellular = e.message?.contains("Mobile data is unavailable", true) == true
+                        val replyCode = when {
+                            missingCellular -> 3 // RFC 1928: network unreachable
+                            e is java.net.UnknownHostException -> 4 // host unreachable
+                            else -> 5 // connection refused/unavailable
+                        }
+                        // Do not expose destination names, IPs or session secrets in UI state.
+                        onUpstreamFailure(when (replyCode) {
+                            3 -> "Mobile data unavailable; enable data or select Android default route"
+                            4 -> "DNS/remote host unreachable on selected upstream network"
+                            else -> "Remote TCP connect failed (${e.javaClass.simpleName})"
+                        })
+                        Socks5.reply(output, replyCode)
+                        return
+                    }
                     sockets.add(remote)
                     try {
                         if (!running) return
