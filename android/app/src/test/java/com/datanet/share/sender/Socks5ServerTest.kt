@@ -97,6 +97,34 @@ class Socks5ServerTest {
             }
         }
 
+    @Test fun stopHandlesConnectionsClosingConcurrently() {
+        repeat(3) {
+            ProxyFixture(maxClients = 64).use { fixture ->
+                val sockets = (1..32).map {
+                    Socket("127.0.0.1", fixture.proxy.boundPort).apply {
+                        soTimeout = 3000
+                        // Keep authentication incomplete while the sender stops.
+                        getOutputStream().write(5)
+                    }
+                }
+                try {
+                    val trigger = java.util.concurrent.CountDownLatch(1)
+                    val closer = Thread({
+                        trigger.await()
+                        sockets.forEach { it.close() }
+                    }, "test-concurrent-close").apply { isDaemon = true; start() }
+                    trigger.countDown()
+                    fixture.proxy.stop() // must never throw NoSuchElementException
+                    closer.join(3000)
+                    assertFalse("concurrent close thread stalled", closer.isAlive)
+                } finally {
+                    sockets.forEach { it.close() }
+                }
+            }
+        }
+        Unit
+    }
+
     @Test fun activeTcpUpstreamIsClosedByStop() = ProxyFixture().use { fixture ->
         ServerSocket(0).use { destination ->
             fixture.client().use { client ->
