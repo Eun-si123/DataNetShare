@@ -16,4 +16,4 @@ dependencies {
     // Exercise the same QR bitstream codec used by the Android scanner/encoder.
     testImplementation("com.google.zxing:core:3.4.1")
 }
-tasks.test { testLogging { events("passed", "failed", "skipped") } }
+tasks.test { testLogging { events("passed", "failed", "skipped"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL } }
