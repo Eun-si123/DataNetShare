@@ -21,6 +21,7 @@ import com.datanet.share.common.NetworkEvent
 import com.datanet.share.common.ServiceNotifications
 import com.datanet.share.common.SessionStore
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicLong
 
 class SenderService : Service() {
     companion object {
@@ -35,6 +36,7 @@ class SenderService : Service() {
     private var observer: Observer<WifiDirectHost.State>? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var defaultRoute = false
+    private val idleReclaimed = AtomicLong()
     @Volatile private var recentUpstreamFailure: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var session = 0
@@ -53,6 +55,7 @@ class SenderService : Service() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Sender").apply { acquire() }
             defaultRoute = intent?.getBooleanExtra(EXTRA_DEFAULT_ROUTE, false) ?: false
             recentUpstreamFailure = null
+            idleReclaimed.set(0)
             // Do not hold a cellular network up when the user explicitly selected Android routing.
             if (!defaultRoute) CellularNetworkTracker.start(this)
             val token = ++session
@@ -86,13 +89,16 @@ class SenderService : Service() {
                 if (token == session) {
                     val route = if (defaultRoute) describeDefaultRoute() else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
                     val recent = recentUpstreamFailure
+                    val idleCount = idleReclaimed.get()
+                    SessionStore.telemetry.postValue("Sender clients $clients · RX $rx B · TX $tx B · idle TCP reclaimed $idleCount")
                     SessionStore.stats.postValue("$clients connection(s) · ${FormatBytes.formatRxTx(rx, tx)}\n$route" +
+                        (if (idleCount == 0L) "" else "\nIdle TCP connections cleaned up: $idleCount") +
                         (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
                 }
             }, onFailure = { error -> main.post { if (token == session) fail(error) } },
             onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
             onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) },
-            onIdleClose = { if (token == session) SessionStore.note(NetworkEvent.SENDER_IDLE_RECLAIMED) })
+            onIdleClose = { if (token == session) idleReclaimed.incrementAndGet() })
         socks = server
         try {
             server.start()
