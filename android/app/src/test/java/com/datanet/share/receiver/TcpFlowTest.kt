@@ -92,6 +92,62 @@ class TcpFlowTest {
             assertEquals(101, packets.poll(1, TimeUnit.SECONDS)!!.acknowledgement)
         } finally { flow.close() }
     }
+    /**
+     * Browser speed tests transfer far more than the small half-close fixture.
+     * Simulate a continuous multi-megabyte download with explicit app TCP ACKs,
+     * checking every byte and confirming a clean remote FIN without RST.
+     */
+    @Test fun sustainedMultiMegabyteDownloadDoesNotResetOrCorrupt() = ProxyFixture().use { fixture ->
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+            val payload = ByteArray(2_097_177) { ((it * 31 + it / 257) and 255).toByte() }
+            val senderFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            Thread({
+                try {
+                    server.accept().use { remote ->
+                        remote.getOutputStream().write(payload)
+                    }
+                } catch (e: Throwable) { senderFailure.set(e) }
+            }, "test-large-download").apply { isDaemon = true; start() }
+            val key = FlowKey(0x0a000001, 28333, 0x7f000001, server.localPort)
+            val packets = LinkedBlockingQueue<Ipv4Packet>()
+            val errors = LinkedBlockingQueue<String>()
+            val flow = TcpFlow(key, 9000, "127.0.0.1", fixture.proxy.boundPort,
+                fixture.password, { true },
+                { bytes -> packets.add(Ipv4Packet.parse(bytes)!!) },
+                {}, {}, {}, initialSequence = 1000,
+                onError = { errors.add(it) })
+            try {
+                flow.start()
+                val syn = packets.poll(2, TimeUnit.SECONDS)!!
+                assertEquals(0x12, syn.flags)
+                var acknowledged = syn.sequence + 1
+                flow.receive(incoming(key, 9001, acknowledged, window = 32768))
+                Thread({ flow.openUpstream() }, "test-large-upstream").apply { isDaemon = true; start() }
+                val result = java.io.ByteArrayOutputStream(payload.size)
+                var fin = false
+                val deadline = System.nanoTime() + 15_000_000_000L
+                while (!fin && System.nanoTime() < deadline) {
+                    val packet = packets.poll(100, TimeUnit.MILLISECONDS)
+                    if (packet == null) { flow.tick(); continue }
+                    assertEquals("unexpected TCP RST during sustained download", 0,
+                        packet.flags and 4)
+                    if (packet.payload.isEmpty() && packet.flags and 1 == 0) continue
+                    assertEquals("broken sequence during sustained download", acknowledged,
+                        packet.sequence)
+                    result.write(packet.payload)
+                    acknowledged += packet.payload.size
+                    if (packet.flags and 1 != 0) { acknowledged++; fin = true }
+                    flow.receive(incoming(key, 9001, acknowledged, window = 32768))
+                    flow.tick()
+                }
+                assertTrue("remote FIN not received within test window", fin)
+                assertArrayEquals(payload, result.toByteArray())
+                assertNull("upstream server failed", senderFailure.get())
+                assertTrue("flow errors: $errors", errors.isEmpty())
+            } finally { flow.close() }
+        }
+    }
+
     @Test fun zeroReceiveWindowPausesDownloadsUntilWindowUpdate() = ProxyFixture().use { fixture ->
         ServerSocket(0).use { destination ->
             Thread({ destination.accept().use { it.getOutputStream().write(ByteArray(2048) { 7 }) } }, "test-window").apply { isDaemon = true; start() }
