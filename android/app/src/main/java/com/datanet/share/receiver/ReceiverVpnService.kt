@@ -156,9 +156,13 @@ class ReceiverVpnService : VpnService() {
                 if (generation != token) break
                 // A protected peer probe may still succeed over Wi-Fi Direct
                 // even after Android has replaced/revoked this app's system VPN.
-                if (prepare(this) != null) {
+                val permissionLost = try { prepare(this) != null } catch (_: Exception) { true }
+                if (permissionLost) {
                     main.post {
-                        if (generation == token) fail("Android VPN permission was revoked or another VPN replaced it.")
+                        if (generation == token) {
+                            SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
+                            fail("Android VPN permission was revoked or another VPN replaced it.")
+                        }
                     }
                     break
                 }
@@ -171,6 +175,7 @@ class ReceiverVpnService : VpnService() {
                 if (policy.observe(alive)) {
                     main.post {
                         if (generation == token && SessionStore.current.mode == SessionStore.Mode.RECEIVER) {
+                            SessionStore.note(NetworkEvent.SENDER_DISCONNECTED)
                             fail("Sender disconnected or unreachable. Receiver VPN was stopped; reconnect when sharing resumes.")
                         }
                     }
@@ -218,5 +223,8 @@ class ReceiverVpnService : VpnService() {
         }
         super.onDestroy()
     }
-    override fun onRevoke() { fail("Android revoked this VPN connection") }
+    override fun onRevoke() {
+        SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
+        fail("Android revoked this VPN connection")
+    }
 }
