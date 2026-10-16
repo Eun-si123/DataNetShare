@@ -1,5 +1,14 @@
 # Changes
 
+## 5.1-dev.4 — 2026-10-16
+
+- Investigate user-observed `ERR_CONNECTION_RESET` during phone-to-phone browser speed tests with the sender simultaneously joined to another Wi-Fi network.
+- Clarify and report the selected upstream: default stays **cellular-only** regardless of connected Wi-Fi; explicit `Use Android default route` follows Android's actual Wi-Fi/VPN/cellular choice and no longer unnecessarily maintains a separate cellular request.
+- Return SOCKS5 network-unreachable (code 3) for absent sender mobile-data routing and host-unreachable (code 4) for DNS resolution failure rather than lumping all failures into generic code 5.
+- Display a sanitized recent upstream failure on the sender and recent TCP failure/reset/retransmission category on the receiver, without logging requested destination addresses or secrets.
+- Add a 2 MiB+ continuous TCP transfer regression, plus explicit no-cellular SOCKS reply coverage; prior loopback protocol/QR tests remain in CI.
+- Real Android networking, browser/Speedtest compatibility and true Wi-Fi Direct plus infrastructure Wi-Fi coexistence **still require user hardware verification**.
+
 ## 5.1-dev.3 — 2026-10-16
 
 - Add sender-only active-session QR connection handoff with a strict versioned payload: IPv4 address, proxy port, rotated SOCKS5 password and optional Wi-Fi Direct SSID/passphrase.
