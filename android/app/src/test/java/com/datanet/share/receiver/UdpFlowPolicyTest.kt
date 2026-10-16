@@ -9,10 +9,9 @@ class UdpFlowPolicyTest {
         assertTrue(80 + UdpFlowPolicy.MAX_FLOWS < 128)
     }
     @Test fun onlyReclaimSubstantiallyIdleFlowsWhenFull() {
-        val age = UdpFlowPolicy.EVICT_IDLE_NANOS
-        assertFalse(UdpFlowPolicy.shouldEvictAtCapacity(39, age + 1))
-        assertFalse(UdpFlowPolicy.shouldEvictAtCapacity(40, age - 1))
-        assertTrue(UdpFlowPolicy.shouldEvictAtCapacity(40, age))
-        assertTrue(UdpFlowPolicy.shouldEvictAtCapacity(41, age + 1))
+        assertFalse(UdpFlowPolicy.shouldEvictAtCapacity(39, true))
+        assertFalse(UdpFlowPolicy.shouldEvictAtCapacity(40, false))
+        assertTrue(UdpFlowPolicy.shouldEvictAtCapacity(40, true))
+        assertTrue(UdpFlowPolicy.shouldEvictAtCapacity(41, true))
     }
 }
