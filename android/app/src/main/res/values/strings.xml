@@ -52,4 +52,17 @@
     <string name="diagnostic_status_help">During a connection, network failures appear here even if the VPN stays connected. No private IPs, QR codes, or passwords are included. An empty record is not proof of Internet connectivity.</string>
     <string name="copy_safe_diagnostics">Copy safe diagnostics</string>
     <string name="diagnostics_copied">Diagnostic categories copied (without connection secrets)</string>
+    <string name="select_role">What would you like to do?</string>
+    <string name="role_share">Share this phone</string>
+    <string name="role_receive">Use shared data</string>
+    <string name="sender_mode_label">Connection method</string>
+    <string name="transport_direct">Wi-Fi Direct · another phone</string>
+    <string name="transport_local">USB / existing Wi-Fi · advanced</string>
+    <string name="cancel_connect">Cancel connection</string>
+    <string name="advanced_show">Advanced connection settings ▼</string>
+    <string name="advanced_hide">Hide advanced settings ▲</string>
+    <string name="manual_show">Enter address and password manually ▼</string>
+    <string name="manual_hide">Hide manual connection fields ▲</string>
+    <string name="qr_not_scanned">Scan a QR code to fill in the connection details.</string>
+    <string name="qr_ready">Connection details imported. Join the sender Wi-Fi, then tap Start.</string>
 </resources>
