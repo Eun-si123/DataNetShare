@@ -181,6 +181,46 @@ class TcpFlowTest {
         }
     }
 
+    @Test fun tripleDuplicateAckTriggersFastRetransmitBeforeRto() = ProxyFixture().use { fixture ->
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+            Thread({
+                server.accept().use { socket ->
+                    socket.getOutputStream().write(ByteArray(5000) { (it and 255).toByte() })
+                    socket.getOutputStream().flush()
+                }
+            }, "test-fast-retransmit").apply { isDaemon = true; start() }
+            val key = FlowKey(0x0a000001, 47231, 0x7f000001, server.localPort)
+            val packets = LinkedBlockingQueue<Ipv4Packet>()
+            val count = java.util.concurrent.atomic.AtomicInteger()
+            val flow = TcpFlow(key, 1000, "127.0.0.1", fixture.proxy.boundPort,
+                fixture.password, { true }, { packets.add(Ipv4Packet.parse(it)!!) },
+                {}, {}, {}, initialSequence = 5000,
+                onRetransmit = { count.incrementAndGet() })
+            try {
+                flow.start()
+                assertEquals(0x12, packets.poll(2, TimeUnit.SECONDS)!!.flags)
+                flow.receive(incoming(key, 1001, 5001, window = 32768))
+                Thread({ flow.openUpstream() }, "test-fast-upstream").apply { isDaemon = true; start() }
+                val first = packets.poll(5, TimeUnit.SECONDS)!!
+                assertTrue("expected upstream data", first.payload.isNotEmpty())
+                val before = count.get()
+                repeat(2) { flow.receive(incoming(key, 1001, 5001, window = 32768)) }
+                assertEquals("do not fast-retransmit before third duplicate ACK", before, count.get())
+                flow.receive(incoming(key, 1001, 5001, window = 32768))
+                assertEquals(before + 1, count.get())
+                val sent = mutableListOf<Ipv4Packet>()
+                val deadline = System.nanoTime() + 2_000_000_000L
+                while (System.nanoTime() < deadline && sent.none {
+                    it.sequence == first.sequence && it.payload.contentEquals(first.payload)
+                }) {
+                    packets.poll(100, TimeUnit.MILLISECONDS)?.let(sent::add)
+                }
+                assertTrue("lost segment must be retransmitted immediately",
+                    sent.any { it.sequence == first.sequence && it.payload.contentEquals(first.payload) })
+            } finally { flow.close() }
+        }
+    }
+
     @Test fun zeroReceiveWindowPausesDownloadsUntilWindowUpdate() = ProxyFixture().use { fixture ->
         ServerSocket(0).use { destination ->
             Thread({ destination.accept().use { it.getOutputStream().write(ByteArray(2048) { 7 }) } }, "test-window").apply { isDaemon = true; start() }
