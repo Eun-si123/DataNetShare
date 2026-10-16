@@ -6,7 +6,11 @@
 
 ## 설치
 
-[GitHub Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml)에서 유지보수 브랜치의 성공한 실행을 열고, `datanetshare-debug-apk` 파일을 다운로드해 압축을 푼 뒤 `app-debug.apk`를 설치하세요. GitHub 로그인이 필요할 수 있으며 파일은 보관 기간 후 만료됩니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.1` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.1-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+
+**주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
+
+**개발 빌드:** 별도로 [GitHub Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml)의 성공한 실행에서 `datanetshare-debug-apk` 파일을 다운로드·압축 해제하여 `app-debug.apk`를 설치할 수도 있습니다. 해당 CI 파일은 보관 기간 후 만료됩니다.
 
 개발판 패키지는 **`com.datanet.share.dev`**라 기존 앱과 함께 설치할 수 있습니다. 원본 Releases의 APK는 이번 개선 코드를 포함한 빌드가 아닐 수 있습니다. 서로 다른 빌드 환경의 디버그 서명은 다를 수 있어 업데이트 설치가 거부될 수 있습니다. 반복 설치에는 같은 환경의 서명 키를 쓰는 편이 좋습니다.
 
