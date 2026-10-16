@@ -85,11 +85,14 @@ class ReceiverVpnService : VpnService() {
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 onFailure = { message -> main.post { if (generation == token) fail(message) } },
-                onStats = { active, rx, tx ->
+                onStats = { metrics ->
                     if (generation == token) {
                         val tcpError = recentTcpError
                         val udpError = recentUdpError
-                        SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB" +
+                        SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
+                            "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
+                            " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected}" +
+                            " · TUN drops ${metrics.tunDropped}" +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))
                     }
