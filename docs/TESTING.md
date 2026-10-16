@@ -2,6 +2,31 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.10 — stop from UI and sender-first disconnect
+
+**Reported by real-device user:** Stopping **sender first** caused the receiver to keep trying to reach the Internet via its still-installed VPN. Receiver's single in-app Stop button did not recover the situation, while the notification STOP action could stop the service but the Android VPN indicator sometimes remained visible.
+
+**Findings in current sources:**
+- `ReceiverVpnService` did only a one-time sender SOCKS5 probe before TUN establishment; no sender liveness detection existed afterwards.
+- `MainActivity` called `stopService()` for its red Stop button, while notification STOP uses `ACTION_STOP`; behavior was inconsistent across lifecycle states.
+- `ReceiverVpnService.cleanup()` stopped all TCP/UDP flow workers **before** closing the VPN descriptor, which could leave Android routes active while workers were blocked.
+- `Tun2Socks.stop()` used `tcp.values.toList()` and `udp.values.toList()` against concurrently mutating maps, the same pattern known to race in the sender's earlier Stop path.
+
+**Implementation:**
+- A protected, locally bound, authenticated SOCKS5 health probe runs every 5 seconds after the receiver TUN is started; three consecutive misses cause a fail-closed receiver shutdown with visible sender-disconnected message. Individual success resets the miss counter; no destination traffic is generated.
+- In-app Stop dispatches the same `ACTION_STOP` as the notification Stop, for both roles. The receiver's cleanup invalidates generation callbacks, interrupts peer monitoring, **closes its TUN file descriptor first**, then stops flow workers and foreground service. `Tun2Socks.stop()` uses weakly consistent ConcurrentHashMap iteration, not `toList()`.
+- Loopback SOCKS5 regression tests cover correct password (healthy), wrong password (not healthy), closed sender listener (not healthy), protection denied, consecutive failure threshold/reset; existing host protocol tests and Android tests/lint must pass.
+
+**Required real-device acceptance:**
+1. Two phones installed with the same new preview; start sharing and receiver VPN, browse normally, ensure watchdog does not drop a healthy session.
+2. **Stop the sender first**; the receiver should show `Sender disconnected or unreachable` after consecutive heartbeat failures and **its Android VPN should disappear** without notification actions.
+3. Reconnect. Stop the receiver from the in-app red button; confirm foreground notification and VPN indicator disappear and normal Internet access resumes. Repeat while the receiver is still `Starting`.
+4. Repeat stopping via notification STOP and switching sender/receiver roles; verify no stale VPN state or crash during dozens of active flows.
+5. Enable/disable the Android system **Always-on VPN** and **Block connections without VPN** settings separately to distinguish an OS-enforced persistent VPN from an app-owned descriptor leak.
+6. Reconnect after a short Wi-Fi stall to ensure a single missed heartbeat does not trigger auto-disconnect; sustained disconnect should fail closed rather than black-holing users.
+
+**Limitations:** Android radio scheduling and real Wi-Fi Direct drops cannot be reproduced by local JVM tests; authentication probes may fail if the sender is heavily saturated even while physically nearby, so three consecutive misses are deliberately required. No hardware success or throughput improvement has been claimed.
+
 ## Field-loaded latency and safe transport counters (5.1-dev.9)
 
 **User evidence:** Receiver via DataNetShare on a real two-device setup measured download **28.6 Mbps**, upload **17.1 Mbps**, unloaded RTT **38ms**, loaded download RTT **729ms**, loaded upload RTT **251ms**, jitter **7ms**. Sender UI showed 10 normally reclaimed idle TCP relays, no error. Receiver had no recorded errors. A prior sender-native 5G baseline to the VultKR Seoul server was 273.73/37.50 Mbps with 32ms unloaded and 88ms download-loaded RTT; the receiver's exact server for the newer measurement was not provided. These are **not controlled contemporaneous A/B tests**.
