@@ -89,10 +89,18 @@ class ReceiverVpnService : VpnService() {
                     if (generation == token) {
                         val tcpError = recentTcpError
                         val udpError = recentUdpError
+                        val perf = "TCP retransmits ${metrics.tcpRetransmits}" +
+                            " · TUN waits ${metrics.tunWriteWaits} (${metrics.tunWriteWaitMs} ms total)"
+                        SessionStore.telemetry.postValue(
+                            "Receiver TCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
+                            "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected}" +
+                            "\nTUN drops ${metrics.tunDropped} · $perf" +
+                            "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B")
                         SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
                             "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected}" +
                             " · TUN drops ${metrics.tunDropped}" +
+                            "\n$perf" +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))
                     }
