@@ -1,0 +1,99 @@
+name: Publish Android preview APK
+
+# A one-time, source-bound prerelease. Future previews require a deliberate dispatch
+# or a new workflow revision. Never treat a debug APK as a stable signed release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: datanetshare-preview-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+      - name: Install Android SDK 34
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
+          test -n "$SDK_MANAGER"
+          "$SDK_MANAGER" --install 'platforms;android-34' 'build-tools;34.0.0'
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+      - name: Run real host protocol/relay tests
+        run: gradle -p proxy-tests test --no-daemon
+      - name: Run Android unit tests, lint, and build
+        run: gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+      - name: Check package and signature, prepare assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          SIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
+          "$SIGNER" verify --verbose --print-certs "$APK"
+          mkdir -p dist
+          cp "$APK" dist/DataNetShare-5.1-dev.1-debug.apk
+          cd dist
+          sha256sum DataNetShare-5.1-dev.1-debug.apk > SHA256SUMS.txt
+      - name: Publish immutable GitHub prerelease with direct APK download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v5.1-dev.1"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists; refusing to replace a published APK"
+            exit 1
+          fi
+          cat > release-notes.md <<'NOTES'
+          ## DataNet Share 5.1-dev.1 — Android preview (not a stable release)
+
+          **Download:** `DataNetShare-5.1-dev.1-debug.apk` in Assets below (not Source code ZIP).
+          Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### Implemented
+          - Authenticated SOCKS5 TCP/UDP sharing over Wi-Fi Direct, USB tethering, or a private Wi-Fi network.
+          - Mobile-data-only egress by default; optional Android default route for explicit existing-VPN use.
+          - Experimental Android IPv4 receiver and Korean UI/help.
+          - Host protocol tests, Android JVM tests, lint and APK build checked before release.
+
+          ### Known limitations and security
+          - **Real Android-to-Android, OEM, Wi-Fi Direct, battery, and carrier tests are still pending.** Expect connection failures on some devices/networks.
+          - Receiver lacks IPv6, ICMP, IP fragment reassembly, and complete TCP interoperability; some games/apps may fail.
+          - SOCKS5 authentication is **not encryption**; use a trusted private network or USB. No carrier-tethering-bypass or VPN kill-switch guarantee.
+          - **Debug signing key is generated on the CI runner.** A later APK may have a different certificate and require uninstall/reinstall, losing app settings. This is not an update-stable public release.
+          - Release APK uses `com.datanet.share.dev` and does not replace the original upstream app.
+
+          See [Korean install guide](https://github.com/Eun-si123/DataNetShare/blob/main/docs/README.ko.md), [test matrix](https://github.com/Eun-si123/DataNetShare/blob/main/docs/TESTING.md), and [security notes](https://github.com/Eun-si123/DataNetShare/blob/main/docs/SECURITY-REVIEW.md).
+
+          **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
+          NOTES
+          gh release create "$TAG" \
+            dist/DataNetShare-5.1-dev.1-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "DataNet Share 5.1-dev.1 (Android preview)" \
+            --prerelease \
+            --notes-file release-notes.md
