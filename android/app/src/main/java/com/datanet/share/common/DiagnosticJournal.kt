@@ -21,6 +21,7 @@ enum class NetworkEvent(val description: String) {
     TUN_CONGESTION("VPN tunnel output temporarily congested"),
     TUN_PACKET("VPN packet loop failed"),
     VPN_SERVICE_ENDED("Receiver VPN service unexpectedly ended"),
+    SENDER_DISCONNECTED("Paired sender disconnected or became unreachable"),
 }
 
 class DiagnosticJournal(private val maxKinds: Int = 12) {
