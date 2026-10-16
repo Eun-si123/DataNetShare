@@ -50,28 +50,36 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='40' versionName='5.1-dev.10'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='41' versionName='5.1-dev.11'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.10-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.11-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.10-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.11-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.10"
+          TAG="v5.1-dev.11"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.10 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.11 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.10-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.11-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### UDP capacity, TCP recovery and unexpected VPN shutdown handling
+          - User device telemetry on 5.1-dev.10 showed 10 rejected UDP flows at the previous 32-association cap, 67 TCP retransmissions, one retransmission exhaustion, and two TCP upload failures with zero TUN drops.
+          - Raise receiver UDP capacity from 32 to a **bounded 40**, leaving eight sender SOCKS5 slots free under peak 80 TCP + 40 UDP. When full, reclaim UDP flows idle for 15+ seconds before rejecting a new flow.
+          - Stop silently dropping UDP packets when a flow's outgoing queue is full; record a sanitized queue-overflow diagnostic. Report unexpected UDP relay read errors.
+          - Retransmit oldest outstanding TCP data after three duplicate ACKs rather than always waiting for the 500 ms timeout; no congestion-control equivalence to a full TCP stack is implied.
+          - If Android destroys the receiver VPN service without a user Stop, preserve a visible failure status rather than reverting silently to Ready. The sender watchdog also detects revoked VPN consent and preserves an error category.
+          - Automatic protocol and application builds do **not** validate unexpected OS process kills, full system VPN state transitions or physical-device speed improvements.
 
           ### Receiver stop and sender disconnect safety
           - The app's single Stop button now sends the same explicit STOP service action as the foreground notification, including while starting.
@@ -90,7 +98,7 @@ jobs:
           ### Sender stop race fixed during publish verification
           - Prevent a rare NoSuchElementException when client sockets disconnect while the sender enumerates and closes SOCKS5 connections on Stop.
           - Iterate ConcurrentHashMap-backed client socket and UDP association sets directly, rather than taking a Kotlin size-based toList() snapshot during concurrent removal.
-          - Add a concurrent-stop regression test and keep the same v5.1-dev.10 APK version because the previous publication failed before a release was created.
+          - Add a concurrent-stop regression test and keep the same v5.1-dev.11 APK version because the previous publication failed before a release was created.
 
           ### Simpler connection controls and progressive setup
           - Replace three separate start buttons and the detached Stop button with one contextual Connect/Cancel/Disconnect button for both sender and receiver.
@@ -112,7 +120,7 @@ jobs:
           - Errors are visible even while the sender or VPN stays in the Connected state. An empty log does not prove that browsing or speed tests work.
           - Regression coverage includes journal concurrency/capacity/privacy and formerly swallowed UDP setup failures.
 
-          ### TCP transport improvements in 5.1-dev.10
+          ### TCP transport improvements in 5.1-dev.11
           - Advertise an explicit 1200-byte MSS in the receiver's TCP SYN-ACK to prevent peer fallback to smaller default segments; preserve checksum and retransmission behavior.
           - Retry congested nonblocking VPN TUN writes for a bounded period instead of immediately discarding on first EAGAIN or EINTR.
           - Unit tests assert TCP MSS option, IPv4/TCP checksums, matching SYN retransmission, and bounded TUN write retries.
@@ -154,10 +162,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.10-debug.apk \
+            dist/DataNetShare-5.1-dev.11-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.10 (Android preview)" \
+            --title "DataNet Share 5.1-dev.11 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
