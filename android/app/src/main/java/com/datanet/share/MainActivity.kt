@@ -125,6 +125,15 @@ class MainActivity : AppCompatActivity() {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("DataNet Share", text))
             showMessage(getString(R.string.copied))
         }
+        findViewById<Button>(R.id.btnCopyDiagnostics).setOnClickListener {
+            // Do not copy network endpoints, QR, Wi-Fi/SOCKS5 credentials or URLs.
+            val snapshot = SessionStore.diagnostics.value.orEmpty()
+            val role = SessionStore.current.mode.name
+            val safeText = "DataNetShare Dev ${packageManager.getPackageInfo(packageName, 0).versionName}\nRole: $role\n$snapshot"
+            getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("DataNetShare diagnostics", safeText))
+            showMessage(getString(R.string.diagnostics_copied))
+        }
         findViewById<Button>(R.id.btnDiagnostics).setOnClickListener {
             val panel = findViewById<View>(R.id.diagnosticsPanel)
             panel.visibility = if (panel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -142,6 +151,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_label, version)
         SessionStore.state.observe(this) { state -> render(state) }
         SessionStore.stats.observe(this) { text -> findViewById<TextView>(R.id.statsText).text = text }
+        SessionStore.diagnostics.observe(this) { text -> findViewById<TextView>(R.id.diagnosticSummary).text = text }
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
