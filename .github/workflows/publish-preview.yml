@@ -98,7 +98,7 @@ jobs:
           ### Sender stop race fixed during publish verification
           - Prevent a rare NoSuchElementException when client sockets disconnect while the sender enumerates and closes SOCKS5 connections on Stop.
           - Iterate ConcurrentHashMap-backed client socket and UDP association sets directly, rather than taking a Kotlin size-based toList() snapshot during concurrent removal.
-          - Add a concurrent-stop regression test and keep the same v5.1-dev.11 APK version because the previous publication failed before a release was created.
+          - Add a concurrent-stop regression test and keep the same v5.1-dev.10 APK version because the previous publication failed before a release was created.
 
           ### Simpler connection controls and progressive setup
           - Replace three separate start buttons and the detached Stop button with one contextual Connect/Cancel/Disconnect button for both sender and receiver.
@@ -120,7 +120,7 @@ jobs:
           - Errors are visible even while the sender or VPN stays in the Connected state. An empty log does not prove that browsing or speed tests work.
           - Regression coverage includes journal concurrency/capacity/privacy and formerly swallowed UDP setup failures.
 
-          ### TCP transport improvements in 5.1-dev.11
+          ### TCP transport improvements first introduced in 5.1-dev.5
           - Advertise an explicit 1200-byte MSS in the receiver's TCP SYN-ACK to prevent peer fallback to smaller default segments; preserve checksum and retransmission behavior.
           - Retry congested nonblocking VPN TUN writes for a bounded period instead of immediately discarding on first EAGAIN or EINTR.
           - Unit tests assert TCP MSS option, IPv4/TCP checksums, matching SYN retransmission, and bounded TUN write retries.
