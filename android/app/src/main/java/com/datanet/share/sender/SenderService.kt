@@ -90,7 +90,8 @@ class SenderService : Service() {
                         (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
                 }
             }, onFailure = { error -> main.post { if (token == session) fail(error) } },
-            onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } })
+            onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
+            onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) })
         socks = server
         try {
             server.start()
