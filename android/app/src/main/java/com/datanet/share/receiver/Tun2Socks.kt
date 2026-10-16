@@ -29,6 +29,7 @@ class Tun2Socks(
     private val tcp = ConcurrentHashMap<FlowKey, TcpFlow>()
     private val udp = ConcurrentHashMap<FlowKey, UdpFlow>()
     private val rx = AtomicLong(); private val tx = AtomicLong()
+    private val tunWriteDrops = AtomicLong()
     private val writeLock = Any()
 
     fun start() {
@@ -38,7 +39,12 @@ class Tun2Socks(
             while (running) {
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
                 tcp.values.forEach { it.tick() }
-                if (running) onStats(tcp.size, rx.get(), tx.get())
+                if (running) {
+                    onStats(tcp.size, rx.get(), tx.get())
+                    // Non-sensitive congestion telemetry; avoid printing destination addresses.
+                    val dropped = tunWriteDrops.get()
+                    if (dropped > 0 && dropped % 50L == 0L) onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                }
             }
         }, "tun-maintenance").apply { isDaemon = true; start() }
     }
@@ -94,14 +100,31 @@ class Tun2Socks(
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {
         if (!running) return@synchronized
         try {
-            val written = Os.write(tunFd, ByteBuffer.wrap(packet))
-            check(written == packet.size) { "Incomplete VPN packet write" }
-        } catch (e: ErrnoException) {
-            // A full nonblocking TUN queue is packet loss, not a dead interface.
-            // TCP keeps unacknowledged packets for retransmission; UDP is best effort.
-            if (e.errno != OsConstants.EAGAIN && e.errno != OsConstants.EINTR && running) {
-                running = false; onFailure("VPN packet write failed: ${e.message}")
-            }
-        } catch (e: Exception) { if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") } }
+            val delivered = TunWriteRetry.attempt(
+                write = {
+                    try {
+                        val written = Os.write(tunFd, ByteBuffer.wrap(packet))
+                        when (written) {
+                            packet.size -> true
+                            0 -> false
+                            else -> error("Incomplete VPN packet write: $written / ${packet.size}")
+                        }
+                    } catch (e: ErrnoException) {
+                        if (e.errno == OsConstants.EAGAIN || e.errno == OsConstants.EINTR) false
+                        else throw e
+                    }
+                },
+                awaitWritable = {
+                    val waiting = StructPollfd().apply { fd = tunFd; events = OsConstants.POLLOUT.toShort() }
+                    Os.poll(arrayOf(waiting), 20) > 0 &&
+                        waiting.revents.toInt() and OsConstants.POLLOUT != 0
+                }
+            )
+            // When the queue stays full, only this datagram is dropped. TCP
+            // retransmission can recover; never block the single TUN reader forever.
+            if (!delivered) tunWriteDrops.incrementAndGet()
+        } catch (e: Exception) {
+            if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") }
+        }
     }
 }
