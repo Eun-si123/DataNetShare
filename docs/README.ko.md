@@ -6,7 +6,7 @@
 
 ## 설치
 
-**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.8` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.5-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.9` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.5-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 
@@ -51,6 +51,14 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 4. 진단 메뉴에서 UDP 도달성 테스트를 할 수 있습니다. 외부 Google STUN 서버에 접속하는 검사이므로 실패했다고 모든 UDP 통신이 안 되는 것은 아닙니다.
 
 내장 수신기는 IPv4 TCP·UDP용이며 IPv6·ICMP·IP 조각 재조립은 지원하지 않습니다. 게임·영상·장시간 연결의 기기별 실사용 검증이 남아 있으므로, 넓은 호환성이 필요하면 검증된 SOCKS5 지원 외부 클라이언트를 이용하세요. iOS는 이 APK를 실행할 수 없으며, 인증을 지원하는 별도 클라이언트가 필요합니다.
+
+## 부하 중 핑 급증 확인 (5.1-dev.9)
+
+수신 휴대폰의 측정 결과는 **다운로드 28.6Mbps, 업로드 17.1Mbps, 평소 핑 38ms, 다운로드 중 729ms, 업로드 중 251ms, 지터 7ms**였습니다. 부하가 걸릴 때만 지연시간이 크게 증가하므로 큐 적체나 TCP 흐름 제어 문제가 의심되지만, 이동통신망·Wi-Fi Direct·SOCKS·VPN 중 어느 계층이 주원인인지는 아직 확인되지 않았습니다.
+
+새 버전의 수신기 통계에서 `TCP retransmits`는 재전송된 TCP 세그먼트 수, `TUN waits`는 VPN 출력 가능 상태를 기다린 횟수 및 누적 밀리초를 뜻합니다. **진단 내용 복사**에 이 값들과 연결 시도/성공 수치가 포함되며 IP·QR·비밀번호는 제외됩니다. 송신기의 정상적인 `Idle TCP connections cleaned up`은 오류가 아닌 일반 통계로 이동했습니다.
+
+테스트 전후 카운터의 증가량을 비교하세요. 재전송·TUN 대기가 0이라고 모바일 회선 또는 Wi-Fi Direct의 큐 대기까지 없는 것은 아닙니다. 이번 버전은 측정 기능 개선판이며 다운로드 속도나 핑이 실제로 개선됐다고 주장하는 버전은 아닙니다.
 
 ## 연결 시작·중지 버튼 통합 (5.1-dev.8)
 
