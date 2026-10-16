@@ -25,7 +25,7 @@ object CellularNetworkTracker {
         }
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { if (callback === this) cellular = network }
-            override fun onLost(network: Network) { if (cellular == network) cellular = null }
+            override fun onLost(network: Network) { if (callback === this && cellular == network) cellular = null }
         }
         callback = cb
         try {

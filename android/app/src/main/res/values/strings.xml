@@ -34,4 +34,18 @@
     <string name="proxy_password">SOCKS5 password</string>
     <string name="test_receiver_first">Start the receiver VPN before testing UDP.</string>
     <string name="version_label">Development build · %1$s</string>
+
+    <string name="show_pairing_qr">Show connection QR</string>
+    <string name="hide_pairing_qr">Hide connection QR</string>
+    <string name="qr_sender_help">Scan this inside DataNet Share on the receiving phone. It contains SOCKS5 and (when available) Wi-Fi passwords. Anyone who can see or photograph it can connect until you stop sharing. A new code is generated for each sharing session; this is NOT limited to one scan.</string>
+    <string name="pairing_qr_description">Sensitive session QR code with Wi-Fi and proxy login details</string>
+    <string name="scan_pairing_qr">Scan sender QR (camera)</string>
+    <string name="qr_invalid">Not a valid DataNet Share session QR</string>
+    <string name="qr_failed">Could not display the connection QR</string>
+    <string name="qr_imported">Connection fields filled. Join the sender Wi-Fi, then start receiver VPN.</string>
+    <string name="scanned_wifi_details">Wi-Fi name: %1$s\nWi-Fi password: %2$s\nConnect using Android Wi-Fi settings, then return here. DataNet Share cannot silently join Wi-Fi.</string>
+    <string name="copy_scanned_wifi_password">Copy Wi-Fi password</string>
+    <string name="open_wifi_settings">Open Android Wi-Fi settings</string>
+    <string name="qr_scan_prompt">Scan the sender’s DataNet Share session QR</string>
+    <string name="qr_import_help">If sender QR includes Wi-Fi credentials, scan it before joining the network. Credentials stay only in app memory; restarting sharing invalidates the old proxy password.</string>
 </resources>

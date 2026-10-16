@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.2` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.2-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.3` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.3-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -53,6 +53,15 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 ```
 
 For system-wide routing on a computer or iOS device, use a compatible third-party VPN/tun client with SOCKS5 authentication; check that client’s documentation. iOS does not run this APK. There is no bundled universal iOS profile or verified list of compatible iOS clients.
+
+### Phone-to-phone QR pairing (5.1-dev.3)
+
+1. On the **sending phone**, start Wi-Fi Direct sharing (or USB/private Wi-Fi), then tap **Show connection QR**.
+2. On the **receiving phone**, tap **Scan sender QR (camera)** in DataNet Share and scan the sender screen. Camera permission is needed.
+3. Sender IPv4, SOCKS port and password are filled automatically. For Wi-Fi Direct, tap **Copy Wi-Fi password → Open Android Wi-Fi settings** to join the sender's SSID, then return to DataNet Share. Some devices require their dedicated Wi-Fi Direct settings.
+4. Tap **Start receiver VPN** and approve Android's VPN permission. The IPv4 receiver remains experimental.
+
+**Security:** The QR contains plaintext SOCKS5 and possibly Wi-Fi credentials. Display it only to the intended recipient. It is a *per-sender-session* code, **not one-scan**: anyone with a photo can reuse it until sharing is stopped/restarted, which rotates the proxy password. QR contents are not uploaded or stored in preferences. Do not post QR screenshots.
 
 ### Android receiver in this app
 

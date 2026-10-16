@@ -70,6 +70,22 @@ These hashes identify the earlier delivered APK, including the selected-interfac
 
 CI uploads the debug APK only after tests, lint and compilation succeed. Test reports are also uploaded on failure. A green build demonstrates those checks, not OEM Wi-Fi Direct compatibility, stable phone routing or carrier quota behavior.
 
+## QR pairing acceptance (5.1-dev.3 — physical devices not yet tested)
+
+The automated host suite now tests valid and invalid versioned QR payloads, UTF-8 and special-character round-trips, duplicate/malformed fields, and an actual ZXing **QR image encode→decode** cycle. Android CI additionally compiles and lint-checks the QR camera launcher and UI. These are not evidence that a real camera can focus or that Wi-Fi Direct/receiver VPN works on an actual handset.
+
+| Scenario | Expected behavior | Device state |
+| --- | --- | --- |
+| Sender starts Wi-Fi Direct; presses Show connection QR | QR shows active session IPv4/port/password and Wi-Fi Direct credentials | Not run |
+| Receiver scans QR in-app before joining sender network | Host/port/SOCKS password populated; SSID and Wi-Fi password shown; no automatic VPN | Not run |
+| Receiver joins Wi-Fi via Android settings and returns | Scanned inputs survive switching between apps and Activity rotation (same process) | Not run |
+| Invalid QR / malformed or duplicate fields / unknown scheme | Rejected without altering existing connection data | Not run |
+| Sender stops and restarts; old QR rescanned | Old password rejected; newly displayed QR authenticates | Not run |
+| Permission denial (camera, VPN) and process death | No crash or persistent saved password; request fails visibly | Not run |
+| Android QR scanner / preview APK on target OEM | Camera opens and focus/resolution allow one-scan handoff | Not run |
+
+**Important:** Session QR means the password rotates on stop/restart; it does not mean the QR can only be scanned once. Do not label this one-redemption until sender-side replay protection exists.
+
 ## Real-device acceptance matrix — outstanding
 
 Record models, Android versions, tested commit, APK certificate and network setup for each row. Do not mark these passed based on a host test or build.
