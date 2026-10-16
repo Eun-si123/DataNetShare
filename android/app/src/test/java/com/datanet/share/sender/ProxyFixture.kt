@@ -8,9 +8,17 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicInteger
 
-internal class ProxyFixture(private val failConnect: Boolean = false, private val noCellular: Boolean = false) : AutoCloseable {
+internal class ProxyFixture(
+    private val failConnect: Boolean = false,
+    private val noCellular: Boolean = false,
+    maxClients: Int = 128,
+    tcpIdleMillis: Long = 45_000,
+    socketPollMillis: Int = 2_000
+) : AutoCloseable {
     val password = "test-session-password"
+    val idleClosures = AtomicInteger()
     val proxy = Socks5Server("127.0.0.1", 0, password, object : Socks5Server.Upstream {
         override fun connect(host: String, port: Int): Socket {
             if (noCellular) throw java.io.IOException("Mobile data is unavailable; no default-network fallback")
@@ -19,7 +27,9 @@ internal class ProxyFixture(private val failConnect: Boolean = false, private va
         }
         override fun resolve(host: String) = InetAddress.getAllByName(host)
         override fun datagram() = DatagramSocket()
-    }).also { it.start() }
+    }, onIdleClose = { idleClosures.incrementAndGet() },
+        maxClients = maxClients, tcpIdleMillis = tcpIdleMillis,
+        socketPollMillis = socketPollMillis).also { it.start() }
     private val udp = DatagramSocket(InetSocketAddress("127.0.0.1", 0))
     val udpPort get() = udp.localPort
     init {

@@ -50,28 +50,35 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='36' versionName='5.1-dev.6'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='37' versionName='5.1-dev.7'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.6-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.7-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.6-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.7-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.6"
+          TAG="v5.1-dev.7"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.6 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.7 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.6-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.7-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### Sender connection slot exhaustion fixes
+          - Stop opening SOCKS upstream sockets for TCP SYNs that never complete the app-side ACK handshake.
+          - Reclaim idle TCP relay connections after 45 seconds; both directions share an activity timer so active downloads continue. Remove idle UDP associations after 30 seconds.
+          - Increase sender bounded proxy capacity 64 → 128 and receiver TCP flow capacity 64 → 80 (receiver UDP cap stays 32). This mitigates browser bursts without unbounded per-flow threads.
+          - Report reclaimed idle TCP sessions in network diagnostics; retain warnings when capacity is reached.
+          - Regression tests cover orphan SYNs consuming zero sender slots, idle sockets releasing the last proxy slot, and prior TCP half-close/downlink integrity.
 
           ### Better diagnostics for browser and speed-test failures
           - Always-visible network diagnostics on both sender and receiver, with a copy button omitting passwords, endpoints and QR details.
@@ -79,7 +86,7 @@ jobs:
           - Errors are visible even while the sender or VPN stays in the Connected state. An empty log does not prove that browsing or speed tests work.
           - Regression coverage includes journal concurrency/capacity/privacy and formerly swallowed UDP setup failures.
 
-          ### TCP transport improvements in 5.1-dev.6
+          ### TCP transport improvements in 5.1-dev.7
           - Advertise an explicit 1200-byte MSS in the receiver's TCP SYN-ACK to prevent peer fallback to smaller default segments; preserve checksum and retransmission behavior.
           - Retry congested nonblocking VPN TUN writes for a bounded period instead of immediately discarding on first EAGAIN or EINTR.
           - Unit tests assert TCP MSS option, IPv4/TCP checksums, matching SYN retransmission, and bounded TUN write retries.
@@ -121,10 +128,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.6-debug.apk \
+            dist/DataNetShare-5.1-dev.7-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.6 (Android preview)" \
+            --title "DataNet Share 5.1-dev.7 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md

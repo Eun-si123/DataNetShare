@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.6` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.7` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,12 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Browser connection-capacity fix (5.1-dev.7)
+
+A real sender screen showed **64 active connections and 200 rejected attempts**, while FAST.com sometimes reached ~30 Mbps and Ookla Speedtest failed the latency phase. The 5.1-dev.7 sender reclaims idle TCP relays after 45 seconds (with a shared timer for both transfer directions), and sender/receiver UDP sessions after 30 seconds. The sender's bounded limit is now 128; the receiver allows up to 80 TCP and 32 UDP flows. The receiver also waits for the client TCP handshake ACK before opening a sender SOCKS5 connection, preventing unacknowledged SYNs from consuming sender slots.
+
+These changes reduce wasted resources but can disconnect legitimate connections that are idle for a long time. Keep-alives or long-running streaming connections should refresh their activity timer when they actually transfer traffic. **Measured mobile 5G speed is not a guarantee of throughput through Wi-Fi Direct + userspace SOCKS5 + experimental VPN**; the receiver still lacks mature congestion handling, modern transport interoperability and efficient per-flow threading. Test Speedtest/FAST.com again and compare sender active connections + rejected counts. New app diagnostics also show reclaimed idle sessions.
 
 ## Network diagnostics (5.1-dev.6)
 

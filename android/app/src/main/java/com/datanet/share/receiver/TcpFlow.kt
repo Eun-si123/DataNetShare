@@ -101,7 +101,13 @@ class TcpFlow(
 
     fun openUpstream() {
         val remote = Socket()
-        synchronized(lock) { if (closed) { remote.close(); return }; socket = remote }
+        // A SYN does not prove that the client completed the TCP handshake.
+        // Until the peer ACKs our SYN-ACK, do not consume a sender SOCKS5 slot.
+        synchronized(lock) {
+            while (!closed && !established) lock.wait(1000)
+            if (closed) { remote.close(); return }
+            socket = remote
+        }
         try {
             if (!protect(remote)) throw IOException("Could not protect proxy socket")
             remote.tcpNoDelay = true; remote.soTimeout = 10_000

@@ -59,7 +59,7 @@ class UdpFlow(
                 try {
                     while (!closed.get()) {
                         try { if (input.read() < 0) break } catch (_: SocketTimeoutException) {}
-                        if (System.nanoTime() - lastActivity > 120_000_000_000L) break
+                        if (System.nanoTime() - lastActivity > 30_000_000_000L) break
                     }
                 } catch (e: IOException) {
             if (!closed.get()) onError("UDP upstream read failed (${e.javaClass.simpleName})")

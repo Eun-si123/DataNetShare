@@ -91,7 +91,8 @@ class SenderService : Service() {
                 }
             }, onFailure = { error -> main.post { if (token == session) fail(error) } },
             onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
-            onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) })
+            onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) },
+            onIdleClose = { if (token == session) SessionStore.note(NetworkEvent.SENDER_IDLE_RECLAIMED) })
         socks = server
         try {
             server.start()
