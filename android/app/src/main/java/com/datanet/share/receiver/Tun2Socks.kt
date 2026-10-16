@@ -132,7 +132,8 @@ class Tun2Socks(
             // new flow until the background 30s idle timer eventually expires.
             val now = System.nanoTime()
             udp.values.forEach { flow ->
-                if (flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS)) flow.close()
+                if (UdpFlowPolicy.shouldEvictAtCapacity(udp.size,
+                    flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS))) flow.close()
             }
             if (udp.size >= UdpFlowPolicy.MAX_FLOWS) {
                 onUdpError("Receiver UDP capacity reached (${UdpFlowPolicy.MAX_FLOWS} flows)")
