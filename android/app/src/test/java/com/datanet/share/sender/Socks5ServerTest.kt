@@ -145,6 +145,7 @@ class Socks5ServerTest {
                     }
                 }
             }
+            Unit // JUnit4 requires the generated @Test method to return void.
         }
 
     @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture(maxClients = 64).use { fixture ->
