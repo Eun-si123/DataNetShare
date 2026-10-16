@@ -53,7 +53,7 @@ class ReceiverVpnService : VpnService() {
             Thread({
                 try {
                     socket.use {
-                        check(protect(it)) { "Could not protect sender socket" }; ReceiverLink(this, host).bind(it)
+                        check(ReceiverSocketSetup.bindThenProtect(it, { socket -> ReceiverLink(this, host).bind(socket) }, { socket -> protect(socket) })) { "Could not protect sender socket (VPN permission revoked or protection denied)" }
                         it.soTimeout = 10_000
                         it.connect(InetSocketAddress(host, port), 10_000)
                         Socks5.authenticateClient(DataInputStream(it.getInputStream()), it.getOutputStream(), password)
@@ -77,8 +77,8 @@ class ReceiverVpnService : VpnService() {
             val token = generation
             val link = ReceiverLink(this, host)
             bridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
-                { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
-                { socket -> protect(socket).also { ok -> if (ok) link.bind(socket) } },
+                { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
+                { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 onFailure = { message -> main.post { if (generation == token) fail(message) } },
                 onStats = { active, rx, tx -> if (generation == token) SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB") })
                 .also { it.start() }
