@@ -89,8 +89,12 @@ class Socks5Server(
         running = false
         try { listener?.close() } catch (_: IOException) {}
         listener = null
-        associations.toList().forEach { it.close() }
-        sockets.toList().forEach { try { it.close() } catch (_: IOException) {} }
+        // ConcurrentHashMap-backed KeySetView is weakly consistent. Do NOT use
+        // Kotlin toList(): it snapshots size then iterates, and a concurrent
+        // remove can cause NoSuchElementException in the iterator-based copy.
+        // Direct CHM traversal tolerates active relay cleanup during Stop.
+        associations.forEach { it.close() }
+        sockets.forEach { try { it.close() } catch (_: IOException) {} }
     }
 
     private fun handleClient(client: Socket) {
