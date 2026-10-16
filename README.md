@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.7` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.8` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,14 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## One connection button and focused setup (5.1-dev.8)
+
+The previous app showed separate Wi-Fi Direct, USB/Wi-Fi, receiver VPN and Stop buttons on one long screen. Now choose **Share this phone** or **Use shared data**, configure only the selected role, and use **one primary button**. It starts the selected role, becomes **Cancel connection** while starting, and changes to **Stop connection** while connected. Settings collapse during an active session; sender QR/session details and the privacy-safe diagnostic panel stay visible.
+
+For sharing, select Wi-Fi Direct (default) or USB/existing Wi-Fi. Android default routing is behind **Advanced connection settings**. For receiving, scan the sender QR or expand **Enter address and password manually**; the QR flow still requires explicit Wi-Fi joining and VPN approval. Stop before changing roles.
+
+Role/transport preferences are non-secret; QR data, SOCKS5 credentials and pending VPN permissions are kept in app memory. This is a **usability change**, not a proven transport-performance optimization.
 
 ## Browser connection-capacity fix (5.1-dev.7)
 

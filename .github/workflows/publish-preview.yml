@@ -50,28 +50,35 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='37' versionName='5.1-dev.7'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='38' versionName='5.1-dev.8'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.7-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.8-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.7-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.8-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.7"
+          TAG="v5.1-dev.8"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.7 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.8 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.7-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.8-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### Simpler connection controls and progressive setup
+          - Replace three separate start buttons and the detached Stop button with one contextual Connect/Cancel/Disconnect button for both sender and receiver.
+          - Select Share or Receive first; only the selected mode's configuration is visible. During connection, the settings collapse and the same main action changes to Disconnect.
+          - Sender Wi-Fi Direct is the default; USB/Wi-Fi and advanced routing are still available. Receiver scanning is QR-first with optional manual IPv4/port/password fields.
+          - Keep connection status, sender credentials/QR, throughput counters, and safe diagnostics accessible without digging through both setup forms.
+          - Tested action routing across roles and link types; real-device UX and accessibility verification are still required.
 
           ### Sender connection slot exhaustion fixes
           - Stop opening SOCKS upstream sockets for TCP SYNs that never complete the app-side ACK handshake.
@@ -86,7 +93,7 @@ jobs:
           - Errors are visible even while the sender or VPN stays in the Connected state. An empty log does not prove that browsing or speed tests work.
           - Regression coverage includes journal concurrency/capacity/privacy and formerly swallowed UDP setup failures.
 
-          ### TCP transport improvements in 5.1-dev.7
+          ### TCP transport improvements in 5.1-dev.8
           - Advertise an explicit 1200-byte MSS in the receiver's TCP SYN-ACK to prevent peer fallback to smaller default segments; preserve checksum and retransmission behavior.
           - Retry congested nonblocking VPN TUN writes for a bounded period instead of immediately discarding on first EAGAIN or EINTR.
           - Unit tests assert TCP MSS option, IPv4/TCP checksums, matching SYN retransmission, and bounded TUN write retries.
@@ -128,10 +135,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.7-debug.apk \
+            dist/DataNetShare-5.1-dev.8-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.7 (Android preview)" \
+            --title "DataNet Share 5.1-dev.8 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
