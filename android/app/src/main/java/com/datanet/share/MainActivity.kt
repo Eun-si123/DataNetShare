@@ -172,8 +172,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnCopyDiagnostics).setOnClickListener {
             // Do not copy network endpoints, QR, Wi-Fi/SOCKS5 credentials or URLs.
             val snapshot = SessionStore.diagnostics.value.orEmpty()
+            val telemetry = SessionStore.telemetry.value.orEmpty()
             val role = SessionStore.current.mode.name
-            val safeText = "DataNetShare Dev ${packageManager.getPackageInfo(packageName, 0).versionName}\nRole: $role\n$snapshot"
+            // Telemetry is an allow-listed aggregate string, never raw service state.
+            val safeText = "DataNetShare Dev ${packageManager.getPackageInfo(packageName, 0).versionName}\n" +
+                "Role: $role\n" +
+                (if (telemetry.isEmpty()) "" else "Performance:\n$telemetry\n") +
+                "Events:\n$snapshot"
             getSystemService(ClipboardManager::class.java)
                 .setPrimaryClip(ClipData.newPlainText("DataNetShare diagnostics", safeText))
             showMessage(getString(R.string.diagnostics_copied))
