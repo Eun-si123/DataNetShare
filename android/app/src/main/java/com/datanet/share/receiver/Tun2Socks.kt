@@ -23,7 +23,10 @@ data class BridgeStats(
     val tcpConnected: Long,
     val udpAttempts: Long,
     val udpConnected: Long,
-    val tunDropped: Long
+    val tunDropped: Long,
+    val tcpRetransmits: Long,
+    val tunWriteWaits: Long,
+    val tunWriteWaitMs: Long
 )
 
 class Tun2Socks(
@@ -45,6 +48,9 @@ class Tun2Socks(
     private val tcpAttempts = AtomicLong(); private val tcpConnected = AtomicLong()
     private val udpAttempts = AtomicLong(); private val udpConnected = AtomicLong()
     private val tunWriteDrops = AtomicLong()
+    private val tcpRetransmits = AtomicLong()
+    private val tunWriteWaits = AtomicLong()
+    private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
     // Bounded slots: 80 TCP + 32 UDP remain below the sender's 128-client limit,
@@ -61,7 +67,8 @@ class Tun2Socks(
                 if (running) {
                     onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
                         tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
-                        udpConnected.get(), tunWriteDrops.get()))
+                        udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
+                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
@@ -106,7 +113,8 @@ class Tun2Socks(
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
                 onError = onTcpError,
-                onConnected = { tcpConnected.incrementAndGet() })
+                onConnected = { tcpConnected.incrementAndGet() },
+                onRetransmit = { tcpRetransmits.incrementAndGet() })
             tcp[key] = flow; tcpAttempts.incrementAndGet(); flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
         } else tcp[key]?.receive(packet)
@@ -143,8 +151,14 @@ class Tun2Socks(
                 },
                 awaitWritable = {
                     val waiting = StructPollfd().apply { fd = tunFd; events = OsConstants.POLLOUT.toShort() }
-                    Os.poll(arrayOf(waiting), 20) > 0 &&
-                        waiting.revents.toInt() and OsConstants.POLLOUT != 0
+                    val started = System.nanoTime()
+                    try {
+                        Os.poll(arrayOf(waiting), 20) > 0 &&
+                            waiting.revents.toInt() and OsConstants.POLLOUT != 0
+                    } finally {
+                        tunWriteWaits.incrementAndGet()
+                        tunWriteWaitNanos.addAndGet((System.nanoTime() - started).coerceAtLeast(0L))
+                    }
                 }
             )
             // When the queue stays full, only this datagram is dropped. TCP
