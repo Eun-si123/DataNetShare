@@ -27,6 +27,29 @@ Coverage includes:
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
 - Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
+## 5.1-dev.6 — observable failures during phone-to-phone speed tests
+
+User-provided real-device evidence (2026-10-16): Chrome repeatedly showed `ERR_CONNECTION_RESET` opening FAST.com; after repeated reload, FAST.com opened but speed stayed `0` with a network/test-server error. Ookla browser Speedtest showed `LATENCY TEST ERROR`. The user confirmed the sending phone's **mobile-data public IP** differed from its simultaneously connected Wi-Fi's public IP, so the sender egress should be investigated as mobile data, not assumed to be the other Wi-Fi. Neither phone displayed the previously advertised `Last ... error` messages, which revealed a coverage and UX problem.
+
+Source: [PR #7](https://github.com/Eun-si123/DataNetShare/pull/7), merged SHA `720786c5c4347181a8d12feba3522a99261f552a`.
+
+- Add always-visible *Network diagnostics* directly below state and transfer statistics on both phones; copied diagnostic categories omit QR, passwords, network IPs and destinations. Session events are bounded/in-memory and cleared on a new share/receive session.
+- `UdpFlow` no longer silently discards setup/read exceptions. TCP/UDP connection caps, sender client cap/upstream failures and TUN write congestion also produce events.
+- Keep cumulative receiver progress counters `TCP attempts / connected`, `UDP attempts / associated` and `TUN drops`. Events being empty does **not** establish browser functionality.
+- Regression tests check finite diagnostics storage, concurrent updates, reset, sanitized exceptions and existing socket/protocol behavior.
+
+| Verification | Status | Evidence |
+| --- | --- | --- |
+| Host protocol / diagnostics regression tests | **43 passed** | [PR CI run 38842514485](https://github.com/Eun-si123/DataNetShare/actions/runs/38842514485) |
+| Android JVM unit tests, lint and debug APK | **Passed** | Same PR CI |
+| Release test/build/package/signature, v5.1-dev.6 | **Passed** | [Release run 38842727289](https://github.com/Eun-si123/DataNetShare/actions/runs/38842727289) |
+| Physical-device FAST.com/Ookla test on v5.1-dev.6 | **Not yet performed** | Requires user retest |
+| Packet-level tunnel progress and last UDP/TCP failure categories on actual phones | **Not yet independently captured** | App now displays these on the first screen |
+
+Public debug APK: [v5.1-dev.6](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.6), 6,250,200 bytes, SHA-256 `d2f5e31293f100e9f6ba3c84fa97d6198e72ae06ad570ba5c26e9157112cf762`.
+
+Next device acceptance: install current preview on both phones (development signing identities may change, requiring uninstall/reinstall), start fresh QR-paired session, open `https://1.1.1.1/cdn-cgi/trace` and a simple HTTPS page, then reproduce FAST.com/Speedtest. Copy the **safe diagnostics** from both phones and compare attempts/connected/associated/TUN drops before and after a failed test; do not share QR, raw credentials or entire connection screens. This implementation is still experimental and does not yet implement mature IPv6/ICMP/fragment/congestion algorithms.
+
 ## 5.1-dev.5: TCP MSS and VPN write backpressure
 
 The user provided Android phone-to-phone screenshots with intermittent Chrome `ERR_CONNECTION_RESET` (FAST.com) and Ookla browser `LATENCY TEST ERROR`. The Ookla screen displayed an LG U+ public Internet egress. This is consistent with the configured mobile-data-only sender upstream, but does **not** by itself identify why the browser or remote speed test failed.
