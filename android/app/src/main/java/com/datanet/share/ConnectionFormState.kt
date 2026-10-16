@@ -14,6 +14,9 @@ class ConnectionFormState : ViewModel() {
     var wifiSsid: String = ""
     var wifiPassword: String = ""
     var showQr: Boolean = false
+    // Non-secret disclosure state follows Activity across rotation only.
+    var showAdvancedSettings: Boolean = false
+    var showManualSettings: Boolean = false
 
     fun clearImportedWifi() {
         wifiSsid = ""
