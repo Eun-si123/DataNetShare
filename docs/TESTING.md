@@ -27,6 +27,24 @@ Coverage includes:
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
 - Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
+## 5.1-dev.4: user-observed browser reset and upstream route diagnostics
+
+A user reported that phone-to-phone setup on the 5.1-dev.3 preview progressed far enough to try a browser speed test, but Chrome showed `ERR_CONNECTION_RESET`. The sending phone was connected to another infrastructure Wi-Fi network. **This does not establish what Android selected for the sender's actual Internet egress**, nor whether the receiver's custom IPv4 TCP stack, a failed SOCKS CONNECT, or remote destination policy generated the reset.
+
+Source fix: [PR #5](https://github.com/Eun-si123/DataNetShare/pull/5), merge `ff3ea875f2bc9593624f2b950e00b0ed456cada8`.
+
+| Verification | Result | Evidence |
+| --- | --- | --- |
+| Host protocol regression suite | **30 tests passed**, including a 2 MiB sustained TCP download/ACK/FIN integrity regression and a missing-cellular SOCKS code 3 check | [PR CI 38839058413](https://github.com/Eun-si123/DataNetShare/actions/runs/38839058413) |
+| Android unit tests, lint and debug APK build | **Passed** | Same PR CI (android job) |
+| Published debug-signed prerelease | `v5.1-dev.4`, package `com.datanet.share.dev`, versionCode 34, checksummed and APK-signature verified by CI | [Release workflow 38839345417](https://github.com/Eun-si123/DataNetShare/actions/runs/38839345417) |
+| Wi-Fi Direct concurrent infrastructure Wi-Fi and actual upstream egress | **Not independently verified** | OEM/Android dependent |
+| Browser speed test and reported `ERR_CONNECTION_RESET` on this fix | **Not retested on device** | Requires same user's phones |
+
+Debug preview APK: [v5.1-dev.4](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.4), SHA-256 `be7d1005a93f9ddccffe226eca30e40daaabdd662c8f226469b9aee0853b18d8`.
+
+**Required next device check:** record sender `Mobile data` / `Waiting for mobile data` or `Android default route: ...` plus any `Last upstream error`, and receiver `Last TCP error`. Compare a simple HTTPS page to a speed-test page. With an infrastructure Wi-Fi sender, changing `Use Android default route` requires stopping/restarting the sender; scan its newly rotated session QR again. Verify actual IP-based egress and cellular accounting separately rather than inferring egress from connected Wi-Fi indicators.
+
 ## Latest verification: 5.1-dev.2 receiver hotfix
 
 Source merged as `9de0f1b945b76d2c429797104156cbc5990440eb` ([PR #3](https://github.com/Eun-si123/DataNetShare/pull/3)).
