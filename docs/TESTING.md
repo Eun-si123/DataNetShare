@@ -2,6 +2,25 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.8 — one-button Android setup UI and sender stop race
+
+**User UX finding:** The app previously showed three separate Start actions (sender Wi-Fi Direct, sender USB/Wi-Fi, receiver VPN) and an unrelated global Stop control, while both complete sender/receiver forms were visible on one long screen.
+
+**Implementation:** [PR #9](https://github.com/Eun-si123/DataNetShare/pull/9) introduced a **single contextual Start / Cancel during startup / Stop when active** button. Share-vs-Receive is an explicit role selector; the unused role's form hides. Active sessions collapse setup and retain sender QR, throughput information and sanitized diagnostics. Sender USB/local Wi-Fi and default Android route are still available, with routing behind Advanced. Receiver QR is prominent; manual IPv4/port/password are expandable, not deleted. Nonsecret role/link preferences persist; secrets and VPN consent remain memory-only.
+
+**Release-blocking concurrency bug found and fixed:** Original publish CI failed in an existing host test when sender Stop called Kotlin `toList()` on `ConcurrentHashMap.newKeySet()` while a socket worker was removing entries. In rare cases this caused `NoSuchElementException` and could affect the new unified Stop action. [PR #10](https://github.com/Eun-si123/DataNetShare/pull/10) replaces the racy size-based snapshots with weakly consistent CHM iteration over sockets and UDP associations. A new regression races Stop against concurrent client closures.
+
+| Verification | Result | Evidence |
+| --- | --- | --- |
+| Host protocol, QR, connection-action and concurrent-stop regressions | **50 passed** | [Fix PR CI 38848934810](https://github.com/Eun-si123/DataNetShare/actions/runs/38848934810) |
+| Android JVM tests, lint and debug APK | **Passed** | Same fix PR CI |
+| Public debug v5.1-dev.8 APK, version/signature and digest | **Passed** | [Publish workflow 38849096346](https://github.com/Eun-si123/DataNetShare/actions/runs/38849096346) |
+| Android physical-device role selection, rotation, QR scanner and cancel/stop | **Not yet tested** | Requires user acceptance |
+
+Public APK: [DataNetShare-5.1-dev.8-debug.apk](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.8/DataNetShare-5.1-dev.8-debug.apk), size 6,263,896 bytes, SHA-256 `6bbaae33dfc3981b28ec2265ea029dd393b1fbed26db45efa9232fd03369d718`.
+
+**Device acceptance:** On two phones, choose Share, confirm Wi-Fi Direct starts, obtain QR, scan from Receive, grant VPN permission, then stop from the same primary button. Switch roles after stopping; test manual USB/local share, advanced route control, incorrect QR, denied permission, cancelling while Starting, rotation in both setup and connected modes, small-font/large-font accessibility, reconnect after stop, and that network diagnostics and secrets behave as before. The changes are UX/cleanup only; do not claim improved throughput.
+
 ## Same-server field performance baseline — 2026-10-16 KST
 
 The user performed two browser Ookla Speedtest measurements using **VultKR, Seoul** (same destination provider), approximately minutes apart:
