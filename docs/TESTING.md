@@ -48,7 +48,7 @@ Delivered APK: `DataNetShare-5.1-dev-f9030e8.apk` (5,883,553 bytes).
 - Debug signing certificate SHA-256: `5165716659a77c196f649e590388711b7cf86dd311f9b77c8a91e7e896b07d74`
 - GitHub APK artifact ZIP SHA-256: `7d5c1de514987a1b902d2c1bab0436bd17a0bae22170f6a71dd9bc7ee967028c`
 
-Subsequent documentation-only commits do not change the runtime source tested above. Always match a new APK to its own source revision and signature.
+These hashes identify the initial validated development APK. A subsequent UI-only fix gives the selected interface address an explicit text color so it stays legible on the fixed dark background in light system theme. Always match a new APK to its own source revision and signature.
 
 CI uploads the debug APK only after tests, lint and compilation succeed. Test reports are also uploaded on failure. A green build demonstrates those checks, not OEM Wi-Fi Direct compatibility, stable phone routing or carrier quota behavior.
 
