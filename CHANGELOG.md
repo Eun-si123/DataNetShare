@@ -1,5 +1,15 @@
 # Changes
 
+## 5.1-dev.7 — 2026-10-16
+
+Connection-capacity and lifecycle fix after a real phone-to-phone test showed **64/64 sender SOCKS5 connections and 200 connection-limit rejections**, while FAST.com occasionally measured ~30 Mbps but Ookla browser Speedtest repeatedly failed its latency phase.
+
+- **Avoid wasting SOCKS5 slots on half-open TCP handshakes:** receiver starts the sender-side proxy connection only after the Android app acknowledges the SYN-ACK; orphan or retried SYNs do not create an upstream socket.
+- **Reap abandoned relays:** sender TCP reads use bounded polling with a shared bidirectional 45-second idle timer. Legitimate continuous upload/download refreshes the timer; an idle client is closed, its proxy permit released and a diagnostic counter incremented. Sender and receiver UDP associations expire after 30 seconds of inactivity instead of 120 seconds.
+- **Bounded capacity:** sender proxy limit 64 → 128, receiver TCP flows 64 → 80; receiver UDP flows remain 32 and resources are still bounded. This is **not** an unlimited connections mode and memory/thread pressure must be measured on devices.
+- Add host regressions showing an unacknowledged SYN uses no sender slots and an abandoned TCP client releases a saturated proxy slot. Retain existing half-close, large-download, IPv4/TCP checksum, UDP and QR coverage.
+- This addresses **observed concurrent-client exhaustion**, but does **not** establish a 5G throughput target or guarantee browser speed-test compatibility. The receiver is still an experimental Kotlin TCP/IP stack.
+
 ## 5.1-dev.6 — 2026-10-16
 
 - User confirmed that the sending phone's **mobile-data** IP differs from its concurrent Wi-Fi public IP. Browser speed test fails with FAST.com showing 0 and Ookla reporting a latency-test server connection error, even with no application error message.
