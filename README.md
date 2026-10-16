@@ -4,7 +4,7 @@
 
 Share an Android phone’s connection through an **authenticated SOCKS5 proxy**, over Wi-Fi Direct, USB tethering, or a private Wi-Fi network. The same app also includes an **experimental Android IPv4 VPN receiver**.
 
-This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Changes and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1).
+This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Foundation and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1); the receiver socket hotfix is in [PR #3](https://github.com/Eun-si123/DataNetShare/pull/3).
 
 ## What works and what still needs testing
 
@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.1` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.1-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.2` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.2-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -65,6 +65,7 @@ Only one sender/receiver mode runs per app process. Use **Stop connection** or t
 
 ## Troubleshooting
 
+- **Receiver error `Could not protect sender socket` on 5.1-dev.1:** Use the 5.1-dev.2 preview, which prepares the local-link socket before requesting Android VPN protection (fix in [PR #3](https://github.com/Eun-si123/DataNetShare/pull/3)). Because debug signing keys are not stable, uninstall the old *development* package if updating is rejected; this clears its settings. Physical-device verification of the fix is pending. If it persists on 5.1-dev.2, ensure the receiver's Android VPN consent is granted and another VPN/always-on VPN is not taking ownership.
 - **Wrong password / sender check fails:** Use the SOCKS5 password, not the Wi-Fi password. Check the sender address; `192.168.49.1` is only a starting suggestion and is not universal. Make sure both devices share the local link.
 - **Wi-Fi Direct BUSY:** Another application/group may be using Wi-Fi Direct. Stop it or toggle Wi-Fi yourself, then retry. The app does not tear down another app’s group to take ownership.
 - **Active sender, no internet:** Check mobile data and the displayed route status. Turn off the default-route option for explicit cellular routing, or inspect your VPN’s exclusions if intentionally using it.
