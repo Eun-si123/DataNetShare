@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get a build
 
-Use the successful **Android source verification** run for the maintenance branch under [Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml). Download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
+Use a successful **Android source verification** run for the source revision you want under [Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml). Download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
 ```sh
 adb install -r app-debug.apk

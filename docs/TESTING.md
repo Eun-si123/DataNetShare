@@ -25,10 +25,30 @@ Coverage includes:
 - Receiver first-UDP-packet delivery during association setup, two app source ports to a common destination, and subsequent 1400-byte response preservation.
 - Receiver TCP SYN-ACK loss/retransmission, duplicate upload suppression, delayed/lost downstream packet recovery, sequence wrap and half-close response integrity.
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
+- Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
 ## Current evidence
 
-Validation of the 5.1-dev candidate is in progress in the maintenance branch. Inspect the latest source-verification workflow and its test/lint reports before relying on its APK. The older 5.0 source-baseline build is not evidence for the rewritten 5.1-dev runtime.
+Verified runtime/test commit: `f9030e8b1ee705ce8bd7a9b9e8faf4113ddc9677`.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| x86_64 / JDK 17 host socket and protocol suite | 17 tests, 0 failures/errors/skips | [GitHub Actions run 38826853397](https://github.com/Eun-si123/DataNetShare/actions/runs/38826853397), host-protocol-tests job |
+| Android JVM unit tests (same flow/relay suite) | 17 tests, 0 failures/errors/skips | Same run, uploaded Android JUnit reports |
+| Android lint | 0 errors/fatal issues, 22 warnings | Same run, uploaded lint XML/HTML |
+| Android development APK compile | Success | Same run, datanetshare-debug-apk artifact |
+| ARM64 Linux / S20 agent chroot / JDK 21 targeting JVM 17 | 17 tests, 0 failures/errors/skips on a fresh `--rerun-tasks` run; source head unchanged before/after | Owned S20 Linux loopback environment; not an Android-host/TUN or Wi-Fi Direct test |
+| Delivered APK integrity | GitHub artifact ZIP digest matched; extracted APK hash matched an independently downloaded copy; APK v2 signature verified | See hashes below |
+
+The 22 nonfatal lint warnings cover dependency/target age, UI text/styles, backup extraction guidance, an optional monochrome icon, safe inlined SDK constants/obsolete checks and deliberately session-owned wake locks. They do not constitute zero-warning or production certification. Dependency/target-SDK upgrades and OEM battery testing remain separate work.
+
+Delivered APK: `DataNetShare-5.1-dev-f9030e8.apk` (5,883,553 bytes).
+
+- APK SHA-256: `734220f5bdb6f5a539cb41f2c0efbf84fc5c35e9353f13673d146f4862538ecc`
+- Debug signing certificate SHA-256: `5165716659a77c196f649e590388711b7cf86dd311f9b77c8a91e7e896b07d74`
+- GitHub APK artifact ZIP SHA-256: `7d5c1de514987a1b902d2c1bab0436bd17a0bae22170f6a71dd9bc7ee967028c`
+
+Subsequent documentation-only commits do not change the runtime source tested above. Always match a new APK to its own source revision and signature.
 
 CI uploads the debug APK only after tests, lint and compilation succeed. Test reports are also uploaded on failure. A green build demonstrates those checks, not OEM Wi-Fi Direct compatibility, stable phone routing or carrier quota behavior.
 

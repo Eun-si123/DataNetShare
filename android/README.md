@@ -13,8 +13,6 @@ The upstream archive did not contain a valid Gradle wrapper JAR. This fork does 
 ```sh
 git clone https://github.com/Eun-si123/DataNetShare.git
 cd DataNetShare
-# Until PR #1 is merged, switch to the maintained source branch:
-git switch hardening/source-ci-foundation
 # Set ANDROID_HOME to your SDK installation, or write sdk.dir in android/local.properties.
 gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
 ```
