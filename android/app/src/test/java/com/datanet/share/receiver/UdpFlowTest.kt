@@ -27,6 +27,18 @@ class UdpFlowTest {
             assertArrayEquals(ByteArray(1400) { 7 }, output.poll(3, TimeUnit.SECONDS)!!.payload)
         } finally { a.close(); b.close() }
     }
+    @Test fun setupFailureIsReportedInsteadOfSilentlyDropped() {
+        val errors = mutableListOf<String>()
+        val flow = UdpFlow(FlowKey(1, 1111, 2, 53), "127.0.0.1", 8282,
+            "never-log-this-secret", { throw java.io.IOException("Private destination, secret") },
+            { true }, {}, {}, {}, {}, onError = { errors.add(it) })
+        flow.start()
+        assertEquals(1, errors.size)
+        assertTrue(errors[0].contains("UDP proxy setup"))
+        assertFalse(errors[0].contains("never-log"))
+        assertFalse(errors[0].contains("Private destination"))
+    }
+
     @Test fun closeBeforeConnectIsIdempotent() {
         var callbacks = 0
         val flow = UdpFlow(FlowKey(1, 1234, 2, 53), "127.0.0.1", 1, "x", { true }, { true }, {}, {}, {}, { callbacks++ })

@@ -48,4 +48,8 @@
     <string name="open_wifi_settings">Open Android Wi-Fi settings</string>
     <string name="qr_scan_prompt">Scan the sender’s DataNet Share session QR</string>
     <string name="qr_import_help">If sender QR includes Wi-Fi credentials, scan it before joining the network. Credentials stay only in app memory; restarting sharing invalidates the old proxy password.</string>
+    <string name="diagnostic_status_title">Network diagnostics · sender and receiver</string>
+    <string name="diagnostic_status_help">During a connection, network failures appear here even if the VPN stays connected. No private IPs, QR codes, or passwords are included. An empty record is not proof of Internet connectivity.</string>
+    <string name="copy_safe_diagnostics">Copy safe diagnostics</string>
+    <string name="diagnostics_copied">Diagnostic categories copied (without connection secrets)</string>
 </resources>

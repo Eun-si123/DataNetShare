@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.5` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.6` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,12 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Network diagnostics (5.1-dev.6)
+
+On both phones, open DataNet Share and look **directly below Connected and the transfer counters**. An always-visible **Network diagnostics** panel counts sender upstream failures, connection-capacity exhaustion, receiver TCP/UDP setup/read errors, and VPN output congestion. Tap **Copy safe diagnostics** to share categories and counts; the copied text omits QR secrets, SOCKS5/Wi-Fi passwords, IPs and website URLs.
+
+The receiver's live stats now also show **TCP attempts / connected**, **UDP attempts / associated**, and **TUN drops**. This helps narrow down stalls where neither Android nor the SOCKS server throws an exception, such as a speed test stuck at 0. Counts are cumulative and should be interpreted with the test scenario. **No recorded error does not mean that the tunnel passes application traffic correctly.**
 
 ## Browser resets and speed-test transport limitations
 

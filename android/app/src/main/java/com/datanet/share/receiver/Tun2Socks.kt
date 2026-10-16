@@ -14,6 +14,18 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
+/** Receiver metrics count attempts separately from successful SOCKS sessions. */
+data class BridgeStats(
+    val activeTcp: Int,
+    val rxBytes: Long,
+    val txBytes: Long,
+    val tcpAttempts: Long,
+    val tcpConnected: Long,
+    val udpAttempts: Long,
+    val udpConnected: Long,
+    val tunDropped: Long
+)
+
 class Tun2Socks(
     private val tunFd: FileDescriptor,
     private val socksHost: String,
@@ -22,15 +34,18 @@ class Tun2Socks(
     private val protect: (Socket) -> Boolean,
     private val protectDatagram: (DatagramSocket) -> Boolean,
     private val onFailure: (String) -> Unit,
-    private val onStats: (Int, Long, Long) -> Unit,
-    private val onTcpError: (String) -> Unit = {}
+    private val onStats: (BridgeStats) -> Unit,
+    private val onTcpError: (String) -> Unit = {},
+    private val onUdpError: (String) -> Unit = {}
 ) {
     @Volatile private var running = false
     private val tcp = ConcurrentHashMap<FlowKey, TcpFlow>()
     private val udp = ConcurrentHashMap<FlowKey, UdpFlow>()
     private val rx = AtomicLong(); private val tx = AtomicLong()
+    private val tcpAttempts = AtomicLong(); private val tcpConnected = AtomicLong()
+    private val udpAttempts = AtomicLong(); private val udpConnected = AtomicLong()
     private val tunWriteDrops = AtomicLong()
-    private val reportedDropBatch = AtomicLong()
+    private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
 
     fun start() {
@@ -41,11 +56,13 @@ class Tun2Socks(
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
                 tcp.values.forEach { it.tick() }
                 if (running) {
-                    onStats(tcp.size, rx.get(), tx.get())
+                    onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
+                        tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
+                        udpConnected.get(), tunWriteDrops.get()))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
-                    if (batch > 0 && batch != reportedDropBatch.getAndSet(batch)) {
+                    if ((dropped == 1L || batch > 0) && batch != reportedDropBatch.getAndSet(batch)) {
                         onTcpError("VPN write congestion: $dropped dropped TUN packets")
                     }
                 }
@@ -81,12 +98,13 @@ class Tun2Socks(
         if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
-            if (tcp.size >= 64) return
+            if (tcp.size >= 64) { onTcpError("Receiver TCP capacity reached (64 flows)"); return }
             lateinit var flow: TcpFlow
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
-                onError = onTcpError)
-            tcp[key] = flow; flow.start()
+                onError = onTcpError,
+                onConnected = { tcpConnected.incrementAndGet() })
+            tcp[key] = flow; tcpAttempts.incrementAndGet(); flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
         } else tcp[key]?.receive(packet)
     }
@@ -94,11 +112,13 @@ class Tun2Socks(
         val key = packet.key
         val existing = udp[key]
         if (existing != null) { existing.send(packet.payload); return }
-        if (udp.size >= 32) return
+        if (udp.size >= 32) { onUdpError("Receiver UDP capacity reached (32 flows)"); return }
         lateinit var flow: UdpFlow
         flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
-            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) })
-        udp[key] = flow; flow.send(packet.payload)
+            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) },
+            onError = onUdpError,
+            onConnected = { udpConnected.incrementAndGet() })
+        udp[key] = flow; udpAttempts.incrementAndGet(); flow.send(packet.payload)
         Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
     }
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {

@@ -48,4 +48,8 @@
     <string name="open_wifi_settings">Android Wi-Fi 설정 열기</string>
     <string name="qr_scan_prompt">송신기의 DataNet Share 연결 QR코드를 스캔하세요</string>
     <string name="qr_import_help">Wi-Fi 연결 전에도 QR 스캔이 가능해요. 비밀번호는 앱 메모리에만 보관하며, 송신 공유를 재시작하면 이전 프록시 비밀번호는 사용할 수 없어요.</string>
+    <string name="diagnostic_status_title">네트워크 진단 · 송신기 / 수신기</string>
+    <string name="diagnostic_status_help">VPN이 연결된 상태여도 내부 통신 실패가 발생하면 여기에 기록됩니다. IP·QR·비밀번호는 기록하지 않아요. 기록이 없다고 인터넷 정상 동작을 뜻하지는 않습니다.</string>
+    <string name="copy_safe_diagnostics">진단 내용 복사 (비밀번호 제외)</string>
+    <string name="diagnostics_copied">연결 비밀정보를 제외한 진단 기록을 복사했어요</string>
 </resources>

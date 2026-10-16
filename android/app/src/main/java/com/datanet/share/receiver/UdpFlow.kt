@@ -26,7 +26,9 @@ class UdpFlow(
     private val writePacket: (ByteArray) -> Unit,
     private val onRx: (Int) -> Unit,
     private val onTx: (Int) -> Unit,
-    private val onClose: () -> Unit
+    private val onClose: () -> Unit,
+    private val onError: (String) -> Unit = {},
+    private val onConnected: () -> Unit = {}
 ) {
     private val closed = AtomicBoolean()
     private val queue = ArrayBlockingQueue<ByteArray>(32)
@@ -51,6 +53,7 @@ class UdpFlow(
             synchronized(this) { if (closed.get()) { datagram.close(); return }; udp = datagram }
             if (!protectDatagram(datagram)) throw IOException("UDP relay socket protection failed")
             datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000
+            onConnected() // UDP ASSOCIATE control handshake and relay socket succeeded
             socket.soTimeout = 1000
             Thread({
                 try {
@@ -58,7 +61,9 @@ class UdpFlow(
                         try { if (input.read() < 0) break } catch (_: SocketTimeoutException) {}
                         if (System.nanoTime() - lastActivity > 120_000_000_000L) break
                     }
-                } catch (_: IOException) {} finally { close() }
+                } catch (e: IOException) {
+            if (!closed.get()) onError("UDP upstream read failed (${e.javaClass.simpleName})")
+        } finally { close() }
             }, "tun-udp-control").apply { isDaemon = true; start() }
             Thread({ receive(datagram) }, "tun-udp-receive").apply { isDaemon = true; start() }
             val destination = Socks5.Address(InetAddress.getByAddress(key.destinationBytes).hostAddress!!, key.destinationPort)
@@ -67,7 +72,12 @@ class UdpFlow(
                 val bytes = Socks5.encodeDatagram(destination, payload)
                 datagram.send(DatagramPacket(bytes, bytes.size)); onTx(payload.size)
             }
-        } catch (_: Exception) {} finally { close() }
+        } catch (e: Exception) {
+            if (!closed.get()) {
+                // Do not expose destination, proxy credentials or exception messages.
+                onError("UDP proxy setup/relay failed (${e.javaClass.simpleName})")
+            }
+        } finally { close() }
     }
     private fun receive(socket: DatagramSocket) {
         val buffer = ByteArray(65535)
