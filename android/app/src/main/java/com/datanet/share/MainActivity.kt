@@ -110,7 +110,9 @@ class MainActivity : AppCompatActivity() {
         val selected = candidates.getOrNull(addresses.selectedItemPosition)?.ip ?: preferences.getString("bind", "")
         candidates = InterfaceEnumerator.localCandidates()
         val labels = candidates.map { "${it.name}: ${it.ip}" }.ifEmpty { listOf(getString(R.string.no_addresses)) }
-        addresses.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        addresses.adapter = ArrayAdapter(this, R.layout.spinner_selection, labels).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
         candidates.indexOfFirst { it.ip == selected }.takeIf { it >= 0 }?.let(addresses::setSelection)
     }
     private fun startSender(p2p: Boolean) {
