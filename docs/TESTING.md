@@ -29,11 +29,11 @@ Coverage includes:
 
 ## Current evidence
 
-Verified runtime/test commit: `f9030e8b1ee705ce8bd7a9b9e8faf4113ddc9677`.
+Core relay suite first verified at `f9030e8b1ee705ce8bd7a9b9e8faf4113ddc9677`. Current APK/UI revision: `2dc1faae013024aabe9f905d941fb58468658cfc` ([PR #2](https://github.com/Eun-si123/DataNetShare/pull/2)); relay/test source is unchanged by the UI contrast fix.
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| x86_64 / JDK 17 host socket and protocol suite | 17 tests, 0 failures/errors/skips | [GitHub Actions run 38826853397](https://github.com/Eun-si123/DataNetShare/actions/runs/38826853397), host-protocol-tests job |
+| x86_64 / JDK 17 host socket and protocol suite | 17 tests, 0 failures/errors/skips | [GitHub Actions run 38827841966](https://github.com/Eun-si123/DataNetShare/actions/runs/38827841966), host-protocol-tests job |
 | Android JVM unit tests (same flow/relay suite) | 17 tests, 0 failures/errors/skips | Same run, uploaded Android JUnit reports |
 | Android lint | 0 errors/fatal issues, 22 warnings | Same run, uploaded lint XML/HTML |
 | Android development APK compile | Success | Same run, datanetshare-debug-apk artifact |
@@ -42,13 +42,13 @@ Verified runtime/test commit: `f9030e8b1ee705ce8bd7a9b9e8faf4113ddc9677`.
 
 The 22 nonfatal lint warnings cover dependency/target age, UI text/styles, backup extraction guidance, an optional monochrome icon, safe inlined SDK constants/obsolete checks and deliberately session-owned wake locks. They do not constitute zero-warning or production certification. Dependency/target-SDK upgrades and OEM battery testing remain separate work.
 
-Delivered APK: `DataNetShare-5.1-dev-f9030e8.apk` (5,883,553 bytes).
+Delivered APK: `DataNetShare-5.1-dev.apk` (5,884,499 bytes).
 
-- APK SHA-256: `734220f5bdb6f5a539cb41f2c0efbf84fc5c35e9353f13673d146f4862538ecc`
-- Debug signing certificate SHA-256: `5165716659a77c196f649e590388711b7cf86dd311f9b77c8a91e7e896b07d74`
-- GitHub APK artifact ZIP SHA-256: `7d5c1de514987a1b902d2c1bab0436bd17a0bae22170f6a71dd9bc7ee967028c`
+- APK SHA-256: `f7e80872d1484739510aabdcfaab974a0b132b5acd457417f8429bea24317ed5`
+- Debug signing certificate SHA-256: `1b9313f5b193f2f9045681cfbb7515990cad1f78a0405e1e613fc7bc507b1e76`
+- GitHub APK artifact ZIP SHA-256: `36e2cc438c095eaa3e58b731b24f90dd9f7f8dfc5f06dbf7647c68d2400ad730`
 
-These hashes identify the initial validated development APK. A subsequent UI-only fix gives the selected interface address an explicit text color so it stays legible on the fixed dark background in light system theme. Always match a new APK to its own source revision and signature.
+These hashes identify the current delivered APK, including the selected-interface contrast fix. It passed the full host/Android unit/lint/build workflow above; this final documentation update does not change that runtime. Always match a new APK to its own source revision and signature.
 
 CI uploads the debug APK only after tests, lint and compilation succeed. Test reports are also uploaded on failure. A green build demonstrates those checks, not OEM Wi-Fi Direct compatibility, stable phone routing or carrier quota behavior.
 
