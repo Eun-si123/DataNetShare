@@ -2,6 +2,8 @@
 
 ## 5.1-dev.8 — 2026-10-16
 
+- Fix a race discovered during release verification: sender Stop no longer snapshots ConcurrentHashMap socket/UDP-association sets via Kotlin `toList()` while other threads remove entries (could throw `NoSuchElementException`). Add concurrent stop test and rerun full CI before publishing.
+
 - Consolidate sender Wi-Fi Direct, sender USB/Wi-Fi, receiver VPN start and the separate Stop action into **one contextual primary button**: Start / Cancel while starting / Stop while connected.
 - Select Share or Receive before connecting and display only the selected role's setup. During a session, settings collapse while QR, active status and privacy-safe network diagnostics remain accessible.
 - Wi-Fi Direct is the default share method; USB/local Wi-Fi and advanced routing remain available. Receiver QR scanning is primary with collapsible manual IPv4/port/password fields.
