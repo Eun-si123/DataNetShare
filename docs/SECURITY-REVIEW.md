@@ -27,6 +27,14 @@ Updated 2026-10-16 KST. These notes describe the maintained source and its bound
 
 **Debug builds are not releases.** Validate source, commit, APK package and signing certificate. CI-runner debug keys are not a stable update identity. A release requires a private signing process, compatible upgrades and device testing.
 
+## Session QR credentials (5.1-dev.3)
+
+The sender shows its connection QR only after the user taps **Show connection QR** during an active sharing session. The code includes plaintext SOCKS5 password and, if available, Wi-Fi Direct SSID/passphrase. **Hiding the image does not revoke the password.** A photographed QR can be reused until the sender stops/restarts and rotates its 128-bit random session password. This is session-scoped, **not a single-scan pairing token**; that would require a distinct sender-side one-redemption exchange and replay protection.
+
+The receiver's local ZXing scanner accepts only a size-bounded, versioned DataNetShare payload with validated IPv4, port and passwords. It fills form fields but never joins a wireless network or enables an Android VPN without user interaction. The transient form and pending VPN consent live only in an Activity ViewModel and are not written to SharedPreferences or saved instance-state. QR contents are not uploaded to a service, logged or sent to analytics. An explicit **Copy Wi-Fi password** action does use Android clipboard. A nearby observer or screenshot can still capture a visible code; do not share a screenshot publicly.
+
+Camera permission is needed only for scanning. Real camera, OEM, and phone-to-phone networking compatibility remain unverified by JVM tests.
+
 ## Privacy behavior
 
 No analytics/telemetry SDK is declared. The receiver configures `1.1.1.1` as its DNS resolver; this alone does not enable encrypted DNS. The optional explicit UDP diagnostic contacts `stun.l.google.com:19302`. The sender resolves client-requested hostnames through its selected upstream. Addresses/route counters are visible in the UI; traffic contents are not intentionally logged. Copying credentials puts them in Android's clipboard and may expose them to clipboard features.

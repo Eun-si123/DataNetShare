@@ -34,4 +34,18 @@
     <string name="proxy_password">SOCKS5 비밀번호</string>
     <string name="test_receiver_first">수신 VPN을 시작한 뒤 UDP를 테스트하세요.</string>
     <string name="version_label">개발 빌드 · %1$s</string>
+
+    <string name="show_pairing_qr">연결 QR코드 표시</string>
+    <string name="hide_pairing_qr">연결 QR코드 숨기기</string>
+    <string name="qr_sender_help">수신 휴대폰의 DataNet Share 앱에서 스캔하세요. QR에는 SOCKS5 및 Wi-Fi 비밀번호가 들어갑니다. 다른 사람이 촬영하면 공유를 중지할 때까지 사용할 수 있습니다. 공유를 재시작하면 새 코드로 바뀌지만, 1회 스캔만 허용하는 코드는 아닙니다.</string>
+    <string name="pairing_qr_description">Wi-Fi 및 프록시 비밀번호가 포함된 세션 연결 QR코드</string>
+    <string name="scan_pairing_qr">송신기 QR코드 스캔 (카메라)</string>
+    <string name="qr_invalid">올바른 DataNet Share 연결 QR코드가 아니에요</string>
+    <string name="qr_failed">연결 QR코드를 표시할 수 없어요</string>
+    <string name="qr_imported">연결 정보를 입력했어요. 송신기의 Wi-Fi에 접속한 뒤 수신 VPN을 시작하세요.</string>
+    <string name="scanned_wifi_details">Wi-Fi 이름: %1$s\nWi-Fi 비밀번호: %2$s\nAndroid Wi-Fi 설정에서 연결한 다음 앱으로 돌아오세요. 앱이 몰래 Wi-Fi를 연결하지는 않습니다.</string>
+    <string name="copy_scanned_wifi_password">Wi-Fi 비밀번호 복사</string>
+    <string name="open_wifi_settings">Android Wi-Fi 설정 열기</string>
+    <string name="qr_scan_prompt">송신기의 DataNet Share 연결 QR코드를 스캔하세요</string>
+    <string name="qr_import_help">Wi-Fi 연결 전에도 QR 스캔이 가능해요. 비밀번호는 앱 메모리에만 보관하며, 송신 공유를 재시작하면 이전 프록시 비밀번호는 사용할 수 없어요.</string>
 </resources>
