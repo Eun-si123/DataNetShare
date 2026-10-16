@@ -6,7 +6,7 @@
 
 ## 설치
 
-**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.4` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.4-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.5` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.5-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 
@@ -51,6 +51,12 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 4. 진단 메뉴에서 UDP 도달성 테스트를 할 수 있습니다. 외부 Google STUN 서버에 접속하는 검사이므로 실패했다고 모든 UDP 통신이 안 되는 것은 아닙니다.
 
 내장 수신기는 IPv4 TCP·UDP용이며 IPv6·ICMP·IP 조각 재조립은 지원하지 않습니다. 게임·영상·장시간 연결의 기기별 실사용 검증이 남아 있으므로, 넓은 호환성이 필요하면 검증된 SOCKS5 지원 외부 클라이언트를 이용하세요. iOS는 이 APK를 실행할 수 없으며, 인증을 지원하는 별도 클라이언트가 필요합니다.
+
+## 속도 측정 오류 및 TCP 수신기 보강 (5.1-dev.5)
+
+브라우저에서 FAST.com이 간헐적으로 `ERR_CONNECTION_RESET`을 표시하고 Ookla에서 `LATENCY TEST ERROR`가 발생한 실기기 사례를 조사했습니다. 이번 버전에서는 수신기 TCP 연결 응답에 **MSS 1200**을 명시하고, VPN TUN 인터페이스 출력 큐가 일시적으로 가득 차더라도 제한적으로 대기·재시도하도록 바꿨습니다.
+
+이는 성능·안정성 개선을 위한 수정이지 속도 측정이 정상화됐다고 검증된 결과는 아닙니다. **HTTP/3/QUIC, IPv6, IP 단편화, 대량 동시 연결** 지원에는 여전히 한계가 있습니다. 문제가 반복되면 두 폰의 `Last upstream error` 및 `Last TCP error` 문구를 비교하세요. 먼저 단순한 IPv4 HTTPS 웹페이지를 열고, 그다음 속도 테스트로 비교하면 실패 범위를 좁히기 좋습니다.
 
 ## 브라우저 ERR_CONNECTION_RESET 및 인터넷 출구 확인 (5.1-dev.4)
 
