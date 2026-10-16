@@ -17,6 +17,7 @@ import com.datanet.share.common.CellularNetworkTracker
 import com.datanet.share.common.Constants
 import com.datanet.share.common.FormatBytes
 import com.datanet.share.common.InterfaceEnumerator
+import com.datanet.share.common.NetworkEvent
 import com.datanet.share.common.ServiceNotifications
 import com.datanet.share.common.SessionStore
 import java.security.SecureRandom
@@ -89,7 +90,7 @@ class SenderService : Service() {
                         (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
                 }
             }, onFailure = { error -> main.post { if (token == session) fail(error) } },
-            onUpstreamFailure = { error -> if (token == session) recentUpstreamFailure = error })
+            onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } })
         socks = server
         try {
             server.start()
