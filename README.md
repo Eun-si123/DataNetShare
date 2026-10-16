@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.9` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.10` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,14 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Automatic receiver VPN shutdown when the sender disappears (5.1-dev.10)
+
+Previously, stopping sharing on the **sender phone** left the receiver's experimental IPv4 VPN installed, so Android apps kept retrying unreachable Internet connections. The receiver now performs a protected SOCKS5 authentication health check against its paired sender every five seconds. **Three consecutive failures** close the Android VPN and show a sender-disconnected message; successful checks reset the failure count. The probe does not forward any destination traffic or log passwords.
+
+The main app's single **Stop connection** button now dispatches the **same explicit service STOP command** as the notification's Stop action. Shutdown closes the VPN file descriptor before waiting for TCP/UDP bridge cleanup; the receiver's concurrent flow-collection shutdown was also made safe. Users can therefore stop the receiver directly in the app, even if the sender is already offline.
+
+**Expected test:** connect two phones, turn the sender off first, and confirm the receiver automatically leaves VPN mode within a few health-check intervals; also press the receiver's in-app Stop button while connected and verify the Android VPN indicator disappears. Transient radio outages can still cause a deliberate fail-closed disconnect after three missed checks. If Android **Always-on VPN** or **Block connections without VPN** is enabled for this app, that OS-level configuration can affect the displayed VPN state and normal Internet fallback. This is a prototype; no device verification is claimed yet.
 
 ## Diagnose high loaded latency (5.1-dev.9)
 
