@@ -75,11 +75,10 @@ class Socks5ServerTest {
         assertEquals(-1, partial.getInputStream().read()); assertEquals(-1, authenticated.getInputStream().read())
         partial.close(); authenticated.close()
     }
-    @Test fun unavailableUpstreamReturnsFailureWithoutCrashingListener() = ProxyFixture().use { fixture ->
-        val unusedPort = ServerSocket(0).use { it.localPort }
+    @Test fun unavailableUpstreamReturnsFailureWithoutCrashingListener() = ProxyFixture(failConnect = true).use { fixture ->
         fixture.client().use { client ->
             try {
-                Socks5.request(DataInputStream(client.getInputStream()), client.getOutputStream(), 1, Socks5.Address("127.0.0.1", unusedPort))
+                Socks5.request(DataInputStream(client.getInputStream()), client.getOutputStream(), 1, Socks5.Address("127.0.0.1", 12345))
                 fail("unexpected upstream connection")
             } catch (e: java.io.IOException) { assertTrue(e.message!!.contains("error 5")) }
         }
