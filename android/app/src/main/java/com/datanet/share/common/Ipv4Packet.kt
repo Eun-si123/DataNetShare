@@ -41,12 +41,24 @@ data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, va
 
 /** Packet encoder for the IPv4-only experimental receiver. */
 object IpPackets {
-    fun tcp(key: FlowKey, seq: Int, ack: Int, flags: Int, window: Int, payload: ByteArray): ByteArray {
-        val packet = header(key, 6, 20 + payload.size)
+    /**
+     * An option-free SYN-ACK makes Android/Linux peers fall back to an unnecessarily
+     * small MSS (often 536), multiplying TCP packets during uploads. Permit safe,
+     * aligned TCP options on SYN only; checksums cover options and payload.
+     */
+    fun tcp(key: FlowKey, seq: Int, ack: Int, flags: Int, window: Int,
+            payload: ByteArray, options: ByteArray = ByteArray(0)): ByteArray {
+        require(options.size <= 40 && options.size % 4 == 0) { "TCP options must be 4-byte aligned" }
+        require(options.isEmpty() || flags and 0x02 != 0) { "TCP options only supported on SYN packets" }
+        val transportHeader = 20 + options.size
+        val packet = header(key, 6, transportHeader + payload.size)
         val buffer = ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN)
-        buffer.putInt(24, seq); buffer.putInt(28, ack); buffer.put(32, 0x50); buffer.put(33, flags.toByte())
+        buffer.putInt(24, seq); buffer.putInt(28, ack)
+        buffer.put(32, ((transportHeader / 4) shl 4).toByte())
+        buffer.put(33, flags.toByte())
         buffer.putShort(34, window.coerceIn(0, 65535).toShort())
-        System.arraycopy(payload, 0, packet, 40, payload.size)
+        if (options.isNotEmpty()) System.arraycopy(options, 0, packet, 40, options.size)
+        System.arraycopy(payload, 0, packet, 20 + transportHeader, payload.size)
         val pseudo = ByteBuffer.allocate(12 + packet.size - 20).order(ByteOrder.BIG_ENDIAN)
             .putInt(key.destination).putInt(key.source).put(0).put(6).putShort((packet.size - 20).toShort())
             .put(packet, 20, packet.size - 20).array()

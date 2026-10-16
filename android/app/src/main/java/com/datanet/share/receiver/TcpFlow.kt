@@ -30,6 +30,9 @@ class TcpFlow(
     companion object {
         private const val CAPACITY = 65_535
         private const val MSS = 1200
+        // RFC 793/879: explicitly advertise the segment size that our TUN bridge
+        // can handle without fragmentation, instead of relying on 536-byte fallback.
+        private val SYN_MSS_OPTION = byteArrayOf(2, 4, (MSS ushr 8).toByte(), MSS.toByte())
         private const val MASK = 0xffffffffL
         private fun unsigned(value: Int) = value.toLong() and MASK
         private fun distance(from: Long, to: Long) = (to - from) and MASK
@@ -184,7 +187,11 @@ class TcpFlow(
         val segment = Segment(next, flags, payload, System.nanoTime())
         pending.add(segment); next = (next + segment.length) and MASK; emit(segment)
     }
-    private fun emit(segment: Segment) { writePacket(IpPackets.tcp(key, segment.sequence.toInt(), expected.toInt(), segment.flags, CAPACITY - queuedBytes, segment.payload)) }
+    private fun emit(segment: Segment) {
+        writePacket(IpPackets.tcp(key, segment.sequence.toInt(), expected.toInt(),
+            segment.flags, CAPACITY - queuedBytes, segment.payload,
+            if (segment.flags and 0x02 != 0) SYN_MSS_OPTION else ByteArray(0)))
+    }
     private fun sendAck() { if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x10, CAPACITY - queuedBytes, ByteArray(0))) }
     fun abort() = synchronized(lock) {
         if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x14, 0, ByteArray(0)))
