@@ -12,6 +12,8 @@ Loaded download RTT is ~19.2× unloaded; queue/backpressure is a plausible expla
 
 **Next physical test:** same phone pair, same Ookla destination/server, three paired runs; measure native sender loaded RTT versus receiver VPN loaded RTT. Record before/after deltas for TCP retransmits, TUN waits and milliseconds, TUN drops, TCP attempts/connected, UDP attempts/associated, sender active client peak and client-limit errors. Compare plain SOCKS transfer without TUN and Wi-Fi Direct pure throughput separately to isolate the costly layer. Zero observed waits/retransmits does *not* eliminate cellular or Wi-Fi Direct radio bufferbloat, unscaled TCP window limitations, or userspace ACK overhead.
 
+**Automated verification (2026-10-16):** [PR CI run 38851120303](https://github.com/Eun-si123/DataNetShare/actions/runs/38851120303) completed with **50 host regressions passed** and Android unit tests, lint and debug build successful. [Release workflow 38851291202](https://github.com/Eun-si123/DataNetShare/actions/runs/38851291202) published [v5.1-dev.9](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.9) with signed debug APK and `SHA256SUMS.txt`. APK `DataNetShare-5.1-dev.9-debug.apk`: 6,265,904 bytes, SHA-256 `08f8170f2a57fdfd65fd4794336bce367a37b7b29ea08b691f4326d90176cb38`. Real-device loaded-RTT and bottleneck improvements have **not** been verified.
+
 ## 5.1-dev.8 — one-button Android setup UI and sender stop race
 
 **User UX finding:** The app previously showed three separate Start actions (sender Wi-Fi Direct, sender USB/Wi-Fi, receiver VPN) and an unrelated global Stop control, while both complete sender/receiver forms were visible on one long screen.
