@@ -18,12 +18,16 @@ object SessionStore {
     }
     val state = MutableLiveData(State())
     val stats = MutableLiveData("")
+    private val diagnosticJournal = DiagnosticJournal()
+    val diagnostics = MutableLiveData(diagnosticJournal.snapshot())
+    fun note(kind: NetworkEvent) { diagnostics.postValue(diagnosticJournal.record(kind)) }
+    fun resetDiagnostics() { diagnostics.postValue(diagnosticJournal.clear()) }
     @Volatile var current = State(); private set
 
     @Synchronized fun publish(value: State) { current = value; state.postValue(value) }
     @Synchronized fun claim(mode: Mode): Boolean {
         if (current.busy) return false
-        publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
+        resetDiagnostics(); publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
     }
     fun stopped(mode: Mode) {
         if (current.mode == mode) { publish(State()); stats.postValue("") }

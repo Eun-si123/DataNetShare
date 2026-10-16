@@ -6,7 +6,7 @@
 
 ## 설치
 
-**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.5` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.5-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.6` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.5-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 
@@ -51,6 +51,14 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 4. 진단 메뉴에서 UDP 도달성 테스트를 할 수 있습니다. 외부 Google STUN 서버에 접속하는 검사이므로 실패했다고 모든 UDP 통신이 안 되는 것은 아닙니다.
 
 내장 수신기는 IPv4 TCP·UDP용이며 IPv6·ICMP·IP 조각 재조립은 지원하지 않습니다. 게임·영상·장시간 연결의 기기별 실사용 검증이 남아 있으므로, 넓은 호환성이 필요하면 검증된 SOCKS5 지원 외부 클라이언트를 이용하세요. iOS는 이 APK를 실행할 수 없으며, 인증을 지원하는 별도 클라이언트가 필요합니다.
+
+## 네트워크 진단은 어디에 표시되나요? (5.1-dev.6)
+
+송신 폰과 수신 폰에서 앱을 열면 **맨 위 ‘연결됨’ 상태와 전송 통계 바로 아래**에 **‘네트워크 진단 · 송신기 / 수신기’** 영역이 보여요. 이전에는 일부 UDP 접속 실패가 내부에서 무시되어 아무 오류도 뜨지 않을 수 있었지만, 이제 송신기 외부 연결 실패, TCP·UDP 연결 제한, UDP 설정 및 수신 오류, VPN 출력 혼잡의 누적 횟수를 표시합니다.
+
+**‘진단 내용 복사 (비밀번호 제외)’** 버튼으로 IP, QR, SOCKS5/Wi-Fi 비밀번호, 접속 사이트 이름 없이 오류 유형과 횟수만 복사할 수 있어요. 수신 통계에는 **TCP attempts / connected**, **UDP attempts / associated**, **TUN drops**도 표시됩니다. 오류가 없어도 속도 측정이 0으로 멈추면 연결이 어느 단계까지 진행됐는지 살펴볼 수 있습니다.
+
+송신 폰이 사용 중인 인터넷 출구는 사용자가 직접 모바일 데이터 공인 IP와 다른 Wi-Fi 공인 IP를 비교해 확인했습니다. 따라서 지금은 모바일 데이터가 아닌 Wi-Fi로 나가는 문제가 아니라 실험용 VPN의 TCP/UDP 호환성과 연결 처리에 집중합니다. **진단 기록이 없어도 통신이 정상이라는 보장은 없습니다.**
 
 ## 속도 측정 오류 및 TCP 수신기 보강 (5.1-dev.5)
 

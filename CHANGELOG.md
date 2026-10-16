@@ -1,5 +1,14 @@
 # Changes
 
+## 5.1-dev.6 — 2026-10-16
+
+- User confirmed that the sending phone's **mobile-data** IP differs from its concurrent Wi-Fi public IP. Browser speed test fails with FAST.com showing 0 and Ookla reporting a latency-test server connection error, even with no application error message.
+- Show an **always-visible Network diagnostics** panel beneath the Connected status on both phones, with a button to copy categorized, bounded in-memory events without usernames, passwords, QR, endpoints, URLs or packet contents.
+- Fix silently swallowed receiver UDP proxy setup/read exceptions, record TCP/UDP capacity limits, sender upstream failures, and TUN output congestion.
+- Report cumulative **TCP attempts / connected**, **UDP attempts / associated**, and **TUN drops** so a traffic stall without exceptions can be localized.
+- Add host tests for journal bounds/concurrency/privacy, setup failures, and existing protocol regressions.
+- Android speed-test compatibility is **not yet proven**. The home-grown IPv4 TCP/IP bridge still needs physical-device validation and comparison with a mature tun2socks engine.
+
 ## 5.1-dev.5 — 2026-10-16
 
 Transport robustness after a phone-to-phone report of intermittent `ERR_CONNECTION_RESET` when opening FAST.com and an Ookla `LATENCY TEST ERROR` during speed tests.

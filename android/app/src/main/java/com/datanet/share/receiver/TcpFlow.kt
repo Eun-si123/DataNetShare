@@ -25,7 +25,8 @@ class TcpFlow(
     private val onTx: (Int) -> Unit,
     private val onClose: () -> Unit,
     initialSequence: Int = SecureRandom().nextInt(),
-    private val onError: (String) -> Unit = {}
+    private val onError: (String) -> Unit = {},
+    private val onConnected: () -> Unit = {}
 ) {
     companion object {
         private const val CAPACITY = 65_535
@@ -108,6 +109,7 @@ class TcpFlow(
             val input = DataInputStream(remote.getInputStream()); val output = remote.getOutputStream()
             Socks5.authenticateClient(input, output, password)
             Socks5.request(input, output, 1, Socks5.Address(InetAddress.getByAddress(key.destinationBytes).hostAddress!!, key.destinationPort))
+            onConnected() // SOCKS CONNECT succeeded; distinct from VPN flow creation
             remote.soTimeout = 0
             Thread({ writer(remote) }, "tun-tcp-writer").apply { isDaemon = true; start() }
             val buffer = ByteArray(MSS)
