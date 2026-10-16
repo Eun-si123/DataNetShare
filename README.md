@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.8` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.9` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,12 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Diagnose high loaded latency (5.1-dev.9)
+
+A recipient speed-test measured **28.6 Mbps down, 17.1 Mbps up, 38 ms idle ping, 729 ms download-loaded ping and 251 ms upload-loaded ping**. This is consistent with queueing or userspace TCP backpressure, but the location of the bottleneck is not proven.
+
+The receiving phone now shows **TCP retransmits** and **TUN waits (count and accumulated milliseconds)** alongside existing TCP/UDP connection counters and TUN drops. **Copy safe diagnostics** includes these aggregate metrics even when no exceptions are recorded. Normal **sender idle TCP reclaimed** is maintenance, displayed in regular stats rather than the yellow failures panel. Compare counter changes before and after a speed test; zero TUN waits/retransmits do not rule out cellular/Wi-Fi queueing or TCP window limitations. This release adds observation tools, not a demonstrated speed fix.
 
 ## One connection button and focused setup (5.1-dev.8)
 

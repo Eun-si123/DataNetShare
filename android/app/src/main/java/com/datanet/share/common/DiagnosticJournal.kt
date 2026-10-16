@@ -9,7 +9,6 @@ package com.datanet.share.common
 enum class NetworkEvent(val description: String) {
     SENDER_UPSTREAM("Sender could not open an Internet connection"),
     SENDER_CLIENT_LIMIT("Sender reached its concurrent-client limit"),
-    SENDER_IDLE_RECLAIMED("Sender reclaimed idle TCP connections"),
     TCP_UPSTREAM("Receiver TCP upstream connection failed/reset"),
     TCP_UPLOAD("Receiver TCP upload failed"),
     TCP_IDLE("Receiver TCP flow timed out"),

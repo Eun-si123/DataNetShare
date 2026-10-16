@@ -26,7 +26,9 @@ class TcpFlow(
     private val onClose: () -> Unit,
     initialSequence: Int = SecureRandom().nextInt(),
     private val onError: (String) -> Unit = {},
-    private val onConnected: () -> Unit = {}
+    private val onConnected: () -> Unit = {},
+    // Aggregate only; no destinations, packets or credentials in this callback.
+    private val onRetransmit: () -> Unit = {}
 ) {
     companion object {
         private const val CAPACITY = 65_535
@@ -183,7 +185,7 @@ class TcpFlow(
         val oldest = pending.firstOrNull()
         if (oldest != null && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
             if (++oldest.attempts > 8) { onError("TCP peer did not acknowledge retransmissions"); abort(); return@synchronized }
-            oldest.sent = now; emit(oldest)
+            oldest.sent = now; onRetransmit(); emit(oldest)
         }
         if (peerWindow == 0 && now - lastProbe > 1_000_000_000L) {
             lastProbe = now
