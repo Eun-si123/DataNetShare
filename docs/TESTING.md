@@ -27,7 +27,25 @@ Coverage includes:
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
 - Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
-## Current evidence
+## Latest verification: 5.1-dev.2 receiver hotfix
+
+Source merged as `9de0f1b945b76d2c429797104156cbc5990440eb` ([PR #3](https://github.com/Eun-si123/DataNetShare/pull/3)).
+A reported Android phone-to-phone receiver startup error on 5.1-dev.1 was traced to calling `VpnService.protect()` before an unbound TCP socket necessarily had a valid file descriptor. The fix binds/selects a local link before the protect call for the credential probe and subsequent TCP/UDP sockets.
+
+| Check | Recorded result | Evidence |
+| --- | --- | --- |
+| Host socket/protocol regressions | 21 tests passed, including 4 bind-then-protect ordering and failure tests | [PR CI 38834796662](https://github.com/Eun-si123/DataNetShare/actions/runs/38834796662) |
+| Android JVM unit tests, lint and debug APK compile | Successful | Same PR CI, android job |
+| Post-merge release verification, APK package/version/signature | Successful (v5.1-dev.2, versionCode 32, `com.datanet.share.dev`) | [Release workflow 38835092927](https://github.com/Eun-si123/DataNetShare/actions/runs/38835092927) |
+| Android physical-device `VpnService.protect()` and Wi-Fi Direct test | **Not run / user retest required** | The JVM tests mock protection and do not assert a real Android VPN protected FD |
+
+Public pre-release: [v5.1-dev.2](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.2), `DataNetShare-5.1-dev.2-debug.apk` (5,885,575 bytes).
+APK SHA-256: `eba71dfd99db258e886ed0bc4868360373a2106e10e582a263b8aef12619717b`.
+The release includes `SHA256SUMS.txt`. Its CI debug signing identity may differ from prior APKs; update installs are not guaranteed.
+
+This is evidence of successful automated regression tests, build and signing checks, **not evidence that the phone-to-phone bug has been fixed on every Android/OEM device**.
+
+## Previous 5.1-dev evidence (historical)
 
 Core relay suite first verified at `f9030e8b1ee705ce8bd7a9b9e8faf4113ddc9677`. Current APK/UI revision: `2dc1faae013024aabe9f905d941fb58468658cfc` ([PR #2](https://github.com/Eun-si123/DataNetShare/pull/2)); relay/test source is unchanged by the UI contrast fix.
 
@@ -48,7 +66,7 @@ Delivered APK: `DataNetShare-5.1-dev.apk` (5,884,499 bytes).
 - Debug signing certificate SHA-256: `1b9313f5b193f2f9045681cfbb7515990cad1f78a0405e1e613fc7bc507b1e76`
 - GitHub APK artifact ZIP SHA-256: `36e2cc438c095eaa3e58b731b24f90dd9f7f8dfc5f06dbf7647c68d2400ad730`
 
-These hashes identify the current delivered APK, including the selected-interface contrast fix. It passed the full host/Android unit/lint/build workflow above; this final documentation update does not change that runtime. Always match a new APK to its own source revision and signature.
+These hashes identify the earlier delivered APK, including the selected-interface contrast fix. It passed the full host/Android unit/lint/build workflow above; this final documentation update does not change that runtime. Always match a new APK to its own source revision and signature.
 
 CI uploads the debug APK only after tests, lint and compilation succeed. Test reports are also uploaded on failure. A green build demonstrates those checks, not OEM Wi-Fi Direct compatibility, stable phone routing or carrier quota behavior.
 
@@ -65,6 +83,7 @@ Record models, Android versions, tested commit, APK certificate and network setu
 | Private Wi-Fi sender + authenticated client | Cellular egress and DNS are used by default, even if local Wi-Fi has no internet | Not run |
 | Android receiver with wrong address/password | Probe fails before installing a VPN; other connectivity remains available | Not run |
 | Android receiver with cellular still default | Proxy sockets reach sender over local link, avoiding recursive VPN routing | Not run |
+| Android receiver v5.1-dev.2 socket protection on a real phone | Correctly prepares/protects sender probe, TCP and UDP while Wi-Fi remains local | Not run |
 | Browser/download/upload/video and two apps using same UDP endpoint | Correct data hashes and app-specific responses | Not run |
 | Stop/restart, fast mode switching, rotation and app reopening | One owner, current state and credentials, no stale callbacks | Not run |
 | Screen off / 30+ minute session / OEM battery restrictions | Expected progress; disconnects visible; resources reclaimed after Stop | Not run |
