@@ -84,6 +84,19 @@ class Socks5ServerTest {
         }
         fixture.client().close()
     }
+    @Test fun missingCellularNetworkReturnsNetworkUnreachableInsteadOfGenericReset() =
+        ProxyFixture(noCellular = true).use { fixture ->
+            fixture.client().use { client ->
+                try {
+                    Socks5.request(DataInputStream(client.getInputStream()), client.getOutputStream(), 1,
+                        Socks5.Address("127.0.0.1", 443))
+                    fail("expected unreachable mobile data route")
+                } catch (e: java.io.IOException) {
+                    assertTrue(e.message.orEmpty().contains("SOCKS error 3"))
+                }
+            }
+        }
+
     @Test fun activeTcpUpstreamIsClosedByStop() = ProxyFixture().use { fixture ->
         ServerSocket(0).use { destination ->
             fixture.client().use { client ->

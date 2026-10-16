@@ -9,10 +9,11 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 
-internal class ProxyFixture(private val failConnect: Boolean = false) : AutoCloseable {
+internal class ProxyFixture(private val failConnect: Boolean = false, private val noCellular: Boolean = false) : AutoCloseable {
     val password = "test-session-password"
     val proxy = Socks5Server("127.0.0.1", 0, password, object : Socks5Server.Upstream {
         override fun connect(host: String, port: Int): Socket {
+            if (noCellular) throw java.io.IOException("Mobile data is unavailable; no default-network fallback")
             if (failConnect) throw java.io.IOException("Simulated unavailable upstream")
             return Socket().apply { connect(InetSocketAddress(host, port), 1000) }
         }

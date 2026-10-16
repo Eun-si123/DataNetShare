@@ -22,7 +22,8 @@ class Tun2Socks(
     private val protect: (Socket) -> Boolean,
     private val protectDatagram: (DatagramSocket) -> Boolean,
     private val onFailure: (String) -> Unit,
-    private val onStats: (Int, Long, Long) -> Unit
+    private val onStats: (Int, Long, Long) -> Unit,
+    private val onTcpError: (String) -> Unit = {}
 ) {
     @Volatile private var running = false
     private val tcp = ConcurrentHashMap<FlowKey, TcpFlow>()
@@ -73,7 +74,8 @@ class Tun2Socks(
             if (tcp.size >= 64) return
             lateinit var flow: TcpFlow
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
-                { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) })
+                { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
+                onError = onTcpError)
             tcp[key] = flow; flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
         } else tcp[key]?.receive(packet)

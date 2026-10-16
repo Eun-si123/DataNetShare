@@ -6,7 +6,7 @@
 
 ## 설치
 
-**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.3` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.3-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases)에서 `v5.1-dev.4` **Pre-release(시험판)**를 선택하세요. **Assets** 아래의 `DataNetShare-5.1-dev.4-debug.apk`를 직접 내려받아 설치하면 됩니다. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 
@@ -51,6 +51,15 @@ curl --socks5-hostname PHONE_IP:8282 --proxy-user datanet https://example.com/
 4. 진단 메뉴에서 UDP 도달성 테스트를 할 수 있습니다. 외부 Google STUN 서버에 접속하는 검사이므로 실패했다고 모든 UDP 통신이 안 되는 것은 아닙니다.
 
 내장 수신기는 IPv4 TCP·UDP용이며 IPv6·ICMP·IP 조각 재조립은 지원하지 않습니다. 게임·영상·장시간 연결의 기기별 실사용 검증이 남아 있으므로, 넓은 호환성이 필요하면 검증된 SOCKS5 지원 외부 클라이언트를 이용하세요. iOS는 이 APK를 실행할 수 없으며, 인증을 지원하는 별도 클라이언트가 필요합니다.
+
+## 브라우저 ERR_CONNECTION_RESET 및 인터넷 출구 확인 (5.1-dev.4)
+
+- **송신 폰이 다른 Wi-Fi에 연결돼 있어도** 기본값(안드로이드 기본 경로 사용 꺼짐)에서는 모바일 데이터만 목적지 연결에 이용합니다. 모바일 데이터가 켜져 있지 않거나 Android가 별도의 모바일 네트워크를 확보하지 못하면 송신 SOCKS5에 접속한 뒤에도 웹사이트 TCP 접속은 실패할 수 있습니다.
+- 다른 Wi-Fi의 인터넷을 쓰고 싶다면 **송신 중지 → 안드로이드 기본 경로 사용 켬 → 다시 공유**를 시도하세요. 그 뒤 송신 화면의 **Android default route: Wi-Fi / mobile data / VPN** 표시를 확인하세요. 기본 경로는 OS 선택이며, Wi-Fi Direct를 켜면 제조사에 따라 기존 Wi-Fi 연결이 끊기거나 경로가 바뀔 수 있습니다.
+- **송신 화면**에서 `Mobile data`는 실제 앱의 모바일 네트워크가 확보된 상태, `Waiting for mobile data`는 확보되지 않은 상태입니다. 최근 실패가 있으면 `Last upstream error`가 표시됩니다. **수신 화면**에는 TCP 소켓 실패나 재전송 오류를 `Last TCP error`로 표시합니다. 이 문자열은 실제 IP, DNS 이름, 비밀번호를 남기지 않습니다.
+- 기본 모드에서 모바일 네트워크가 없으면 SOCKS5 **network unreachable (3)** 응답이 나가며, 수신 앱이 TCP를 재설정할 수 있습니다. 따라서 브라우저에서 `ERR_CONNECTION_RESET`만 보이는 경우 반드시 양쪽 앱의 상태 문구를 확인하세요.
+- 다른 Wi-Fi를 송신 인터넷으로 이용하는 모드는 VPN 킬 스위치가 없고, Android의 기본 경로 변경 시 인터넷 출구도 바뀔 수 있으므로 모바일 데이터 사용량과 실제 출구 IP를 직접 확인하세요.
+- 자동화된 큰 TCP 다운로드 테스트는 2 MiB 이상의 데이터 무결성을 확인하지만, 브라우저의 실제 Speedtest, HTTP/3/QUIC, IPv6, VPN/기기별 호환성을 보장하지는 않습니다.
 
 ## 종료와 문제 해결
 
