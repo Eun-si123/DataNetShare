@@ -6,6 +6,16 @@ Share an Android phone’s connection through an **authenticated SOCKS5 proxy**,
 
 This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Foundation and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1); the receiver socket hotfix is in [PR #3](https://github.com/Eun-si123/DataNetShare/pull/3).
 
+## Real-phone performance / VPN stop investigation (5.1-dev.11)
+
+A real device report showed **110/113 TCP connections, 35 successful UDP associations, 10 UDP flow-limit rejections (at the old 32 cap), 67 TCP retransmissions, 1 retransmission exhaustion, and no TUN packet drops**. This indicates the sender and SOCKS authentication are mostly working, but does **not** imply the VPN's throughput or latency is acceptable.
+
+The experimental receiver now admits **up to 40 UDP sessions** and reclaims flows that have been idle for at least 15 seconds when full. UDP queue overflow and relay receive failures appear as diagnostics. A receiver TCP segment lost with three duplicate ACKs may be retransmitted immediately instead of waiting for the 500 ms timer. **This is not a full TCP implementation or a guarantee of speed improvements.**
+
+If Android stops the receiver's running VPN service without the app's explicit Stop, the app now records a disconnect/failure instead of silently showing Ready. Android VPN permission is also checked periodically during paired-sender liveness probing. Process-level force kills and OEM always-on VPN behavior cannot be fully detected while the app is dead.
+
+**Device retest:** check whether the VPN button/state switches to disconnected after using Android's VPN Disconnect UI (and after sender-first Stop). Then compare active UDP count, rejected UDP requests and TCP retransmit counts on a speed test, without sharing QR or credentials.
+
 ## What works and what still needs testing
 
 | Path | Implemented behavior | Verification boundary |
@@ -21,7 +31,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** [Download the current v5.1-dev.10 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.10/DataNetShare-5.1-dev.10-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.10 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.10) and expand **Assets** for `DataNetShare-5.1-dev.10-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** [Download the current v5.1-dev.11 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.11/DataNetShare-5.1-dev.11-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.11 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.11) and expand **Assets** for `DataNetShare-5.1-dev.11-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
