@@ -26,7 +26,8 @@ data class BridgeStats(
     val tunDropped: Long,
     val tcpRetransmits: Long,
     val tunWriteWaits: Long,
-    val tunWriteWaitMs: Long
+    val tunWriteWaitMs: Long,
+    val activeUdp: Int
 )
 
 class Tun2Socks(
@@ -68,7 +69,7 @@ class Tun2Socks(
                     onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
                         tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
                         udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
-                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L))
+                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
@@ -126,7 +127,18 @@ class Tun2Socks(
         val key = packet.key
         val existing = udp[key]
         if (existing != null) { existing.send(packet.payload); return }
-        if (udp.size >= 32) { onUdpError("Receiver UDP capacity reached (32 flows)"); return }
+        if (udp.size >= UdpFlowPolicy.MAX_FLOWS) {
+            // Free a genuinely idle QUIC/DNS session instead of rejecting every
+            // new flow until the background 30s idle timer eventually expires.
+            val now = System.nanoTime()
+            udp.values.forEach { flow ->
+                if (flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS)) flow.close()
+            }
+            if (udp.size >= UdpFlowPolicy.MAX_FLOWS) {
+                onUdpError("Receiver UDP capacity reached (${UdpFlowPolicy.MAX_FLOWS} flows)")
+                return
+            }
+        }
         lateinit var flow: UdpFlow
         flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
             { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) },
