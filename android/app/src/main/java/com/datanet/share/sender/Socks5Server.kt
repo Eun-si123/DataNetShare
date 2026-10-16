@@ -13,6 +13,7 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Bounded SOCKS5 relay. No Android dependencies: real sockets are exercised by JVM tests. */
 class Socks5Server(
@@ -23,14 +24,24 @@ class Socks5Server(
     private val onStats: (clients: Int, rxBytes: Long, txBytes: Long) -> Unit = { _, _, _ -> },
     private val onFailure: (String) -> Unit = {},
     private val onUpstreamFailure: (String) -> Unit = {},
-    private val onClientLimit: () -> Unit = {}
+    private val onClientLimit: () -> Unit = {},
+    private val onIdleClose: () -> Unit = {},
+    private val maxClients: Int = 128,
+    private val tcpIdleMillis: Long = 45_000,
+    private val socketPollMillis: Int = 2_000
 ) {
+    init {
+        require(maxClients in 1..192) { "Sender client limit must be bounded" }
+        require(tcpIdleMillis in 500..600_000) { "Invalid TCP idle timeout" }
+        require(socketPollMillis in 100..10_000) { "Invalid socket polling interval" }
+    }
+
     interface Upstream {
         fun connect(host: String, port: Int): Socket
         fun resolve(host: String): Array<InetAddress>
         fun datagram(): DatagramSocket
     }
-    private val permits = Semaphore(64)
+    private val permits = Semaphore(maxClients)
     private val datagramPermits = Semaphore(128)
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
@@ -46,7 +57,7 @@ class Socks5Server(
         check(!running) { "Proxy is already running" }
         require(authPassword.toByteArray(Charsets.UTF_8).size in 1..255)
         val server = ServerSocket()
-        try { server.reuseAddress = true; server.bind(InetSocketAddress(bindHost, port), 64) }
+        try { server.reuseAddress = true; server.bind(InetSocketAddress(bindHost, port), minOf(maxClients, 128)) }
         catch (e: Exception) { server.close(); throw e }
         listener = server; running = true
         Thread({
@@ -113,11 +124,20 @@ class Socks5Server(
                     sockets.add(remote)
                     try {
                         if (!running) return
-                        client.soTimeout = 0; remote.soTimeout = 0; remote.tcpNoDelay = true
+                        // Read polls terminate abandoned browser keep-alives after a
+                        // bounded idle window; streams that keep moving data are not reaped.
+                        client.soTimeout = socketPollMillis
+                        remote.soTimeout = socketPollMillis
+                        remote.tcpNoDelay = true
                         Socks5.reply(output, 0)
-                        // EOF in one direction only closes that output half; the peer can still reply.
-                        val upload = Thread({ relay(client, remote, rx) }, "socks-upload").apply { isDaemon = true; start() }
-                        relay(remote, client, tx)
+                        val lastProgress = AtomicLong(System.nanoTime())
+                        val idleReported = AtomicBoolean()
+                        // EOF only half-closes a stream. Do not join forever when the
+                        // opposite side stops responding without sending its own FIN.
+                        val upload = Thread({
+                            relay(client, remote, rx, lastProgress, idleReported)
+                        }, "socks-upload").apply { isDaemon = true; start() }
+                        relay(remote, client, tx, lastProgress, idleReported)
                         upload.join()
                     } finally { sockets.remove(remote); remote.close() }
                 }
@@ -130,7 +150,7 @@ class Socks5Server(
                         Socks5.reply(output, 0, Socks5.Address(client.localAddress.hostAddress!!, assoc.port))
                         while (running && !assoc.closed) {
                             try { if (input.read() == -1) break } catch (_: SocketTimeoutException) {}
-                            if (System.nanoTime() - assoc.lastActivity.get() > 120_000_000_000L) break
+                            if (System.nanoTime() - assoc.lastActivity.get() > 30_000_000_000L) break
                         }
                     } finally { assoc.close(); associations.remove(assoc) }
                 }
@@ -139,15 +159,39 @@ class Socks5Server(
         } catch (_: IOException) { /* A bad handshake only terminates this client. */ }
     }
 
-    private fun relay(from: Socket, to: Socket, counter: AtomicLong) {
+    private fun relay(from: Socket, to: Socket, counter: AtomicLong,
+                      lastProgress: AtomicLong, idleReported: AtomicBoolean) {
         try {
-            val input = from.getInputStream(); val output = to.getOutputStream(); val buffer = ByteArray(32 * 1024)
+            val input = from.getInputStream(); val output = to.getOutputStream()
+            val buffer = ByteArray(32 * 1024)
             while (running) {
-                val count = input.read(buffer)
-                if (count < 0) { to.shutdownOutput(); return }
-                if (count > 0) { output.write(buffer, 0, count); counter.addAndGet(count.toLong()) }
+                val count = try {
+                    input.read(buffer)
+                } catch (_: SocketTimeoutException) {
+                    // Both directions share a monotonic timestamp so an active
+                    // download with a quiet upload channel is never considered idle.
+                    val idle = System.nanoTime() - lastProgress.get()
+                    if (idle >= tcpIdleMillis * 1_000_000L) {
+                        if (idleReported.compareAndSet(false, true)) onIdleClose()
+                        from.close(); to.close()
+                        return
+                    }
+                    continue
+                }
+                if (count < 0) {
+                    to.shutdownOutput()
+                    return
+                }
+                if (count > 0) {
+                    output.write(buffer, 0, count)
+                    lastProgress.set(System.nanoTime())
+                    counter.addAndGet(count.toLong())
+                }
             }
-        } catch (_: IOException) { try { from.close() } catch (_: IOException) {}; try { to.close() } catch (_: IOException) {} }
+        } catch (_: IOException) {
+            try { from.close() } catch (_: IOException) {}
+            try { to.close() } catch (_: IOException) {}
+        }
     }
 
     private inner class UdpAssociate(private val client: Socket) {

@@ -47,6 +47,9 @@ class Tun2Socks(
     private val tunWriteDrops = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
+    // Bounded slots: 80 TCP + 32 UDP remain below the sender's 128-client limit,
+    // leaving room for the initial authentication probe and brief handovers.
+    private val maxTcpFlows = 80
 
     fun start() {
         check(!running); running = true
@@ -98,7 +101,7 @@ class Tun2Socks(
         if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
-            if (tcp.size >= 64) { onTcpError("Receiver TCP capacity reached (64 flows)"); return }
+            if (tcp.size >= maxTcpFlows) { onTcpError("Receiver TCP capacity reached ($maxTcpFlows flows)"); return }
             lateinit var flow: TcpFlow
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },

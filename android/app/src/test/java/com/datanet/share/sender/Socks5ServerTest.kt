@@ -112,7 +112,43 @@ class Socks5ServerTest {
             }
         }
     }
-    @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture().use { fixture ->
+    @Test fun idleTcpRelayIsReclaimedAndNextClientCanConnect() =
+        ProxyFixture(maxClients = 1, tcpIdleMillis = 900, socketPollMillis = 200).use { fixture ->
+            ServerSocket(0, 2, java.net.InetAddress.getLoopbackAddress()).use { destination ->
+                // Remote accepts a TCP connection but never sends any payload or FIN,
+                // like a browser keep-alive that would previously hold a proxy slot forever.
+                Thread({
+                    repeat(2) {
+                        try {
+                            destination.accept().use { socket ->
+                                socket.soTimeout = 5000
+                                try { while (socket.getInputStream().read() != -1) {} }
+                                catch (_: java.io.IOException) {}
+                            }
+                        } catch (_: java.io.IOException) { return@Thread }
+                    }
+                }, "test-idle-proxy").apply { isDaemon = true; start() }
+                fixture.client().use { first ->
+                    Socks5.request(DataInputStream(first.getInputStream()), first.getOutputStream(), 1,
+                        Socks5.Address("127.0.0.1", destination.localPort))
+                    assertEquals(1, fixture.proxy.clientCount)
+                    val deadline = System.nanoTime() + 5_000_000_000L
+                    while (fixture.proxy.clientCount > 0 && System.nanoTime() < deadline) {
+                        Thread.sleep(25)
+                    }
+                    assertEquals("idle TCP client was never reclaimed", 0, fixture.proxy.clientCount)
+                    assertEquals("both read directions must report only one cleanup", 1,
+                        fixture.idleClosures.get())
+                    fixture.client().use { second ->
+                        Socks5.request(DataInputStream(second.getInputStream()), second.getOutputStream(), 1,
+                            Socks5.Address("127.0.0.1", destination.localPort))
+                    }
+                }
+            }
+            Unit // JUnit4 requires the generated @Test method to return void.
+        }
+
+    @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture(maxClients = 64).use { fixture ->
         val sockets = (1..64).map { Socket("127.0.0.1", fixture.proxy.boundPort).apply { soTimeout = 3000 } }
         try {
             val deadline = System.nanoTime() + 3_000_000_000L
