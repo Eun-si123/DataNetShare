@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:background="#0F1419">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="DataNet Share" android:textColor="#E6E8EB" android:textSize="28sp" android:textStyle="bold" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/tagline" android:textColor="#B5BCC8" android:textSize="14sp" android:layout_marginBottom="16dp" />
+        <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/idle" android:textColor="#4ADE80" android:textSize="20sp" android:textStyle="bold" android:accessibilityLiveRegion="polite" />
+        <TextView android:id="@+id/detailsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#E6E8EB" android:textSize="14sp" android:layout_marginTop="8dp" />
+        <TextView android:id="@+id/statsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#B5BCC8" android:textSize="13sp" android:layout_marginBottom="12dp" />
+        <LinearLayout android:id="@+id/credsCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp" android:background="#1E3A5F" android:visibility="gone" android:layout_marginBottom="12dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/credentials" android:textColor="#BFDBFE" android:textStyle="bold" />
+            <TextView android:id="@+id/credentialsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="15sp" android:fontFamily="monospace" android:textIsSelectable="true" android:layout_marginTop="8dp" />
+            <Button android:id="@+id/btnCopy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/copy_credentials" />
+        </LinearLayout>
+        <Button android:id="@+id/btnStop" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/stop" android:backgroundTint="#7F1D1D" android:textColor="#FFFFFF" android:enabled="false" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/sender_heading" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="24dp" />
+        <Button android:id="@+id/btnSender" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:text="@string/start_p2p" android:backgroundTint="#2563EB" android:textColor="#FFFFFF" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/bind_label" android:labelFor="@id/bindAddress" android:textColor="#B5BCC8" android:layout_marginTop="12dp" />
+        <Spinner android:id="@+id/bindAddress" android:layout_width="match_parent" android:layout_height="48dp" android:backgroundTint="#B5BCC8" />
+        <Button android:id="@+id/btnRefresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/refresh" />
+        <Button android:id="@+id/btnLocal" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:text="@string/start_local" android:backgroundTint="#0E7490" android:textColor="#FFFFFF" />
+        <Switch android:id="@+id/defaultRoute" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/default_route" android:textColor="#E6E8EB" android:textSize="14sp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/route_help" android:textColor="#B5BCC8" android:textSize="13sp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/receiver_heading" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="24dp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/receiver_help" android:textColor="#B5BCC8" android:textSize="13sp" android:layout_marginBottom="8dp" />
+        <EditText android:id="@+id/receiverHost" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:hint="@string/host_hint" android:inputType="numberDecimal" android:digits="0123456789." android:singleLine="true" android:textColor="#FFFFFF" android:textColorHint="#B5BCC8" android:autofillHints="" />
+        <EditText android:id="@+id/receiverPort" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:hint="@string/port_hint" android:inputType="number" android:singleLine="true" android:text="8282" android:maxLength="5" android:textColor="#FFFFFF" android:textColorHint="#B5BCC8" android:autofillHints="" />
+        <EditText android:id="@+id/receiverPassword" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:hint="@string/password_hint" android:inputType="textPassword" android:singleLine="true" android:maxLength="255" android:saveEnabled="false" android:importantForAutofill="no" android:textColor="#FFFFFF" android:textColorHint="#B5BCC8" />
+        <Button android:id="@+id/btnReceiver" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:text="@string/start_receiver" android:backgroundTint="#047857" android:textColor="#FFFFFF" />
+        <Button android:id="@+id/btnDiagnostics" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/diagnostics" android:layout_marginTop="20dp" />
+        <LinearLayout android:id="@+id/diagnosticsPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+            <Button android:id="@+id/btnUdpTest" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/udp_test" />
+            <TextView android:id="@+id/logText" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="100dp" android:padding="12dp" android:background="#161B22" android:textColor="#B5BCC8" android:textSize="12sp" android:fontFamily="monospace" android:textIsSelectable="true" />
+        </LinearLayout>
+        <TextView android:id="@+id/versionText" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#B5BCC8" android:textSize="12sp" android:layout_marginTop="20dp" />
+    </LinearLayout>
+</ScrollView>

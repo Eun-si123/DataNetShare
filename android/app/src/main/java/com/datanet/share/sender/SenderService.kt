@@ -1,0 +1,117 @@
+package com.datanet.share.sender
+
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import androidx.core.app.ServiceCompat
+import androidx.lifecycle.Observer
+import com.datanet.share.common.CellularNetworkTracker
+import com.datanet.share.common.Constants
+import com.datanet.share.common.FormatBytes
+import com.datanet.share.common.InterfaceEnumerator
+import com.datanet.share.common.ServiceNotifications
+import com.datanet.share.common.SessionStore
+import java.security.SecureRandom
+
+class SenderService : Service() {
+    companion object {
+        const val ACTION_START = "com.datanet.share.sender.START"
+        const val ACTION_START_LOCAL = "com.datanet.share.sender.START_LOCAL"
+        const val ACTION_STOP = "com.datanet.share.sender.STOP"
+        const val EXTRA_BIND_HOST = "bind_host"
+        const val EXTRA_DEFAULT_ROUTE = "default_route"
+    }
+    private var wifiHost: WifiDirectHost? = null
+    private var socks: Socks5Server? = null
+    private var observer: Observer<WifiDirectHost.State>? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var defaultRoute = false
+    private val main = Handler(Looper.getMainLooper())
+    @Volatile private var session = 0
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.SENDER); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action !in listOf(ACTION_START, ACTION_START_LOCAL)) { stopSelf(); return START_NOT_STICKY }
+        if (!SessionStore.claim(SessionStore.Mode.SENDER)) {
+            if (SessionStore.current.mode != SessionStore.Mode.SENDER) stopSelf()
+            return START_NOT_STICKY
+        }
+        try {
+            ServiceCompat.startForeground(this, Constants.SENDER_NOTIFICATION_ID, notification("Starting sharing…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Sender").apply { acquire() }
+            defaultRoute = intent?.getBooleanExtra(EXTRA_DEFAULT_ROUTE, false) ?: false
+            CellularNetworkTracker.start(this)
+            val token = ++session
+            if (intent?.action == ACTION_START_LOCAL) {
+                val host = intent.getStringExtra(EXTRA_BIND_HOST) ?: ""
+                require(InterfaceEnumerator.localCandidates().any { it.ip == host }) { "Choose an available USB or Wi-Fi address first" }
+                openProxy(token, host)
+            } else {
+                val host = WifiDirectHost(this); wifiHost = host
+                observer = Observer<WifiDirectHost.State> { state ->
+                    if (token != session) return@Observer
+                    when (state) {
+                        is WifiDirectHost.State.GroupReady -> openProxy(token, state.groupOwnerIp, state.ssid, state.passphrase)
+                        is WifiDirectHost.State.Failed -> fail("${state.reason}\n${state.hint}")
+                        is WifiDirectHost.State.Initializing, is WifiDirectHost.State.CreatingGroup -> status("Preparing Wi-Fi Direct group…")
+                        is WifiDirectHost.State.Retrying -> status("Wi-Fi Direct: ${state.reason}; retry ${state.attempt}/${state.maxAttempts}")
+                        else -> Unit
+                    }
+                }.also { host.state.observeForever(it) }
+                host.start()
+            }
+        } catch (e: Exception) { fail(e.message ?: "Sharing could not start") }
+        return START_NOT_STICKY
+    }
+
+    private fun openProxy(token: Int, host: String, ssid: String = "", wifiPassword: String = "") {
+        if (socks != null || token != session) return
+        val password = ByteArray(16).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
+        val server = Socks5Server(host, Constants.SOCKS5_PORT, password, AndroidUpstream(defaultRoute),
+            onStats = { clients, rx, tx ->
+                if (token == session) {
+                    val route = if (defaultRoute) "Android default route (VPN depends on settings)" else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
+                    SessionStore.stats.postValue("$clients connection(s) · ${FormatBytes.formatRxTx(rx, tx)}\n$route")
+                }
+            }, onFailure = { error -> main.post { if (token == session) fail(error) } })
+        socks = server
+        try {
+            server.start()
+            SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "active",
+                "SOCKS5: $host:${Constants.SOCKS5_PORT}\nUsername: datanet\n${if (defaultRoute) "Upstream: Android default route" else "Upstream: mobile data only"}", host, password, ssid, wifiPassword))
+            getSystemService(NotificationManager::class.java).notify(Constants.SENDER_NOTIFICATION_ID, notification("SOCKS5 at $host:${Constants.SOCKS5_PORT} · tap for credentials"))
+        } catch (e: Exception) { fail("Proxy could not start: ${e.message}") }
+    }
+
+    private fun status(details: String) { SessionStore.publish(SessionStore.current.copy(details = details)) }
+    private fun fail(details: String) {
+        cleanup()
+        SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
+        stopSelf()
+    }
+    private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Sender", text,
+        Intent(this, SenderService::class.java).setAction(ACTION_STOP))
+
+    private fun cleanup() {
+        ++session
+        observer?.let { wifiHost?.state?.removeObserver(it) }; observer = null
+        socks?.stop(); socks = null
+        wifiHost?.stop(); wifiHost = null
+        CellularNetworkTracker.stop()
+        wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+    override fun onDestroy() {
+        cleanup()
+        if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.SENDER)
+        super.onDestroy()
+    }
+}

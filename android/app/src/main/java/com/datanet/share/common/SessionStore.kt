@@ -1,0 +1,31 @@
+package com.datanet.share.common
+
+import androidx.lifecycle.MutableLiveData
+
+/** In-process state survives activity recreation without starting services just to query them. */
+object SessionStore {
+    enum class Mode { NONE, SENDER, RECEIVER }
+    data class State(
+        val mode: Mode = Mode.NONE,
+        val status: String = "stopped",
+        val details: String = "Ready",
+        val proxyHost: String = "",
+        val proxyPassword: String = "",
+        val ssid: String = "",
+        val wifiPassword: String = ""
+    ) {
+        val busy: Boolean get() = status == "starting" || status == "active"
+    }
+    val state = MutableLiveData(State())
+    val stats = MutableLiveData("")
+    @Volatile var current = State(); private set
+
+    @Synchronized fun publish(value: State) { current = value; state.postValue(value) }
+    @Synchronized fun claim(mode: Mode): Boolean {
+        if (current.busy) return false
+        publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
+    }
+    fun stopped(mode: Mode) {
+        if (current.mode == mode) { publish(State()); stats.postValue("") }
+    }
+}

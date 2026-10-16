@@ -1,0 +1,13 @@
+# Local Android build state / secrets
+.gradle/
+**/.gradle/
+**/build/
+**/local.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+.idea/
+*.iml
+
+# Retain the original upstream ZIP for provenance.
