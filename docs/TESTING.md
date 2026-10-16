@@ -2,6 +2,32 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## Same-server field performance baseline — 2026-10-16 KST
+
+The user performed two browser Ookla Speedtest measurements using **VultKR, Seoul** (same destination provider), approximately minutes apart:
+
+| Metric | Sender phone on native LG U+ 5G | Browser on recipient through DataNetShare 5.1-dev.7 | Tunnel / native |
+| --- | ---: | ---: | ---: |
+| Download | 273.73 Mbps | 35.80 Mbps | **13.1%** |
+| Upload | 37.50 Mbps | 16.55 Mbps | **44.1%** |
+| Unloaded latency | 32 ms | 88 ms | +56 ms |
+| Download loaded latency | 88 ms | 152 ms | +64 ms |
+| Upload loaded latency | 208 ms | 204 ms | -4 ms |
+
+Native 5G public IPv4 and the tunneled external public IPv4 were different, but both were reported in LG U+ address space. The user independently verified the sender's cellular-only upstream; differing public IPv4 addresses alone do not prove an unintended Internet source. Different device, path, and measurement time mean these results are a *field baseline*, not a controlled benchmark or exact speed tax attributable to one subsystem.
+
+The sender's prior screen showed **64/64 concurrent SOCKS clients and 200 new-client rejections** on 5.1-dev.6. After v5.1-dev.7 idle cleanup, a later screen showed **32 active clients and 57 reclaimed idle TCP connections** and the browser completed its speed test. This supports an improvement in proxy slot reclamation but **does not establish the cause of the remaining throughput deficit**.
+
+### Likely bottlenecks to isolate (not yet proven)
+
+1. Wi-Fi Direct actual peer PHY/link throughput and packet loss, including whether simultaneous Wi-Fi infrastructure connectivity reduces airtime.
+2. SOCKS5 relay throughput over Wi-Fi Direct **without** the VPN/TCP emulation, measured in both directions against a controlled sender or LAN endpoint.
+3. Receiver userspace `TcpFlow`/TUN overhead: MSS=1200 payload segments, per-segment IPv4/TCP allocation/checksums, per-flow synchronization/ACK/retransmission, blocking socket/reader/writer threads and a shared serialized TUN write lock; profile CPU, time in write/poll, memory, garbage collection and packets/s.
+4. Cellular signal/thermal/power differences between direct and proxy measurements. Run same-server multiple A/B/A trials rather than comparing a single reading.
+5. Browser connections/HTTP3 UDP and remote latency overhead; compare a plain reproducible TCP download to Ookla/FAST.com.
+
+**Acceptance for optimization:** Keep the cellular sender and VultKR test location comparable, make at least 3 sequential paired samples, log throughput median/p95, unloaded and loaded RTT, concurrent SOCKS peak, limit rejections, `TCP attempts / connected`, `UDP attempts / associated`, `TUN drops`, device CPU/temperature, and heap pressure. Separate Wi-Fi Direct-only, authenticated SOCKS, and receiver VPN measurements before attributing the bottleneck. Do not raise the 128-client cap arbitrarily; on-device resource measurements govern tuning. Evaluate a mature tun2socks backend behind a feature flag if the Kotlin bridge remains a bottleneck.
+
 ## Reproducible automated checks
 
 ```sh
