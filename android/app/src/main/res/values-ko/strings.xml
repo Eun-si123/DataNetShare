@@ -52,4 +52,17 @@
     <string name="diagnostic_status_help">VPN이 연결된 상태여도 내부 통신 실패가 발생하면 여기에 기록됩니다. IP·QR·비밀번호는 기록하지 않아요. 기록이 없다고 인터넷 정상 동작을 뜻하지는 않습니다.</string>
     <string name="copy_safe_diagnostics">진단 내용 복사 (비밀번호 제외)</string>
     <string name="diagnostics_copied">연결 비밀정보를 제외한 진단 기록을 복사했어요</string>
+    <string name="select_role">무엇을 할까요?</string>
+    <string name="role_share">내 인터넷 공유</string>
+    <string name="role_receive">공유받아 사용</string>
+    <string name="sender_mode_label">공유 방식</string>
+    <string name="transport_direct">Wi-Fi Direct · 다른 휴대폰에 공유</string>
+    <string name="transport_local">USB / 기존 Wi-Fi · 고급</string>
+    <string name="cancel_connect">연결 취소</string>
+    <string name="advanced_show">고급 연결 설정 펼치기 ▼</string>
+    <string name="advanced_hide">고급 연결 설정 접기 ▲</string>
+    <string name="manual_show">IP 주소와 비밀번호 직접 입력 ▼</string>
+    <string name="manual_hide">수동 연결 정보 접기 ▲</string>
+    <string name="qr_not_scanned">QR코드를 스캔하면 연결 정보가 자동 입력돼요.</string>
+    <string name="qr_ready">연결 정보 입력 완료. 송신 Wi-Fi에 연결한 뒤 시작을 누르세요.</string>
 </resources>
