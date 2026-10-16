@@ -1,5 +1,15 @@
 # Changes
 
+## 5.1-dev.5 — 2026-10-16
+
+Transport robustness after a phone-to-phone report of intermittent `ERR_CONNECTION_RESET` when opening FAST.com and an Ookla `LATENCY TEST ERROR` during speed tests.
+
+- TCP SYN-ACK now advertises 1200-byte MSS instead of omitting MSS (which can force conservative peer defaults); retransmitted SYN-ACK carries the same option. TCP/IP header lengths and checksums account for options.
+- Nonblocking VPN TUN output retries temporary `EAGAIN`/`EINTR` errors after a short bounded writability poll, instead of dropping immediately. Prolonged congestion still drops packets and relies on TCP retransmission; it cannot block forever.
+- Add JVM regression coverage for MSS and packet checksum, SYN retransmissions, and TUN write retry/backpressure policy.
+- Screenshot of Ookla Speedtest displayed an LG U+ egress IP in LG Telecom address space, consistent with mobile data being selected, but this alone does not establish the cause of remote server failures.
+- **Not proven:** that the two physical phones, Chrome/FAST.com, Speedtest latency, HTTP/3/QUIC, IPv6 or fragmented UDP are fully supported. The built-in receiver remains experimental.
+
 ## 5.1-dev.4 — 2026-10-16
 
 - Investigate user-observed `ERR_CONNECTION_RESET` during phone-to-phone browser speed tests with the sender simultaneously joined to another Wi-Fi network.
