@@ -31,6 +31,7 @@ class ReceiverVpnService : VpnService() {
     private var bridge: Tun2Socks? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var probe: Socket? = null
+    @Volatile private var peerWatchdog: Thread? = null
     @Volatile private var recentTcpError: String? = null
     @Volatile private var recentUdpError: String? = null
     private val main = Handler(Looper.getMainLooper())
@@ -130,7 +131,45 @@ class ReceiverVpnService : VpnService() {
                 .also { it.start() }
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
+            startPeerWatchdog(token, host, port, password)
         } catch (e: Exception) { fail("VPN could not start: ${e.message}") }
+    }
+
+    /**
+     * Sender and receiver are on separate devices: Android doesn't signal the
+     * sender's foreground-service shutdown to this VPN. Probe the authenticated
+     * local SOCKS endpoint every five seconds and close the VPN after 3 misses.
+     * Transient Wi-Fi Direct stalls should not immediately drop the tunnel.
+     *
+     * All data sockets are protected and bound to the same local peer link.
+     * Generation checks suppress stale callbacks after explicit Stop/restart.
+     */
+    private fun startPeerWatchdog(token: Int, host: String, port: Int, password: String) {
+        val watcher = Thread({
+            val policy = SenderHealthPolicy(3)
+            val link = ReceiverLink(this, host)
+            while (generation == token && !Thread.currentThread().isInterrupted) {
+                try { Thread.sleep(5_000) } catch (_: InterruptedException) { break }
+                if (generation != token) break
+                val alive = SenderHealthProbe.check(host, port, password,
+                    setup = { socket ->
+                        ReceiverSocketSetup.bindThenProtect(socket,
+                            { link.bind(it) }, { protect(it) })
+                    })
+                if (generation != token) break
+                if (policy.observe(alive)) {
+                    main.post {
+                        if (generation == token && SessionStore.current.mode == SessionStore.Mode.RECEIVER) {
+                            fail("Sender disconnected or unreachable. Receiver VPN was stopped; reconnect when sharing resumes.")
+                        }
+                    }
+                    break
+                }
+            }
+        }, "receiver-peer-watchdog")
+        watcher.isDaemon = true
+        peerWatchdog = watcher
+        watcher.start()
     }
 
     private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Receiver", text,
@@ -140,10 +179,18 @@ class ReceiverVpnService : VpnService() {
         SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "failed", message)); stopSelf()
     }
     private fun cleanup() {
+        // Invalidate callbacks before tearing down the VPN. Stop both explicit
+        // app button and notification action through this same cleanup path.
         ++generation
-        try { probe?.close() } catch (_: Exception) {}; probe = null
-        bridge?.stop(); bridge = null
-        try { pfd?.close() } catch (_: Exception) {}; pfd = null
+        peerWatchdog?.interrupt(); peerWatchdog = null
+        try { probe?.close() } catch (_: Exception) {}
+        probe = null
+        // FIRST drop Android's actual VPN tunnel/routes even if a TCP worker is
+        // stuck in a socket call or bridge shutdown. Do not leave a black-hole VPN.
+        val descriptor = pfd; pfd = null
+        try { descriptor?.close() } catch (_: Exception) {}
+        val oldBridge = bridge; bridge = null
+        try { oldBridge?.stop() } catch (_: Exception) {}
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
