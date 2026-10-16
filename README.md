@@ -21,7 +21,7 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 ## Get an APK (public preview)
 
-**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.4` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.4-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.5` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.5-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
@@ -71,6 +71,10 @@ For system-wide routing on a computer or iOS device, use a compatible third-part
 4. The receiver protects its proxy sockets and selects the local link to the sender even when cellular is the default network. You can run an external STUN UDP reachability test under **diagnostics**.
 
 Only one sender/receiver mode runs per app process. Use **Stop connection** or the notification’s **Stop** action before switching modes. Opening the app again shows the current state; a killed service is not silently resurrected. The development receiver remains experimental; use an established SOCKS5-capable client when broad protocol compatibility matters.
+
+## Browser resets and speed-test transport limitations
+
+The 5.1-dev.5 preview improves the receiver's TCP SYN-ACK by explicitly advertising MSS 1200 and retries short nonblocking TUN output congestion. This can reduce per-packet overhead and transient packet loss, but **does not certify** Ookla, FAST.com, Chrome HTTP/3/QUIC or IPv6. An Ookla latency server failure plus intermittent browser resets may be caused by upstream routing, receiver TCP state, unsupported UDP/fragmentation or site/server behavior. Record **Last upstream error** on sender and **Last TCP error** on receiver before treating a specific cause as proven. First try a basic IPv4 HTTPS page; only then run a speed test.
 
 ## Sender Internet path: mobile data versus Wi-Fi
 
