@@ -46,10 +46,12 @@ class TcpFlowTest {
     }
 
     @Test fun lostSynAckIsRetransmittedWithSameSequence() {
+        val retransmissions = java.util.concurrent.atomic.AtomicInteger()
         val packets = LinkedBlockingQueue<Ipv4Packet>()
         val key = FlowKey(0x0a000001, 2000, 0x7f000001, 80)
         val flow = TcpFlow(key, 100, "127.0.0.1", 1, "x", { true },
-            { packets.add(Ipv4Packet.parse(it)!!) }, {}, {}, {}, initialSequence = -2)
+            { packets.add(Ipv4Packet.parse(it)!!) }, {}, {}, {}, initialSequence = -2,
+            onRetransmit = { retransmissions.incrementAndGet() })
         try {
             flow.start()
             val syn = packets.poll(1, TimeUnit.SECONDS)!!
@@ -57,6 +59,7 @@ class TcpFlowTest {
             val repeat = packets.poll(1, TimeUnit.SECONDS)!!
             assertEquals(syn.sequence, repeat.sequence); assertEquals(0x12, repeat.flags)
             assertEquals(101, repeat.acknowledgement)
+            assertEquals("only actual resend increments retransmission metric", 1, retransmissions.get())
         } finally { flow.close() }
     }
 
