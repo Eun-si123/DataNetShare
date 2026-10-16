@@ -11,5 +11,9 @@ sourceSets {
     }
     test { kotlin.srcDir("../android/app/src/test/java") }
 }
-dependencies { testImplementation("junit:junit:4.13.2") }
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    // Exercise the same QR bitstream codec used by the Android scanner/encoder.
+    testImplementation("com.google.zxing:core:3.4.1")
+}
 tasks.test { testLogging { events("passed", "failed", "skipped") } }
