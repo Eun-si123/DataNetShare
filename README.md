@@ -19,9 +19,11 @@ This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Kegg
 
 **No claim is made that this app bypasses a carrier’s tethering accounting, guarantees VPN privacy, or works with every game or app.** Data use, tethering policy, VPN exclusions, Android routing and battery management depend on the actual environment.
 
-## Get a build
+## Get an APK (public preview)
 
-Use a successful **Android source verification** run for the source revision you want under [Actions](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml). Download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
+**Easy install:** Open [GitHub Releases](https://github.com/Eun-si123/DataNetShare/releases) and select the `v5.1-dev.1` **pre-release**. Under **Assets**, download `DataNetShare-5.1-dev.1-debug.apk` directly (not either Source code archive). `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+
+**Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
 ```sh
 adb install -r app-debug.apk
