@@ -50,8 +50,10 @@ Coverage includes:
 | --- | --- | --- |
 | Host protocol, IPv4, proxy, QR and relay lifetime regression tests | **45 passed** | [PR CI 38846131295](https://github.com/Eun-si123/DataNetShare/actions/runs/38846131295) |
 | Android unit tests, lint and debug APK build | **Passed** | Same PR CI |
-| Published 5.1-dev.7 release and package/signature verification | [Release workflow 38846357526](https://github.com/Eun-si123/DataNetShare/actions/runs/38846357526) | Verify latest run result |
+| Published 5.1-dev.7 release and package/signature verification | **Passed**, APK asset and SHA256SUMS verified | [Release workflow 38846357526](https://github.com/Eun-si123/DataNetShare/actions/runs/38846357526) |
 | On-device 5.1-dev.7 post-fix FAST.com / Ookla latency / battery / RAM | **Not yet run** | Requires user retest |
+
+Release APK [DataNetShare-5.1-dev.7-debug.apk](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.7/DataNetShare-5.1-dev.7-debug.apk) is 6,251,788 bytes; SHA-256 `eac2b783ef14eaf1b28abb95b5d4a943ea965dfa3d9a5a954d83d50dc261f18d`.
 
 **Next device test:** Both phones should run `5.1-dev.7` with a fresh sender session and QR. Record sender active connections and `Sender reached its concurrent-client limit` vs `Sender reclaimed idle TCP connections` after a browser/FAST.com/Ookla test, plus receiver `TCP attempts / connected`, `UDP attempts / associated`, `TUN drops` and diagnostic failure categories. Compare sender-native mobile data speed to receiver VPN speed under similar network conditions rather than assuming any specific minimum from the carrier plan.
 
