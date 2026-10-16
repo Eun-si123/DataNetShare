@@ -18,6 +18,8 @@ object SessionStore {
     }
     val state = MutableLiveData(State())
     val stats = MutableLiveData("")
+    // Strictly aggregate counters only. Used by the safe diagnostic copy action.
+    val telemetry = MutableLiveData("")
     private val diagnosticJournal = DiagnosticJournal()
     val diagnostics = MutableLiveData(diagnosticJournal.snapshot())
     fun note(kind: NetworkEvent) { diagnostics.postValue(diagnosticJournal.record(kind)) }
@@ -27,9 +29,9 @@ object SessionStore {
     @Synchronized fun publish(value: State) { current = value; state.postValue(value) }
     @Synchronized fun claim(mode: Mode): Boolean {
         if (current.busy) return false
-        resetDiagnostics(); publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
+        resetDiagnostics(); telemetry.postValue(""); publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
     }
     fun stopped(mode: Mode) {
-        if (current.mode == mode) { publish(State()); stats.postValue("") }
+        if (current.mode == mode) { publish(State()); stats.postValue(""); telemetry.postValue("") }
     }
 }
