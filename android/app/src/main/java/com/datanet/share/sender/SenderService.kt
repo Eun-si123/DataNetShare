@@ -5,6 +5,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -50,7 +52,8 @@ class SenderService : Service() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Sender").apply { acquire() }
             defaultRoute = intent?.getBooleanExtra(EXTRA_DEFAULT_ROUTE, false) ?: false
             recentUpstreamFailure = null
-            CellularNetworkTracker.start(this)
+            // Do not hold a cellular network up when the user explicitly selected Android routing.
+            if (!defaultRoute) CellularNetworkTracker.start(this)
             val token = ++session
             if (intent?.action == ACTION_START_LOCAL) {
                 val host = intent.getStringExtra(EXTRA_BIND_HOST) ?: ""
@@ -80,7 +83,7 @@ class SenderService : Service() {
         val server = Socks5Server(host, Constants.SOCKS5_PORT, password, AndroidUpstream(defaultRoute),
             onStats = { clients, rx, tx ->
                 if (token == session) {
-                    val route = if (defaultRoute) "Android default route (VPN depends on settings)" else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
+                    val route = if (defaultRoute) describeDefaultRoute() else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
                     val recent = recentUpstreamFailure
                     SessionStore.stats.postValue("$clients connection(s) · ${FormatBytes.formatRxTx(rx, tx)}\n$route" +
                         (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
@@ -94,6 +97,21 @@ class SenderService : Service() {
                 "SOCKS5: $host:${Constants.SOCKS5_PORT}\nUsername: datanet\n${if (defaultRoute) "Upstream: Android default route" else "Upstream: mobile data only"}", host, password, ssid, wifiPassword))
             getSystemService(NotificationManager::class.java).notify(Constants.SENDER_NOTIFICATION_ID, notification("SOCKS5 at $host:${Constants.SOCKS5_PORT} · tap for credentials"))
         } catch (e: Exception) { fail("Proxy could not start: ${e.message}") }
+    }
+
+    private fun describeDefaultRoute(): String {
+        // Report what Android currently selects, not an unverified promise of Wi-Fi egress.
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val caps = manager.getNetworkCapabilities(manager.activeNetwork)
+        val path = when {
+            caps == null -> "no active route"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile data"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            else -> "other/unknown"
+        }
+        return "Android default route: $path"
     }
 
     private fun status(details: String) { SessionStore.publish(SessionStore.current.copy(details = details)) }
