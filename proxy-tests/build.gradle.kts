@@ -10,7 +10,8 @@ sourceSets {
             "com/datanet/share/common/DiagnosticJournal.kt",
             "com/datanet/share/sender/Socks5Server.kt", "com/datanet/share/receiver/TcpFlow.kt",
             "com/datanet/share/receiver/UdpFlow.kt", "com/datanet/share/receiver/ReceiverSocketSetup.kt",
-            "com/datanet/share/receiver/TunWriteRetry.kt")
+            "com/datanet/share/receiver/TunWriteRetry.kt",
+            "com/datanet/share/receiver/SenderHealthProbe.kt")
     }
     test { kotlin.srcDir("../android/app/src/test/java") }
 }
