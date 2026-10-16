@@ -1,5 +1,12 @@
 # Changes
 
+## 5.1-dev.9 — 2026-10-16
+
+- Real recipient speed test: 28.6 Mbps download / 17.1 Mbps upload; unloaded RTT 38 ms, loaded RTT 729 ms (download) and 251 ms (upload); jitter 7 ms. This strongly suggests queueing or flow-control pressure under load, but the bottleneck layer is unconfirmed.
+- Expose receiver TCP retransmissions, TUN writability wait count and aggregate wait milliseconds alongside flow successes and TUN drops, including in safe copied diagnostics.
+- Treat normal sender idle TCP reclamation as maintenance statistics rather than a yellow network failure.
+- No throughput/latency improvement is claimed for this diagnostic preview. A controlled cellular/Wi-Fi Direct/SOCKS/VPN comparison and mature tun2socks evaluation remain open.
+
 ## 5.1-dev.8 — 2026-10-16
 
 - Fix a race discovered during release verification: sender Stop no longer snapshots ConcurrentHashMap socket/UDP-association sets via Kotlin `toList()` while other threads remove entries (could throw `NoSuchElementException`). Add concurrent stop test and rerun full CI before publishing.
