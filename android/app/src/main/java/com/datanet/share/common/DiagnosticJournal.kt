@@ -20,6 +20,7 @@ enum class NetworkEvent(val description: String) {
     UDP_RELAY("Receiver UDP relay failed"),
     TUN_CONGESTION("VPN tunnel output temporarily congested"),
     TUN_PACKET("VPN packet loop failed"),
+    VPN_SERVICE_ENDED("Receiver VPN service unexpectedly ended"),
 }
 
 class DiagnosticJournal(private val maxKinds: Int = 12) {
