@@ -30,6 +30,7 @@ class Tun2Socks(
     private val udp = ConcurrentHashMap<FlowKey, UdpFlow>()
     private val rx = AtomicLong(); private val tx = AtomicLong()
     private val tunWriteDrops = AtomicLong()
+    private val reportedDropBatch = AtomicLong()
     private val writeLock = Any()
 
     fun start() {
@@ -43,7 +44,10 @@ class Tun2Socks(
                     onStats(tcp.size, rx.get(), tx.get())
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
-                    if (dropped > 0 && dropped % 50L == 0L) onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                    val batch = dropped / 50L
+                    if (batch > 0 && batch != reportedDropBatch.getAndSet(batch)) {
+                        onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                    }
                 }
             }
         }, "tun-maintenance").apply { isDaemon = true; start() }
