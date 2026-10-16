@@ -11,8 +11,8 @@ android {
         applicationId = "com.datanet.share"
         minSdk = 26
         targetSdk = 34
-        versionCode = 32
-        versionName = "5.1-dev.2"
+        versionCode = 33
+        versionName = "5.1-dev.3"
     }
 
     buildTypes {
@@ -47,6 +47,9 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // QR encoder + in-app camera scanner; no external scanning app or cloud needed.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
