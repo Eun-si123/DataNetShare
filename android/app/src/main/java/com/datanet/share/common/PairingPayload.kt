@@ -38,7 +38,7 @@ data class PairingPayload(
             PASSWORD.matches(password) &&
             ((ssid.isEmpty() && wifiPassword.isEmpty()) ||
                 (ssid.length in 1..64 && wifiPassword.length in 8..63 &&
-                    ssid.none(Char::isISOControl) && wifiPassword.none(Char::isISOControl)))
+                    ssid.none { Character.isISOControl(it) } && wifiPassword.none { Character.isISOControl(it) }))
 
     companion object {
         private const val PREFIX = "datanetshare://pair/v1?"
