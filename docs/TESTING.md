@@ -4,6 +4,10 @@ Updated 2026-10-16 KST. This document separates source/loopback verification fro
 
 ## 5.1-dev.11 — UDP flow pressure and unexpected Android VPN teardown
 
+**Verified release (2026-10-16):** [v5.1-dev.11](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.11) was publicly published as a prerelease (not draft). [Release CI run 38858720567](https://github.com/Eun-si123/DataNetShare/actions/runs/38858720567) completed successfully, including protocol tests, Android unit tests/lint/APK build, package and signature checks. Asset `DataNetShare-5.1-dev.11-debug.apk` is **6,270,360 bytes**, SHA-256 `e57ad979ca799051aad3880fcafaa0db49cda27d5a0fa5a83e826facc7c5de51`, with `SHA256SUMS.txt` also uploaded. CI success is not real Android OEM/device acceptance.
+
+
+
 A real two-phone 5.1-dev.10 diagnostic (2026-10-16) reported **113 receiver TCP attempts / 110 connected; 35 UDP attempts / 35 associated; 10 denied UDP admissions at the 32-flow ceiling; 67 TCP retransmits with one retry exhaustion; 2 TCP upload failures, 2 upstream failures; 0 TUN drops and waits; 72,034,500 B received / 45,763,960 B sent.** The user reported throughput still being slow and an Android VPN disconnect not clearly reflected as a stopped/failed app state. The sender's cellular data route had been independently confirmed against its other infrastructure Wi-Fi public IP.
 
 Implemented in [PR #13](https://github.com/Eun-si123/DataNetShare/pull/13):
