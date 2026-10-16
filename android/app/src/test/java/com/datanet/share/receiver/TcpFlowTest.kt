@@ -15,6 +15,36 @@ class TcpFlowTest {
     private fun incoming(key: FlowKey, seq: Int, ack: Int, flags: Int = 0x10, window: Int = 4096, bytes: ByteArray = ByteArray(0)) =
         Ipv4Packet(key, 6, seq, ack, flags, window, bytes)
 
+    @Test fun unfinishedTcpHandshakeNeverOccupiesSenderProxySlot() = ProxyFixture().use { fixture ->
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { destination ->
+            Thread({
+                destination.accept().use { socket ->
+                    try { while (socket.getInputStream().read() >= 0) {} }
+                    catch (_: java.io.IOException) {}
+                }
+            }, "test-ack-delayed-target").apply { isDaemon = true; start() }
+            val key = FlowKey(0x0a000001, 47003, 0x7f000001, destination.localPort)
+            val packets = LinkedBlockingQueue<Ipv4Packet>()
+            val connected = AtomicBoolean()
+            val flow = TcpFlow(key, 1234, "127.0.0.1", fixture.proxy.boundPort,
+                fixture.password, { true }, { packets.add(Ipv4Packet.parse(it)!!) },
+                {}, {}, {}, initialSequence = 9000,
+                onConnected = { connected.set(true) })
+            try {
+                flow.start()
+                val synAck = packets.poll(2, TimeUnit.SECONDS)!!
+                assertEquals(0x12, synAck.flags)
+                Thread({ flow.openUpstream() }, "test-deferred-socks").apply { isDaemon = true; start() }
+                Thread.sleep(250)
+                assertEquals("SYN-only must not open remote SOCKS connections", 0, fixture.proxy.clientCount)
+                flow.receive(incoming(key, 1235, 9001))
+                val deadline = System.nanoTime() + 3_000_000_000L
+                while (!connected.get() && System.nanoTime() < deadline) Thread.sleep(25)
+                assertTrue("valid TCP ACK must still start the upstream connection", connected.get())
+            } finally { flow.close() }
+        }
+    }
+
     @Test fun lostSynAckIsRetransmittedWithSameSequence() {
         val packets = LinkedBlockingQueue<Ipv4Packet>()
         val key = FlowKey(0x0a000001, 2000, 0x7f000001, 80)
