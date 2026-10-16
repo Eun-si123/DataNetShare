@@ -27,6 +27,26 @@ Coverage includes:
 - Out-of-order data/FIN does not advance the receive acknowledgement; closing UDP before initialization is idempotent.
 - Active TCP upstream shutdown, rejection above the 64-client cap, and zero-window pause/resume without download overshoot.
 
+## 5.1-dev.5: TCP MSS and VPN write backpressure
+
+The user provided Android phone-to-phone screenshots with intermittent Chrome `ERR_CONNECTION_RESET` (FAST.com) and Ookla browser `LATENCY TEST ERROR`. The Ookla screen displayed an LG U+ public Internet egress. This is consistent with the configured mobile-data-only sender upstream, but does **not** by itself identify why the browser or remote speed test failed.
+
+**Code deficiencies repaired in [PR #6](https://github.com/Eun-si123/DataNetShare/pull/6):**
+- Previous receiver-generated TCP SYN-ACK packets carried **no MSS option**, allowing a low default MSS at the client. The receiver now advertises 1200 bytes and retransmits identical TCP options. A dedicated regression verifies IP/TCP checksums, header offsets and option bytes.
+- Previous nonblocking TUN writes dropped any packet on a transient `EAGAIN`/`EINTR`. The implementation now polls for writability for up to three 20 ms waits and retries up to four times before dropping under sustained congestion. Fatal output errors remain fatal. Testing explicitly covers successful, congested, no-writability and thrown-error outcomes.
+
+| Validation | Result | Evidence |
+| --- | --- | --- |
+| Host unit/protocol regression suite | **38 passed**, including MSS/checksum, SYN retransmission, TUN retry and existing 2 MiB continuous download | [PR CI #38840737641](https://github.com/Eun-si123/DataNetShare/actions/runs/38840737641) |
+| Android unit tests, lint and APK build | **Passed** | Same PR CI Android job |
+| Public preview v5.1-dev.5, checksum and signature verification | **Passed** | [Release CI #38840924324](https://github.com/Eun-si123/DataNetShare/actions/runs/38840924324) |
+| Real-phone FAST.com/Speedtest after fixes | **Not run** | Requires user retest |
+| Concurrent infrastructure Wi-Fi and Wi-Fi Direct + actual transport route | **Not independently verified** | Inspect sender route and/or external egress |
+
+Public preview APK: [v5.1-dev.5](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.5), SHA-256 `8f87214cbbb90b8d532cbf429db362c309824aeb838f2ed84eb259872b77c9c2` (6,240,360 bytes).
+
+**Next steps:** Run a known working IPv4 HTTPS page, then FAST.com and Ookla. Capture both phones' `Last upstream error` / `Last TCP error` and sender `Android default route` or `Mobile data` state, avoiding passwords and QR screenshots. The home-grown receiver remains limited by IPv4-only handling, missing fragment reassembly and a minimal TCP congestion/flow-control implementation. Evaluate a maintained production tun2socks engine (for example [heiher/hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel)) behind a feature flag, with reproducible Android JNI builds, upstream license/security review, actual-device throughput/CPU/battery comparison, preserved local-link socket protection and strict no-secret-logging controls. The current changes do **not** constitute full browser or speed-test compatibility.
+
 ## 5.1-dev.4: user-observed browser reset and upstream route diagnostics
 
 A user reported that phone-to-phone setup on the 5.1-dev.3 preview progressed far enough to try a browser speed test, but Chrome showed `ERR_CONNECTION_RESET`. The sending phone was connected to another infrastructure Wi-Fi network. **This does not establish what Android selected for the sender's actual Internet egress**, nor whether the receiver's custom IPv4 TCP stack, a failed SOCKS CONNECT, or remote destination policy generated the reset.
