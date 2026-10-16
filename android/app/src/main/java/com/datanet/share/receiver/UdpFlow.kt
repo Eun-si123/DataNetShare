@@ -27,7 +27,8 @@ class UdpFlow(
     private val onRx: (Int) -> Unit,
     private val onTx: (Int) -> Unit,
     private val onClose: () -> Unit,
-    private val onError: (String) -> Unit = {}
+    private val onError: (String) -> Unit = {},
+    private val onConnected: () -> Unit = {}
 ) {
     private val closed = AtomicBoolean()
     private val queue = ArrayBlockingQueue<ByteArray>(32)
@@ -52,6 +53,7 @@ class UdpFlow(
             synchronized(this) { if (closed.get()) { datagram.close(); return }; udp = datagram }
             if (!protectDatagram(datagram)) throw IOException("UDP relay socket protection failed")
             datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000
+            onConnected() // UDP ASSOCIATE control handshake and relay socket succeeded
             socket.soTimeout = 1000
             Thread({
                 try {
