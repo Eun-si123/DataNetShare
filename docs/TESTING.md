@@ -4,6 +4,10 @@ Updated 2026-10-16 KST. This document separates source/loopback verification fro
 
 ## 5.1-dev.10 — stop from UI and sender-first disconnect
 
+**Verification:** [PR CI 38852680309](https://github.com/Eun-si123/DataNetShare/actions/runs/38852680309) passed **55 host socket/protocol/health-policy regression tests**, Android unit tests, lint and debug APK compilation. [Release CI 38852834944](https://github.com/Eun-si123/DataNetShare/actions/runs/38852834944) published the public, debug-signed [v5.1-dev.10](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.10) preview and SHA256SUMS. APK: `DataNetShare-5.1-dev.10-debug.apk` (6,268,492 bytes), SHA-256 `9f3d2c720f19b97ab8d64105557269b1ac4eb1df652f7b7e943e9506373586fc`. Hardware VPN teardown and sender-first disconnect **still require user verification**.
+
+
+
 **Reported by real-device user:** Stopping **sender first** caused the receiver to keep trying to reach the Internet via its still-installed VPN. Receiver's single in-app Stop button did not recover the situation, while the notification STOP action could stop the service but the Android VPN indicator sometimes remained visible.
 
 **Findings in current sources:**
