@@ -11,6 +11,7 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import com.datanet.share.common.Constants
+import com.datanet.share.common.NetworkEvent
 import com.datanet.share.common.ServiceNotifications
 import com.datanet.share.common.SessionStore
 import com.datanet.share.common.Socks5
@@ -31,6 +32,7 @@ class ReceiverVpnService : VpnService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var probe: Socket? = null
     @Volatile private var recentTcpError: String? = null
+    @Volatile private var recentUdpError: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var generation = 0
 
@@ -38,6 +40,7 @@ class ReceiverVpnService : VpnService() {
         if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
         recentTcpError = null
+        recentUdpError = null
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
@@ -84,12 +87,35 @@ class ReceiverVpnService : VpnService() {
                 onFailure = { message -> main.post { if (generation == token) fail(message) } },
                 onStats = { active, rx, tx ->
                     if (generation == token) {
-                        val recent = recentTcpError
+                        val tcpError = recentTcpError
+                        val udpError = recentUdpError
                         SessionStore.stats.postValue("$active TCP flow(s) · ↓ ${rx / 1024} KB · ↑ ${tx / 1024} KB" +
-                            if (recent.isNullOrEmpty()) "" else "\nLast TCP error: $recent")
+                            (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
+                            (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))
                     }
                 },
-                onTcpError = { error -> if (generation == token) recentTcpError = error })
+                onTcpError = { error ->
+                    if (generation == token) {
+                        recentTcpError = error
+                        val code = when {
+                            error.contains("capacity") -> NetworkEvent.TCP_FLOW_LIMIT
+                            error.contains("upload") -> NetworkEvent.TCP_UPLOAD
+                            error.contains("idle timeout") -> NetworkEvent.TCP_IDLE
+                            error.contains("retransmission") -> NetworkEvent.TCP_RETRANSMIT
+                            error.contains("congestion") -> NetworkEvent.TUN_CONGESTION
+                            else -> NetworkEvent.TCP_UPSTREAM
+                        }
+                        SessionStore.note(code)
+                    }
+                },
+                onUdpError = { error ->
+                    if (generation == token) {
+                        recentUdpError = error
+                        SessionStore.note(if (error.contains("capacity")) NetworkEvent.UDP_FLOW_LIMIT
+                            else if (error.contains("read")) NetworkEvent.UDP_RELAY
+                            else NetworkEvent.UDP_SETUP)
+                    }
+                })
                 .also { it.start() }
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
