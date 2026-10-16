@@ -22,7 +22,8 @@ class Socks5Server(
     private val upstream: Upstream,
     private val onStats: (clients: Int, rxBytes: Long, txBytes: Long) -> Unit = { _, _, _ -> },
     private val onFailure: (String) -> Unit = {},
-    private val onUpstreamFailure: (String) -> Unit = {}
+    private val onUpstreamFailure: (String) -> Unit = {},
+    private val onClientLimit: () -> Unit = {}
 ) {
     interface Upstream {
         fun connect(host: String, port: Int): Socket
@@ -52,7 +53,8 @@ class Socks5Server(
             try {
                 while (running) {
                     val client = server.accept()
-                    if (!running || !permits.tryAcquire()) { client.close(); continue }
+                    if (!running) { client.close(); continue }
+                    if (!permits.tryAcquire()) { onClientLimit(); client.close(); continue }
                     clients.add(client); sockets.add(client)
                     Thread({
                         try { if (running) handleClient(client) }
