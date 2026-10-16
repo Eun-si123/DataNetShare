@@ -73,6 +73,11 @@ jobs:
           **Download:** `DataNetShare-5.1-dev.8-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
 
+          ### Sender stop race fixed during publish verification
+          - Prevent a rare NoSuchElementException when client sockets disconnect while the sender enumerates and closes SOCKS5 connections on Stop.
+          - Iterate ConcurrentHashMap-backed client socket and UDP association sets directly, rather than taking a Kotlin size-based toList() snapshot during concurrent removal.
+          - Add a concurrent-stop regression test and keep the same v5.1-dev.8 APK version because the previous publication failed before a release was created.
+
           ### Simpler connection controls and progressive setup
           - Replace three separate start buttons and the detached Stop button with one contextual Connect/Cancel/Disconnect button for both sender and receiver.
           - Select Share or Receive first; only the selected mode's configuration is visible. During connection, the settings collapse and the same main action changes to Disconnect.
