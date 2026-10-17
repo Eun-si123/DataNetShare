@@ -1,5 +1,13 @@
 # Changes
 
+## 5.1-dev.13 — 2026-10-17
+
+- Remember user-chosen Wi-Fi Direct passphrases by default, like Android's ordinary hotspot settings. When the sender starts a valid custom Wi-Fi Direct profile, AES-GCM encrypts the password using a non-exportable Android Keystore key and stores ciphertext only in app-private preferences. No plaintext fallback. The password survives app process restarts, but app data clearing/uninstall/reinstall removes it.
+- Clear the password field and start sharing to remove the previously saved custom passphrase and switch back to automatic generation; change an active group only by Stop → edit → Start. The per-session SOCKS5 proxy password still rotates and is not persisted.
+- When stored ciphertext cannot be restored, notify the user instead of silently claiming their old password is usable. If encrypted saving fails, do not start a session that falsely promises password persistence.
+- Use a dedicated, non-exported manifest-declared portrait ZXing capture Activity with orientation locking to prevent QR camera from forcing a landscape UI.
+- JVM tests cover AES-GCM random nonce roundtrip, tampering/wrong-key rejection and passphrase validation. Actual Android Keystore/OEM scanner orientation requires physical phone acceptance.
+
 ## 5.1-dev.12 — 2026-10-17
 
 Add optional router-like *Wi-Fi Direct group* customization with clear Android API limits:
