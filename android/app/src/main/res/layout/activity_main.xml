@@ -109,6 +109,9 @@
                         android:maxLength="63" android:singleLine="true" android:saveEnabled="false"
                         android:importantForAutofill="no" android:textColor="#FFFFFF"
                         android:textColorHint="#B5BCC8"/>
+                    <TextView android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/p2p_password_edit_help"
+                        android:textColor="#B5BCC8" android:textSize="12sp" android:layout_marginBottom="6dp"/>
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:text="@string/p2p_band_label" android:labelFor="@id/p2pBand"
                         android:textColor="#E6E8EB" android:textSize="13sp" android:layout_marginTop="8dp"/>

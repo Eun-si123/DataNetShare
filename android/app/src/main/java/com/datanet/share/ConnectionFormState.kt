@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 
 /**
  * Keeps sensitive pairing details in memory across Activity rotation and system
- * permission dialogs. Never put the SOCKS/Wi-Fi secrets in SharedPreferences,
+ * permission dialogs. Never put SOCKS secrets or plaintext Wi-Fi passwords in SharedPreferences,
  * a saved-instance Bundle, analytics, or a diagnostic message.
  */
 class ConnectionFormState : ViewModel() {
@@ -14,8 +14,9 @@ class ConnectionFormState : ViewModel() {
     var wifiSsid: String = ""
     var wifiPassword: String = ""
     var showQr: Boolean = false
-    // Explicit P2P Wi-Fi passphrase is memory-only; do not save in preferences.
+    // Plaintext exists only in memory; an opt-in custom password is encrypted at rest.
     var customP2pPassword: String = ""
+    var customP2pPasswordInitialized: Boolean = false
     var p2pSuffix: String = ""
     // Non-secret disclosure state follows Activity across rotation only.
     var showAdvancedSettings: Boolean = false

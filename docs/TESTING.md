@@ -2,6 +2,28 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.13 — persistent Wi-Fi passphrase and portrait-only QR scanner
+
+Changes to sender Wi-Fi Direct advanced settings:
+
+- Custom Wi-Fi Direct link password is now **remembered automatically** when sharing is started with a valid custom profile. At rest it is AES-256-GCM ciphertext in app-private SharedPreferences, encrypted using a non-exportable Android Keystore key; no plaintext fallback. User can edit it after stopping sharing and starting a new Wi-Fi Direct group. SOCKS5 password still rotates for every session.
+- Empty Wi-Fi password on Start explicitly deletes the stored secret; default-group creation and optional SSID/band settings continue to generate their own randomized Wi-Fi password.
+- A memory-only ViewModel differentiates field cleared on rotation from a first app launch that should restore the saved password. Existing receiver QR/temporary proxy credentials are not persisted. If Android Keystore decryption or storage fails, show a meaningful, non-secret error; never report successful persistence if it failed.
+- Receiver QR scanning uses an explicit `PortraitQrCaptureActivity : CaptureActivity`, registered non-exported with manifest `screenOrientation=portrait` and `ScanOptions.setOrientationLocked(true)`; no more default landscape scanner.
+
+| Verification | Expected behavior | Status |
+| --- | --- | --- |
+| AES-GCM roundtrip, random IVs, tamper and wrong-key rejection, passphrase length constraints | JVM cryptography regression tests pass | Automated test |
+| Android SDK/JVM tests, Lint and APK build | No compile or manifest errors | CI validation |
+| Save custom Wi-Fi password → force-stop app → reopen sender advanced settings | Custom password is restored; SSID/band retained | **Physical Android Keystore acceptance pending** |
+| Change remembered password → Stop/restart sender → re-pair with fresh QR | New Wi-Fi passphrase used; previous code/password not reused | **Physical device pending** |
+| Clear Wi-Fi password → Start → restart app | Former saved password stays cleared; app uses automatic generation | **Physical device pending** |
+| Open QR scanner on a portrait Android phone → scan or cancel | Scanner stays portrait; returns upright to receiver controls | **Physical device pending** |
+| Android KeyStore unavailable/corrupt ciphertext | Explains saved password cannot be recovered, asks to re-enter; no plaintext fallback | **Physical device pending** |
+| App uninstall/reinstall with changed debug signing key | Saved password/settings erased; no unexpected reuse | **Physical device pending** |
+
+This feature does not implement live rekeying of a currently running Wi-Fi Direct group, Android hotspot/SoftAP settings, or radio WPA/WMM controls. Automatic tests cannot reproduce proprietary OEM Wi-Fi firmware behavior.
+
 ## 5.1-dev.12 — Wi-Fi Direct group-owner settings (Android 10+)
 
 **Release verified 2026-10-17 KST:** [v5.1-dev.12](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.12) is a public immutable development prerelease with uploaded signed/debug-verified `DataNetShare-5.1-dev.12-debug.apk` (**6,286,508 bytes**, SHA-256 `9909cf56d3490709fb27c504f49043e3a53ca2671344b092db0d98ada2a2bb89`) and `SHA256SUMS.txt`. [Release CI 39022482025](https://github.com/Eun-si123/DataNetShare/actions/runs/39022482025) completed **success** after host protocol, Android JVM unit tests, lint, APK package/version and signature validation. [PR CI 39022378119](https://github.com/Eun-si123/DataNetShare/actions/runs/39022378119) passed **66 host tests** and the Android check suite. None of these tests have proven real OEM support for custom group passphrases or 5GHz.
