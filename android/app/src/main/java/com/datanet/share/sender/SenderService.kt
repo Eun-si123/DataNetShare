@@ -30,6 +30,9 @@ class SenderService : Service() {
         const val ACTION_STOP = "com.datanet.share.sender.STOP"
         const val EXTRA_BIND_HOST = "bind_host"
         const val EXTRA_DEFAULT_ROUTE = "default_route"
+        const val EXTRA_P2P_SUFFIX = "p2p_ssid_suffix"
+        const val EXTRA_P2P_PASSWORD = "p2p_wifi_password"
+        const val EXTRA_P2P_BAND = "p2p_band"
     }
     private var wifiHost: WifiDirectHost? = null
     private var socks: Socks5Server? = null
@@ -75,7 +78,14 @@ class SenderService : Service() {
                         else -> Unit
                     }
                 }.also { host.state.observeForever(it) }
-                host.start()
+                val bandName = intent.getStringExtra(EXTRA_P2P_BAND).orEmpty()
+                val band = WifiDirectProfile.Band.entries.firstOrNull { it.name == bandName }
+                    ?: WifiDirectProfile.Band.AUTO
+                host.start(WifiDirectProfile(
+                    nameSuffix = intent.getStringExtra(EXTRA_P2P_SUFFIX).orEmpty(),
+                    passphrase = intent.getStringExtra(EXTRA_P2P_PASSWORD).orEmpty(),
+                    band = band
+                ))
             }
         } catch (e: Exception) { fail(e.message ?: "Sharing could not start") }
         return START_NOT_STICKY
