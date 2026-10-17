@@ -108,7 +108,7 @@ class WifiDirectHost(private val context: Context) {
             handler.postDelayed({
                 if (running && token == generation && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
             }, 25_000)
-        } catch (e: Exception) { mutableState.value = State.Failed("Wi-Fi Direct: ${e.message}") }
+        } catch (e: Exception) { mutableState.value = State.Failed("Wi-Fi Direct could not initialize", e.javaClass.simpleName) }
     }
     private fun create(token: Int, attempt: Int) {
         if (!running || generation != token) return
@@ -135,7 +135,16 @@ class WifiDirectHost(private val context: Context) {
             if (Build.VERSION.SDK_INT >= 29 && requestedConfig != null) {
                 manager?.createGroup(channel, requestedConfig!!, listener)
             } else manager?.createGroup(channel, listener)
-        } catch (e: SecurityException) { mutableState.value = State.Failed("Wi-Fi Direct permission missing", e.message ?: "") }
+        } catch (_: SecurityException) {
+            mutableState.value = State.Failed("Wi-Fi Direct permission missing",
+                "Check nearby Wi-Fi devices or location permission.")
+        } catch (_: IllegalArgumentException) {
+            mutableState.value = State.Failed("Wi-Fi Direct group settings rejected",
+                "Try Auto band and the default SSID/password.")
+        } catch (_: UnsupportedOperationException) {
+            mutableState.value = State.Failed("Custom Wi-Fi Direct group unsupported on this device",
+                "Try automatic Wi-Fi Direct settings.")
+        }
     }
     private fun query(token: Int) {
         if (!running || generation != token) return
