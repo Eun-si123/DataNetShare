@@ -1,5 +1,16 @@
 # Changes
 
+## 5.1-dev.12 — 2026-10-17
+
+Add optional router-like *Wi-Fi Direct group* customization with clear Android API limits:
+
+- Android 10+ (API 29+) sender Advanced settings: customize the `DIRECT-xy` SSID suffix (up to 22 ASCII letters/digits/underscore/hyphen), the Wi-Fi **link** passphrase (8–63 printable ASCII characters), and request Auto / 2.4 GHz / 5 GHz band.
+- The SSID must retain Android's required `DIRECT-xy` prefix, where `xy` is randomized for each new custom group. Settings are verified against the *actual* created group; if an OEM ignores them, fail explicitly instead of displaying incorrect credentials. The receiver's existing in-app QR pairing automatically shows the actual Wi-Fi name/password.
+- Leaving all values at Auto/blank preserves the original Android-managed Wi-Fi Direct group creation. On Android 8–9, the legacy auto flow remains available; Android 10+ is required for configuring custom Wi-Fi Direct groups through public APIs.
+- The optional Wi-Fi password is not persisted to disk or auto-filled after process death; only non-secret SSID suffix and frequency-band preference are remembered. This Wi-Fi passphrase is **different from the per-session SOCKS5 password**.
+- Android Wi-Fi Direct does **not** expose third-party controls for WPA2/WPA3 cipher mode, Wi-Fi 4/5/6/7/802.11ax PHY generation, fixed radio channel, or radio WMM/QoS. Requested 5 GHz may fail on a device that does not support it. Avoid pretending these settings are applied.
+- Automated JVM tests validate default behavior, SSID restrictions, ASCII passphrases and QR encoding. *Actual Wi-Fi Direct group creation and multi-vendor radio compatibility remain unverified on phones*.
+
 ## 5.1-dev.11 — 2026-10-16
 
 Follow-up to a real phone-to-phone 5.1-dev.10 diagnostic report: **113 TCP attempts / 110 SOCKS CONNECT successes, 35 UDP associations, 10 rejects at the fixed 32-UDP-flow cap, 67 TCP retransmissions (one flow exhausted recovery), 0 TUN drops/waits, 72 MB RX / 46 MB TX**. The receiver also had two TCP upload failures and two upstream connection failures. Mobile-data egress was already independently established.

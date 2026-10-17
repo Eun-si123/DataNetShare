@@ -16,6 +16,18 @@ If Android stops the receiver's running VPN service without the app's explicit S
 
 **Device retest:** check whether the VPN button/state switches to disconnected after using Android's VPN Disconnect UI (and after sender-first Stop). Then compare active UDP count, rejected UDP requests and TCP retransmit counts on a speed test, without sharing QR or credentials.
 
+## Wi-Fi Direct settings — Android 10+ (5.1-dev.12)
+
+On the sender phone choose **Share this phone → Wi-Fi Direct → Advanced connection settings**. You can configure:
+
+- **Network name suffix** (e.g. `MyPhone`): Android requires `DIRECT-xy` at the beginning, so the actual SSID will be `DIRECT-xyMyPhone`, with a fresh two-character tag. Only ASCII letters, digits, `-` and `_`, max 22 characters.
+- **Wi-Fi password:** leave blank for an Android/generated random password, or enter 8–63 printable ASCII characters for a custom Wi-Fi Direct link password. **This is not the SOCKS5 proxy password.** Custom Wi-Fi passwords are memory-only and are not stored in preferences.
+- **Frequency band:** Automatic (recommended), request 2.4 GHz, or request 5 GHz. Unsupported requests may cause group creation to fail. You may have to switch back to Auto.
+
+The sender displays the *actual* Wi-Fi Direct SSID/passphrase after the OS creates the group. The existing receiver QR encodes those actual values, so the receiver still scans and joins using Android Wi-Fi settings. With all options at default, legacy automatic group creation remains unchanged. Android 8/9 can only use that automatic mode.
+
+**OS capability boundary:** ordinary third-party Wi-Fi Direct apps cannot set hotspot WPA2/WPA3 modes, Wi-Fi 4/5/6/7 generations, exact wireless channels or WMM/QoS priority via these APIs. Wi-Fi Direct security is system-managed; switching 2.4 vs 5 GHz does not mean selecting Wi-Fi 4 vs 5. Full Soft AP/hotspot management needs OEM/system privileges and is a separate subsystem, not this application's Wi-Fi Direct group. All OEMs and Android versions need on-device verification.
+
 ## What works and what still needs testing
 
 | Path | Implemented behavior | Verification boundary |
@@ -31,7 +43,7 @@ If Android stops the receiver's running VPN service without the app's explicit S
 
 ## Get an APK (public preview)
 
-**Easy install:** [Download the current v5.1-dev.11 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.11/DataNetShare-5.1-dev.11-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.11 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.11) and expand **Assets** for `DataNetShare-5.1-dev.11-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** [Download the current v5.1-dev.12 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.12/DataNetShare-5.1-dev.12-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.12 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.12) and expand **Assets** for `DataNetShare-5.1-dev.12-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 
