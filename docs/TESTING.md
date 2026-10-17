@@ -4,6 +4,10 @@ Updated 2026-10-16 KST. This document separates source/loopback verification fro
 
 ## 5.1-dev.12 — Wi-Fi Direct group-owner settings (Android 10+)
 
+**Release verified 2026-10-17 KST:** [v5.1-dev.12](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.12) is a public immutable development prerelease with uploaded signed/debug-verified `DataNetShare-5.1-dev.12-debug.apk` (**6,286,508 bytes**, SHA-256 `9909cf56d3490709fb27c504f49043e3a53ca2671344b092db0d98ada2a2bb89`) and `SHA256SUMS.txt`. [Release CI 39022482025](https://github.com/Eun-si123/DataNetShare/actions/runs/39022482025) completed **success** after host protocol, Android JVM unit tests, lint, APK package/version and signature validation. [PR CI 39022378119](https://github.com/Eun-si123/DataNetShare/actions/runs/39022378119) passed **66 host tests** and the Android check suite. None of these tests have proven real OEM support for custom group passphrases or 5GHz.
+
+
+
 Added an optional Wi-Fi Direct advanced configuration flow ([PR #14](https://github.com/Eun-si123/DataNetShare/pull/14)) while preserving default behavior for older Android releases and devices that cannot create custom groups.
 
 | Scenario | Expected behavior | Android hardware status |
