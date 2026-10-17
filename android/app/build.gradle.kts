@@ -11,8 +11,8 @@ android {
         applicationId = "com.datanet.share"
         minSdk = 26
         targetSdk = 34
-        versionCode = 43
-        versionName = "5.1-dev.13"
+        versionCode = 44
+        versionName = "5.1-dev.14"
     }
 
     buildTypes {

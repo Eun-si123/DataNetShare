@@ -190,8 +190,8 @@ class MainActivity : AppCompatActivity() {
             if (!SessionStore.current.busy) {
                 qrScanner.launch(ScanOptions()
                     .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    .setCaptureActivity(PortraitQrCaptureActivity::class.java)
-                    .setOrientationLocked(true)
+                    .setCaptureActivity(RotatableQrCaptureActivity::class.java)
+                    .setOrientationLocked(false)
                     .setBeepEnabled(false)
                     .setPrompt(getString(R.string.qr_scan_prompt)))
             }
