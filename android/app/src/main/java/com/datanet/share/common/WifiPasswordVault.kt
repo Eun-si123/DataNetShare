@@ -5,10 +5,8 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
-import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /**
  * App-private encrypted storage for an explicitly configured Wi-Fi Direct
@@ -26,8 +24,6 @@ class WifiPasswordVault(context: Context) {
     private companion object {
         const val ALIAS = "DataNetShare.wifiDirect.passphrase.v1"
         const val RECORD = "encrypted_wifi_password"
-        const val IV_SIZE = 12
-        const val TAG_BITS = 128
     }
 
     @Synchronized
@@ -48,16 +44,8 @@ class WifiPasswordVault(context: Context) {
 
     @Synchronized
     fun save(passphrase: String) {
-        require(passphrase.length in 8..63 && passphrase.all { it.code in 32..126 }) {
-            "Invalid Wi-Fi Direct passphrase"
-        }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
-        val iv = cipher.iv
-        check(iv.size == IV_SIZE)
-        val encrypted = cipher.doFinal(passphrase.toByteArray(Charsets.US_ASCII))
-        val packed = iv + encrypted
-        check(prefs.edit().putString(RECORD, Base64.encodeToString(packed, Base64.NO_WRAP)).commit()) {
+        val encrypted = P2pPasswordCipher.encrypt(passphrase, encryptionKey())
+        check(prefs.edit().putString(RECORD, Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit()) {
             "Encrypted Wi-Fi password could not be stored"
         }
     }
@@ -66,13 +54,7 @@ class WifiPasswordVault(context: Context) {
     fun load(): String? {
         val text = prefs.getString(RECORD, null) ?: return null
         val packed = Base64.decode(text, Base64.NO_WRAP)
-        check(packed.size >= IV_SIZE + TAG_BITS / 8)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, encryptionKey(),
-            GCMParameterSpec(TAG_BITS, packed.copyOfRange(0, IV_SIZE)))
-        val password = String(cipher.doFinal(packed.copyOfRange(IV_SIZE, packed.size)), Charsets.US_ASCII)
-        check(password.length in 8..63 && password.all { it.code in 32..126 })
-        return password
+        return P2pPasswordCipher.decrypt(packed, encryptionKey())
     }
 
     @Synchronized
