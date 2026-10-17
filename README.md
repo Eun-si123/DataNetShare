@@ -16,15 +16,15 @@ If Android stops the receiver's running VPN service without the app's explicit S
 
 **Device retest:** check whether the VPN button/state switches to disconnected after using Android's VPN Disconnect UI (and after sender-first Stop). Then compare active UDP count, rejected UDP requests and TCP retransmit counts on a speed test, without sharing QR or credentials.
 
-## Persistent Wi-Fi password and portrait QR scanning (5.1-dev.13)
+## Remembered Wi-Fi password and freely rotating QR scanner (5.1-dev.14)
 
 A manually configured Wi-Fi Direct password is **remembered automatically** after starting sharing, like Android hotspot settings. It is encrypted with AES-GCM using a non-exportable Android Keystore key before storage in app-private preferences. It persists across app/process restarts. No plaintext fallback is used. Clearing app data, uninstalling, or installing with an incompatible development signing key will erase it. The SOCKS5 session password still rotates and is never saved.
 
 To change the password, **Stop sharing → Advanced Wi-Fi Direct settings → Edit Wi-Fi password → Start sharing**. A running group cannot be reconfigured in place. Clearing the password and starting again also removes the saved credential and returns to Android/random generation.
 
-The built-in QR scanner now uses a dedicated portrait-only capture activity instead of the previously landscape-prone ZXing default. Real-phone camera orientation and Android Keystore compatibility still require testing.
+The QR scanner now uses a dedicated rotation-aware capture activity. It neither forces landscape on launch nor locks portrait: with the phone's Auto-rotate enabled, rotate the device to switch portrait ↔ landscape; if Auto-rotate is off, it honors the locked user orientation. QR rotation and Android Keystore behavior still need real-device testing.
 
-## Wi-Fi Direct settings — Android 10+ (5.1-dev.13)
+## Wi-Fi Direct settings — Android 10+ (5.1-dev.14)
 
 On the sender phone choose **Share this phone → Wi-Fi Direct → Advanced connection settings**. You can configure:
 
@@ -51,7 +51,7 @@ The sender displays the *actual* Wi-Fi Direct SSID/passphrase after the OS creat
 
 ## Get an APK (public preview)
 
-**Easy install:** [Download the current v5.1-dev.13 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.13/DataNetShare-5.1-dev.13-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.13 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.13) and expand **Assets** for `DataNetShare-5.1-dev.13-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** [Download the current v5.1-dev.14 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.14/DataNetShare-5.1-dev.14-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.14 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.14) and expand **Assets** for `DataNetShare-5.1-dev.14-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 

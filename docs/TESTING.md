@@ -2,6 +2,25 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.14 — user-controlled QR scanner rotation
+
+A user clarified that the QR scanner must not be **portrait locked** either. The requirement is to avoid forcing either orientation while allowing the user to freely rotate the camera screen.
+
+- Replace the dedicated `PortraitQrCaptureActivity` with a non-exported `RotatableQrCaptureActivity`, declared with Android `screenOrientation="fullUser"`. ZXing `ScanOptions` now uses `setOrientationLocked(false)`; no app-enforced portrait or landscape orientation.
+- Respect the device's system **Auto-rotate** preference: when enabled, rotating the phone should switch QR scanning between portrait and landscape; when disabled, opening QR scanning should respect the user-locked orientation and not suddenly switch to landscape.
+- Main sender QR output, network pairing payload, saved Wi-Fi Direct password and receiver form handling are unchanged.
+
+| Scenario | Expected | Current verification |
+| --- | --- | --- |
+| Auto-rotate off, phone portrait, tap Scan QR | Camera opens portrait, no forced landscape | Real handset pending |
+| Auto-rotate on, phone portrait, tap Scan QR | Camera opens portrait | Real handset pending |
+| Auto-rotate on, phone turned landscape during scan | Camera rotates landscape and scanner continues operating | Real handset pending |
+| Auto-rotate on, turn back portrait during scan | Camera returns to portrait and still scans | Real handset pending |
+| Scan or cancel in either orientation | Receiver form restored without credentials lost or unintended role changes | Real handset pending |
+| Android manifest and Kotlin scanner API build | App compiles and manifest validates | CI |
+
+The previous 5.1-dev.13 portrait lock remains historical release behavior; do not change the immutable published APK. The user-requested auto-rotation correction is versioned in 5.1-dev.14.
+
 ## 5.1-dev.13 — persistent Wi-Fi passphrase and portrait-only QR scanner
 
 Changes to sender Wi-Fi Direct advanced settings:

@@ -40,11 +40,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Restrict ZXing to portrait instead of its default landscape scanner. -->
+        <!-- Respect the user's rotation setting: portrait or landscape as
+             enabled on the device, without forcing either orientation. -->
         <activity
-            android:name=".PortraitQrCaptureActivity"
+            android:name=".RotatableQrCaptureActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
+            android:screenOrientation="fullUser"
             android:stateNotNeeded="true"
             android:theme="@style/zxing_CaptureTheme"
             android:windowSoftInputMode="stateAlwaysHidden" />
