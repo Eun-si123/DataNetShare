@@ -71,13 +71,16 @@
     <string name="p2p_ssid_suffix_label">Network name suffix (DIRECT-xy + your name)</string>
     <string name="p2p_ssid_suffix_hint">e.g. MyPhone (optional)</string>
     <string name="p2p_password_label">Wi-Fi password (not SOCKS5 password)</string>
-    <string name="p2p_password_hint">Leave empty for random · custom: 8–63 ASCII</string>
+    <string name="p2p_password_hint">Blank = auto / forget saved · custom 8–63 ASCII (remembered)</string>
     <string name="p2p_band_label">Wi-Fi Direct frequency band</string>
     <string name="p2p_band_auto">Automatic (recommended)</string>
     <string name="p2p_band_24">2.4 GHz (compatibility)</string>
     <string name="p2p_band_5">5 GHz (if supported)</string>
     <string name="p2p_legacy_notice">Android 8–9: public Wi-Fi Direct API cannot set a custom network name, password or band. Android controls these settings.</string>
-    <string name="p2p_security_limits">Wi-Fi Direct encryption/security is managed by Android. This app cannot force WPA2 vs WPA3, Wi-Fi 4/5/6/7, radio channel, or WMM/QoS. The selected band is a request, not a guaranteed PHY mode. Custom Wi-Fi passwords are NOT stored after the app process ends.</string>
+    <string name="p2p_security_limits">Wi-Fi Direct encryption/security is managed by Android. This app cannot force WPA2 vs WPA3, Wi-Fi 4/5/6/7, radio channel, or WMM/QoS. The selected band is a request, not a guaranteed PHY mode. Your chosen Wi-Fi password is remembered with Android Keystore encryption until you clear it or uninstall the app.</string>
     <string name="p2p_invalid_profile">Wi-Fi Direct settings invalid: %1$s</string>
     <string name="p2p_android_10_required">Custom Wi-Fi Direct settings need Android 10 or later.</string>
+    <string name="p2p_password_save_failed">Could not securely remember the Wi-Fi password. No changes were applied; check device security storage and retry.</string>
+    <string name="p2p_password_restore_failed">Saved Wi-Fi password could not be restored. Enter it again and start sharing to save it securely.</string>
+    <string name="p2p_password_edit_help">Custom Wi-Fi passwords are encrypted and remembered on this device. Stop sharing before changing settings, then start again to apply. Blank password removes the saved one and uses automatic generation.</string>
 </resources>
