@@ -132,9 +132,13 @@ class WifiDirectHost(private val context: Context) {
                         else "Another app or an existing group may be using Wi-Fi Direct. Stop it before retrying.")
                 }
             }
+            val activeChannel = channel ?: run {
+                mutableState.value = State.Failed("Wi-Fi Direct channel was not initialized")
+                return
+            }
             if (Build.VERSION.SDK_INT >= 29 && requestedConfig != null) {
-                manager?.createGroup(channel, requestedConfig!!, listener)
-            } else manager?.createGroup(channel, listener)
+                manager?.createGroup(activeChannel, requestedConfig!!, listener)
+            } else manager?.createGroup(activeChannel, listener)
         } catch (_: SecurityException) {
             mutableState.value = State.Failed("Wi-Fi Direct permission missing",
                 "Check nearby Wi-Fi devices or location permission.")
