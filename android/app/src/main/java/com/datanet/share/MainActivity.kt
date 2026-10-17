@@ -35,6 +35,7 @@ import com.datanet.share.common.InterfaceEnumerator
 import com.datanet.share.common.PairingPayload
 import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
+import com.datanet.share.common.WifiPasswordVault
 import com.datanet.share.receiver.ReceiverVpnService
 import com.datanet.share.sender.SenderService
 import com.datanet.share.sender.WifiDirectProfile
@@ -52,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     // Activity-scoped ViewModel survives rotation; credentials are never written to disk.
     private val form by lazy { ViewModelProvider(this)[ConnectionFormState::class.java] }
     private val preferences by lazy { getSharedPreferences("connection", MODE_PRIVATE) }
+    private val p2pPasswordVault by lazy { WifiPasswordVault(this) }
     private val wifiPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val required = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
         if (grants[required] == true) startSender(true) else showMessage(getString(R.string.permission_required))
@@ -95,6 +97,17 @@ class MainActivity : AppCompatActivity() {
         p2pBand.setSelection(bands.indexOfFirst { it.name == requestedBand }.coerceAtLeast(0))
         p2pNameSuffix.setText(form.p2pSuffix.ifEmpty { preferences.getString("p2p_suffix", "").orEmpty() })
         p2pNameSuffix.doAfterTextChanged { form.p2pSuffix = it?.toString().orEmpty() }
+        if (!form.customP2pPasswordInitialized) {
+            try {
+                form.customP2pPassword = p2pPasswordVault.load().orEmpty()
+            } catch (_: Exception) {
+                // Do not log ciphertext, recovered password or platform crypto details.
+                showMessage(getString(R.string.p2p_password_restore_failed))
+                try { p2pPasswordVault.clear() } catch (_: Exception) { /* user can retry */ }
+                form.customP2pPassword = ""
+            }
+            form.customP2pPasswordInitialized = true
+        }
         p2pWifiPassword.setText(form.customP2pPassword)
         p2pWifiPassword.doAfterTextChanged { form.customP2pPassword = it?.toString().orEmpty() }
         val olderAndroid = Build.VERSION.SDK_INT < 29
@@ -177,7 +190,8 @@ class MainActivity : AppCompatActivity() {
             if (!SessionStore.current.busy) {
                 qrScanner.launch(ScanOptions()
                     .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    .setOrientationLocked(false)
+                    .setCaptureActivity(PortraitQrCaptureActivity::class.java)
+                    .setOrientationLocked(true)
                     .setBeepEnabled(false)
                     .setPrompt(getString(R.string.qr_scan_prompt)))
             }
@@ -344,7 +358,18 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT < 29 && profile.isCustomized()) {
                 showMessage(getString(R.string.p2p_android_10_required)); return
             }
-            // Remember only non-secret preferences. Password is memory-only.
+            // Just like normal Android hotspot settings, remember the chosen
+            // custom password by default. The AES key is held by Android Keystore;
+            // only ciphertext is persisted in the app-private preferences.
+            // Clearing the input switches back to generated passwords and
+            // also forgets the previously saved password.
+            try {
+                if (profile.passphrase.isEmpty()) p2pPasswordVault.clear()
+                else p2pPasswordVault.save(profile.passphrase)
+            } catch (_: Exception) {
+                showMessage(getString(R.string.p2p_password_save_failed))
+                return
+            }
             preferences.edit().putString("p2p_suffix", profile.nameSuffix)
                 .putString("p2p_band", profile.band.name).apply()
         }

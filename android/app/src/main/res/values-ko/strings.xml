@@ -71,13 +71,16 @@
     <string name="p2p_ssid_suffix_label">Wi-Fi 이름 (DIRECT-xy 뒤에 붙일 이름)</string>
     <string name="p2p_ssid_suffix_hint">예: MyPhone (선택 사항)</string>
     <string name="p2p_password_label">Wi-Fi 비밀번호 (SOCKS5 비밀번호와 다름)</string>
-    <string name="p2p_password_hint">비워두면 자동 생성 · 직접 설정 시 영문 ASCII 8~63자</string>
+    <string name="p2p_password_hint">비우면 자동 생성·저장 비밀번호 삭제 · 직접 설정 시 8~63자(기억됨)</string>
     <string name="p2p_band_label">Wi-Fi Direct 주파수 대역</string>
     <string name="p2p_band_auto">자동 선택 (권장)</string>
     <string name="p2p_band_24">2.4GHz (호환성)</string>
     <string name="p2p_band_5">5GHz (지원 기기)</string>
     <string name="p2p_legacy_notice">Android 8~9에서는 일반 앱이 Wi-Fi Direct SSID·비밀번호·대역을 지정하는 공식 API가 없습니다. Android가 자동 설정합니다.</string>
-    <string name="p2p_security_limits">Wi-Fi Direct 암호화와 보안 방식은 Android가 관리합니다. 이 앱에서 WPA2/WPA3, Wi-Fi 4/5/6/7, 채널, WMM/QoS를 강제로 지정할 수 없습니다. 주파수 대역 선택은 요청값이며 무선 규격을 보장하지 않습니다. 직접 설정한 비밀번호는 앱 프로세스가 종료되면 저장되지 않습니다.</string>
+    <string name="p2p_security_limits">Wi-Fi Direct 암호화와 보안 방식은 Android가 관리합니다. 이 앱에서 WPA2/WPA3, Wi-Fi 4/5/6/7, 채널, WMM/QoS를 강제로 지정할 수 없습니다. 주파수 대역 선택은 요청값이며 무선 규격을 보장하지 않습니다. 직접 설정한 Wi-Fi 비밀번호는 Android Keystore로 암호화하여 기억하고, 입력을 비우거나 앱을 삭제하면 초기화합니다.</string>
     <string name="p2p_invalid_profile">Wi-Fi Direct 설정 오류: %1$s</string>
     <string name="p2p_android_10_required">사용자 지정 Wi-Fi Direct 설정은 Android 10 이상에서 지원합니다.</string>
+    <string name="p2p_password_save_failed">Wi-Fi 비밀번호를 안전하게 저장하지 못했어요. 설정은 적용되지 않았습니다. 보안 저장소를 확인한 뒤 다시 시도하세요.</string>
+    <string name="p2p_password_restore_failed">기억한 Wi-Fi 비밀번호를 복원하지 못했어요. 다시 입력하고 공유를 시작하면 안전하게 저장합니다.</string>
+    <string name="p2p_password_edit_help">직접 설정한 Wi-Fi 비밀번호는 암호화하여 계속 기억합니다. 공유 중에는 설정을 바꿀 수 없으니 중지한 뒤 변경하고 다시 시작하세요. 비밀번호를 지우고 공유를 시작하면 자동 생성으로 돌아갑니다.</string>
 </resources>
