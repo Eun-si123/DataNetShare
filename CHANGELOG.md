@@ -1,5 +1,12 @@
 # Changes
 
+## 5.1-dev.14 — 2026-10-17
+
+- User requested **free rotation** rather than portrait-only QR scanning. Replace the v5.1-dev.13 portrait lock with a dedicated non-exported `RotatableQrCaptureActivity` using Android `screenOrientation=fullUser` and ZXing `setOrientationLocked(false)`.
+- With automatic device rotation enabled, the QR scanner may switch between portrait and landscape as the user turns the phone. When Auto-rotate is disabled, respect the user's locked orientation. Opening scanner should no longer force landscape or portrait.
+- Preserve the previous version's Android Keystore AES-GCM encrypted remembering of the chosen Wi-Fi Direct password; session SOCKS5 credentials remain ephemeral.
+- Android unit tests, lint and APK build verify source/manifest correctness, but live camera rotation and scan return path remain **physical-device acceptance tests**.
+
 ## 5.1-dev.13 — 2026-10-17
 
 - Remember user-chosen Wi-Fi Direct passphrases by default, like Android's ordinary hotspot settings. When the sender starts a valid custom Wi-Fi Direct profile, AES-GCM encrypts the password using a non-exportable Android Keystore key and stores ciphertext only in app-private preferences. No plaintext fallback. The password survives app process restarts, but app data clearing/uninstall/reinstall removes it.
