@@ -83,6 +83,44 @@
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/route_help" android:textColor="#B5BCC8"
                     android:textSize="13sp"/>
+                <LinearLayout android:id="@+id/wifiDirectOptions"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:layout_marginTop="16dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_options_title" android:textColor="#FFFFFF"
+                        android:textStyle="bold" android:textSize="15sp"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_options_help" android:textColor="#B5BCC8"
+                        android:textSize="12sp" android:layout_marginBottom="8dp"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_ssid_suffix_label" android:labelFor="@id/p2pNameSuffix"
+                        android:textColor="#E6E8EB" android:textSize="13sp"/>
+                    <EditText android:id="@+id/p2pNameSuffix" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="48dp"
+                        android:hint="@string/p2p_ssid_suffix_hint" android:inputType="textVisiblePassword"
+                        android:maxLength="22" android:singleLine="true"
+                        android:textColor="#FFFFFF" android:textColorHint="#B5BCC8"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_password_label" android:labelFor="@id/p2pCustomPassword"
+                        android:textColor="#E6E8EB" android:textSize="13sp" android:layout_marginTop="8dp"/>
+                    <EditText android:id="@+id/p2pCustomPassword" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="48dp"
+                        android:hint="@string/p2p_password_hint" android:inputType="textPassword"
+                        android:maxLength="63" android:singleLine="true" android:saveEnabled="false"
+                        android:importantForAutofill="no" android:textColor="#FFFFFF"
+                        android:textColorHint="#B5BCC8"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_band_label" android:labelFor="@id/p2pBand"
+                        android:textColor="#E6E8EB" android:textSize="13sp" android:layout_marginTop="8dp"/>
+                    <Spinner android:id="@+id/p2pBand" android:layout_width="match_parent"
+                        android:layout_height="48dp" android:backgroundTint="#B5BCC8"/>
+                    <TextView android:id="@+id/p2pUnsupportedNotice" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/p2p_legacy_notice"
+                        android:visibility="gone" android:textColor="#FDE68A" android:textSize="12sp"/>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/p2p_security_limits" android:textColor="#B5BCC8"
+                        android:textSize="12sp" android:layout_marginTop="8dp"/>
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 

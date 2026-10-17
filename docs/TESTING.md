@@ -2,6 +2,26 @@
 
 Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.12 — Wi-Fi Direct group-owner settings (Android 10+)
+
+Added an optional Wi-Fi Direct advanced configuration flow ([PR #14](https://github.com/Eun-si123/DataNetShare/pull/14)) while preserving default behavior for older Android releases and devices that cannot create custom groups.
+
+| Scenario | Expected behavior | Android hardware status |
+| --- | --- | --- |
+| Android 8–9, Auto defaults | Existing `createGroup(channel, listener)` creates system-generated SSID/passphrase | Not yet tested on physical device |
+| Android 8–9, custom profile requested | UI disables unsupported settings; service rejects explicit custom request | Not yet tested on physical device |
+| Android 10+, Auto/default | Unchanged legacy group creation, system chooses radio and password | Not yet tested on physical device |
+| Android 10+, suffix MyPhone + custom ASCII passphrase | Requested group `DIRECT-xyMyPhone`; resulting Android group SSID/password must match before sender SOCKS starts | Not yet tested on physical device |
+| Android 10+, choose Auto, 2.4 or 5 GHz | Android tries chosen band (no silent fallbacks); unsupported request yields visible group-creation error | Not yet tested on physical device |
+| User sets a Wi-Fi passphrase then rotates Activity | Memory-only ViewModel preserves the secret while process lives; preferences never persist it | Not yet tested on physical device |
+| QR pairing after custom group starts | QR uses *actual* SSID/passphrase returned by Android; receiver manual Wi-Fi join remains required | Not yet tested on physical device |
+| OEM refuses/ignores custom group parameters | App fails rather than presenting different actual settings as requested success | Not yet tested on physical device |
+| Local USB/existing-Wi-Fi sharing | P2P-specific settings hidden and never applied | Not yet tested on physical device |
+
+Unit regression tests exercise Wi-Fi Direct profile validation, 32-byte SSID size, ASCII password requirements, legacy-default detection, suffix prefix rules and QR serialization. CI validates source compilation and host protocol tests; it **cannot** emulate real Android firmware radio configuration.
+
+**Limits:** Wi-Fi Direct does not let regular applications select WPA2/WPA3, Wi-Fi 4/5/6/7, exact channel, 6 GHz availability or WMM/QoS. 2.4 vs 5 GHz selection is an operating-band request and is not equivalent to PHY standard selection. System hotspot (`SoftApConfiguration`) is a separate product API with privileged operations not used by DataNetShare. Keep custom Wi-Fi passwords out of docs, telemetry, screenshots and GitHub Issues.
+
 ## 5.1-dev.11 — UDP flow pressure and unexpected Android VPN teardown
 
 **Verified release (2026-10-16):** [v5.1-dev.11](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.11) was publicly published as a prerelease (not draft). [Release CI run 38858720567](https://github.com/Eun-si123/DataNetShare/actions/runs/38858720567) completed successfully, including protocol tests, Android unit tests/lint/APK build, package and signature checks. Asset `DataNetShare-5.1-dev.11-debug.apk` is **6,270,360 bytes**, SHA-256 `e57ad979ca799051aad3880fcafaa0db49cda27d5a0fa5a83e826facc7c5de51`, with `SHA256SUMS.txt` also uploaded. CI success is not real Android OEM/device acceptance.
