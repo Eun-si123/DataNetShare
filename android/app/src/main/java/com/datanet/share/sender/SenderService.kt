@@ -78,12 +78,12 @@ class SenderService : Service() {
                         else -> Unit
                     }
                 }.also { host.state.observeForever(it) }
-                val bandName = intent.getStringExtra(EXTRA_P2P_BAND).orEmpty()
+                val bandName = intent?.getStringExtra(EXTRA_P2P_BAND).orEmpty()
                 val band = WifiDirectProfile.Band.entries.firstOrNull { it.name == bandName }
                     ?: WifiDirectProfile.Band.AUTO
                 host.start(WifiDirectProfile(
-                    nameSuffix = intent.getStringExtra(EXTRA_P2P_SUFFIX).orEmpty(),
-                    passphrase = intent.getStringExtra(EXTRA_P2P_PASSWORD).orEmpty(),
+                    nameSuffix = intent?.getStringExtra(EXTRA_P2P_SUFFIX).orEmpty(),
+                    passphrase = intent?.getStringExtra(EXTRA_P2P_PASSWORD).orEmpty(),
                     band = band
                 ))
             }
