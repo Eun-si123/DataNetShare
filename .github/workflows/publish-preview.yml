@@ -50,28 +50,35 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='41' versionName='5.1-dev.11'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='42' versionName='5.1-dev.12'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.11-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.12-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.11-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.12-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.11"
+          TAG="v5.1-dev.12"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.11 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.12 — Android preview (not a stable release)
 
-          **Download:** `DataNetShare-5.1-dev.11-debug.apk` in Assets below (not Source code ZIP).
+          **Download:** `DataNetShare-5.1-dev.12-debug.apk` in Assets below (not Source code ZIP).
           Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+
+          ### New Wi-Fi Direct controls (Android 10+)
+          - Configure the Wi-Fi Direct SSID suffix (shown as DIRECT-xyYourName), password (8–63 printable ASCII), and requested 2.4 GHz/5 GHz/automatic band in the sender's Advanced settings.
+          - With Auto/blank defaults, the original Android-managed group creation is unchanged. The password stays in app memory only; the actual group credentials appear on the sender and in the receiver's QR handoff.
+          - Android 8–9 can still use automatic Wi-Fi Direct but cannot apply custom group credentials through the public API.
+          - Wi-Fi Direct does **not** give third-party apps router-style WPA2/WPA3 mode, Wi-Fi 4/5/6/7 PHY, exact channel or WMM/QoS controls. Band requests may fail on unsupported hardware; no silent fallback.
+          - Host unit tests validate SSID/password constraints and pairing QR compatibility. OEM/real-phone Wi-Fi Direct creation remains unverified.
 
           ### UDP capacity, TCP recovery and unexpected VPN shutdown handling
           - User device telemetry on 5.1-dev.10 showed 10 rejected UDP flows at the previous 32-association cap, 67 TCP retransmissions, one retransmission exhaustion, and two TCP upload failures with zero TUN drops.
@@ -162,10 +169,10 @@ jobs:
           **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.11-debug.apk \
+            dist/DataNetShare-5.1-dev.12-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.11 (Android preview)" \
+            --title "DataNet Share 5.1-dev.12 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
