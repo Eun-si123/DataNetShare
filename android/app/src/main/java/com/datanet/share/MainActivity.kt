@@ -37,6 +37,7 @@ import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
 import com.datanet.share.receiver.ReceiverVpnService
 import com.datanet.share.sender.SenderService
+import com.datanet.share.sender.WifiDirectProfile
 
 class MainActivity : AppCompatActivity() {
     private lateinit var host: EditText
@@ -44,6 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var password: EditText
     private lateinit var addresses: Spinner
     private lateinit var defaultRoute: Switch
+    private lateinit var p2pNameSuffix: EditText
+    private lateinit var p2pWifiPassword: EditText
+    private lateinit var p2pBand: Spinner
     private var candidates = emptyList<InterfaceEnumerator.InterfaceInfo>()
     // Activity-scoped ViewModel survives rotation; credentials are never written to disk.
     private val form by lazy { ViewModelProvider(this)[ConnectionFormState::class.java] }
@@ -78,6 +82,27 @@ class MainActivity : AppCompatActivity() {
         host = findViewById(R.id.receiverHost); port = findViewById(R.id.receiverPort)
         password = findViewById(R.id.receiverPassword); addresses = findViewById(R.id.bindAddress)
         defaultRoute = findViewById(R.id.defaultRoute)
+        p2pNameSuffix = findViewById(R.id.p2pNameSuffix)
+        p2pWifiPassword = findViewById(R.id.p2pCustomPassword)
+        p2pBand = findViewById(R.id.p2pBand)
+        p2pBand.adapter = ArrayAdapter(this, R.layout.spinner_selection, listOf(
+            getString(R.string.p2p_band_auto),
+            getString(R.string.p2p_band_24),
+            getString(R.string.p2p_band_5)
+        )).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        val requestedBand = preferences.getString("p2p_band", WifiDirectProfile.Band.AUTO.name)
+        val bands = WifiDirectProfile.Band.entries
+        p2pBand.setSelection(bands.indexOfFirst { it.name == requestedBand }.coerceAtLeast(0))
+        p2pNameSuffix.setText(form.p2pSuffix.ifEmpty { preferences.getString("p2p_suffix", "").orEmpty() })
+        p2pNameSuffix.doAfterTextChanged { form.p2pSuffix = it?.toString().orEmpty() }
+        p2pWifiPassword.setText(form.customP2pPassword)
+        p2pWifiPassword.doAfterTextChanged { form.customP2pPassword = it?.toString().orEmpty() }
+        val olderAndroid = Build.VERSION.SDK_INT < 29
+        p2pNameSuffix.isEnabled = !olderAndroid
+        p2pWifiPassword.isEnabled = !olderAndroid
+        p2pBand.isEnabled = !olderAndroid
+        findViewById<View>(R.id.p2pUnsupportedNotice).visibility =
+            if (olderAndroid) View.VISIBLE else View.GONE
         // The role and transport are non-secret user preferences. Force the
         // running service's role when Activity is recreated.
         val roleGroup = findViewById<RadioGroup>(R.id.roleGroup)
@@ -229,6 +254,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.senderSettings).visibility = if (!active && share) View.VISIBLE else View.GONE
         findViewById<View>(R.id.receiverSettings).visibility = if (!active && !share) View.VISIBLE else View.GONE
         findViewById<View>(R.id.localSettings).visibility = if (!direct) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.wifiDirectOptions).visibility =
+            if (share && direct && !active) View.VISIBLE else View.GONE
         findViewById<View>(R.id.advancedSettings).visibility =
             if (form.showAdvancedSettings) View.VISIBLE else View.GONE
         findViewById<Button>(R.id.btnAdvanced).setText(
@@ -253,6 +280,10 @@ class MainActivity : AppCompatActivity() {
         listOf(R.id.bindAddress, R.id.btnRefresh, R.id.defaultRoute, R.id.receiverHost,
             R.id.receiverPort, R.id.receiverPassword, R.id.btnScanQr)
             .forEach { findViewById<View>(it).isEnabled = !active }
+        val customEnabled = !active && Build.VERSION.SDK_INT >= 29
+        p2pNameSuffix.isEnabled = customEnabled
+        p2pWifiPassword.isEnabled = customEnabled
+        p2pBand.isEnabled = customEnabled
         val hasCredentials = state.mode == SessionStore.Mode.SENDER && state.status == "active"
         findViewById<View>(R.id.credsCard).visibility = if (hasCredentials) View.VISIBLE else View.GONE
         if (!hasCredentials) form.showQr = false
@@ -300,6 +331,23 @@ class MainActivity : AppCompatActivity() {
     }
     private fun startSender(p2p: Boolean) {
         if (SessionStore.current.busy) return
+        val profile = WifiDirectProfile(
+            nameSuffix = p2pNameSuffix.text.toString().trim(),
+            passphrase = p2pWifiPassword.text.toString(),
+            band = WifiDirectProfile.Band.entries[p2pBand.selectedItemPosition.coerceIn(0, 2)]
+        )
+        if (p2p) {
+            val problem = profile.validate()
+            if (problem != null) {
+                showMessage(getString(R.string.p2p_invalid_profile, problem)); return
+            }
+            if (Build.VERSION.SDK_INT < 29 && profile.isCustomized()) {
+                showMessage(getString(R.string.p2p_android_10_required)); return
+            }
+            // Remember only non-secret preferences. Password is memory-only.
+            preferences.edit().putString("p2p_suffix", profile.nameSuffix)
+                .putString("p2p_band", profile.band.name).apply()
+        }
         preferences.edit().putBoolean("role_share", true).putBoolean("share_direct", p2p).apply()
         if (p2p) {
             val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
@@ -311,6 +359,11 @@ class MainActivity : AppCompatActivity() {
         launchService(Intent(this, SenderService::class.java).apply {
             action = if (p2p) SenderService.ACTION_START else SenderService.ACTION_START_LOCAL
             putExtra(SenderService.EXTRA_BIND_HOST, bind); putExtra(SenderService.EXTRA_DEFAULT_ROUTE, defaultRoute.isChecked)
+            if (p2p) {
+                putExtra(SenderService.EXTRA_P2P_SUFFIX, profile.nameSuffix)
+                putExtra(SenderService.EXTRA_P2P_PASSWORD, profile.passphrase)
+                putExtra(SenderService.EXTRA_P2P_BAND, profile.band.name)
+            }
         })
     }
     private fun startReceiver() {
