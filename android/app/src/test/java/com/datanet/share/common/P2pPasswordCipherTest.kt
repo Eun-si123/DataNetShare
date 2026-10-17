@@ -12,7 +12,7 @@ class P2pPasswordCipherTest {
         val secret = "A-stable-Password_2026!"
         val encrypted = P2pPasswordCipher.encrypt(secret, k)
         assertEquals(secret, P2pPasswordCipher.decrypt(encrypted, k))
-        assertFalse(encrypted.toList().containsAll(secret.toByteArray().toList()))
+        assertFalse(encrypted.toString(Charsets.ISO_8859_1).contains(secret))
     }
     @Test fun identicalPasswordsProduceDifferentEncryptedBytes() {
         val k = key()
