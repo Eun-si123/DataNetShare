@@ -38,6 +38,8 @@ class ReceiverLink(context: Context, host: String) {
         }
         throw IOException("No local link to the sender; join its Wi-Fi network or check the address")
     }
+    /** The physical local-only network carrying protected SOCKS traffic; null when only an interface is known. */
+    fun underlyingNetwork(): Network? = network()
     fun bind(socket: Socket) { val net = network(); if (net != null) net.bindSocket(socket) else socket.bind(InetSocketAddress(localAddress(), 0)) }
     fun bind(socket: DatagramSocket) { val net = network(); if (net != null) net.bindSocket(socket) else socket.bind(InetSocketAddress(localAddress(), 0)) }
 }

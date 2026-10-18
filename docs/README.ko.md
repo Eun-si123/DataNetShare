@@ -4,6 +4,14 @@
 
 **통신사 테더링 제한 우회, 모든 게임·앱의 호환성, VPN 프라이버시는 보장하지 않습니다.** 자동 소켓 테스트와 APK 빌드만으로 실제 휴대폰 간 안정성 검증이 끝나는 것은 아닙니다.
 
+## 5.1-dev.19 — QR 로컬 Wi-Fi와 Speedtest 연결 상태 진단
+
+삼성이 아닌 수신기에서 QR 자동 접속 후 브라우저 접속은 가능하지만 Wi-Fi에 느낌표/물음표가 붙고, Speedtest 앱의 인터넷 제공업체 및 서버 검색이 실패하는 현상이 보고됐습니다. QR은 Android의 로컬 전용 WifiNetworkSpecifier 연결이라 연결 표시가 일반 인터넷 Wi-Fi와 다를 수 있습니다. 해당 Wi-Fi 자체를 인터넷 검증 통과 네트워크처럼 속이지 않습니다.
+
+수신 VPN이 송신기와 통신하는 실제 Wi-Fi Direct 네트워크를 Android VPN의 underlying network로 명시하고, 재연결된 네트워크를 갱신하도록 수정했습니다. VPN 진단에 시스템이 보이는 VPN과 로컬 송신망의 INTERNET/VALIDATED/VPN/WIFI 상태를 표시합니다(5초 간격, 개인 주소·SSID·비밀번호 없음). 이는 Android의 기반망 상태 표시를 정확하게 하기 위한 것이며 Speedtest 성공을 보장하지 않습니다. 이후 브라우저·Speedtest 앱·Speedtest 웹을 비교하고, 양쪽의 진단 텍스트를 확인해 네트워크 검증과 DNS/UDP/IPv6 문제를 구분합니다.
+
+Wi-Fi Direct 실행 상태에서 송신기 앱을 삭제하면 이전 그룹 해제 콜백이 실행되지 못해 OS에 그룹이 남고 재설치 후 BUSY가 발생할 수 있습니다. 삭제하기 전에 먼저 공유를 종료하고, 이미 발생했다면 송신기 Wi-Fi를 껐다 켜거나 재부팅해서 복구하세요. 다른 앱의 Wi-Fi Direct 그룹은 함부로 제거하지 않습니다.
+
 ## v5.1-dev.18 QR 자동 연결 확인 개선
 
 삼성 Wi-Fi 설정에서 같은 DIRECT SSID가 앱 요청 네트워크와 저장된 네트워크로 따로 표시될 수 있습니다. 저장된 네트워크가 인터넷 없음으로 자동 연결 비활성화되어 있어도 앱이 요청한 로컬 Wi-Fi 연결까지 실패했다는 뜻은 아닙니다.
@@ -33,7 +41,7 @@ Android 10 이상에서 QR 스캔 후 **시스템 승인 화면**으로 송신�
 
 ## 설치
 
-**간편 다운로드:** [v5.1-dev.18 릴리스 페이지](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.18)의 **Assets** 아래에서 `DataNetShare-5.1-dev.18-debug.apk`를 내려받아 설치하세요. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
+**간편 다운로드:** [v5.1-dev.19 릴리스 페이지](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.19)의 **Assets** 아래에서 `DataNetShare-5.1-dev.19-debug.apk`를 내려받아 설치하세요. 'Source code' ZIP이 아니라 APK를 받아야 합니다. `SHA256SUMS.txt`는 파일 무결성 확인용입니다. Android 8.0 이상에서 사용 가능합니다.
 
 **주의:** 현재 공개 시험판은 CI에서 임시로 생성한 개발용 키로 서명돼 있어 향후 APK 업데이트가 서명 차이로 거부될 수 있습니다. 그 경우 삭제 후 재설치가 필요하며 앱 설정이 사라집니다. 실기기 안정성 검증을 완료한 정식 버전이 아닙니다.
 

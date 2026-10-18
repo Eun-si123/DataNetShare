@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.ConnectivityManager
+import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -35,6 +39,9 @@ class ReceiverVpnService : VpnService() {
     private var wakeLock: PowerManager.WakeLock? = null
     @Volatile private var probe: Socket? = null
     private var releasePeerOnLoss = false
+    @Volatile private var physicalUnderlying: Network? = null
+    @Volatile private var lastNetworkCheckAtMs = 0L
+    @Volatile private var networkStatus = "Network state not yet checked"
     @Volatile private var peerWatchdog: Thread? = null
     @Volatile private var recentTcpError: String? = null
     @Volatile private var recentUdpError: String? = null
@@ -109,10 +116,18 @@ class ReceiverVpnService : VpnService() {
 
     private fun startTunnel(host: String, port: Int, password: String) {
         try {
-            val descriptor = Builder().setSession("DataNet Share · experimental receiver")
+            // The peer is reached through a deliberately bound local-only Wi-Fi
+            // Network, not necessarily Android's default Internet network.
+            // Tell Android what actually carries the protected SOCKS connection.
+            val underlying = ReceiverLink(this, host).underlyingNetwork()
+            val builder = Builder().setSession("DataNet Share · experimental receiver")
                 .addAddress(Constants.VPN_ADDRESS, 24).addRoute("0.0.0.0", 0)
                 .addDnsServer(Constants.TUNNELED_DNS).setMtu(1500)
-                .setBlocking(false).establish() ?: error("VPN permission was revoked")
+                .setBlocking(false)
+            if (underlying != null) builder.setUnderlyingNetworks(arrayOf(underlying))
+            val descriptor = builder.establish() ?: error("VPN permission was revoked")
+            physicalUnderlying = underlying
+            lastNetworkCheckAtMs = 0L
             pfd = descriptor
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() }
@@ -126,6 +141,7 @@ class ReceiverVpnService : VpnService() {
                     if (generation == token) {
                         val tcpError = recentTcpError
                         val udpError = recentUdpError
+                        val connectivity = networkConnectivityDiagnostics()
                         val perf = "TCP retransmits ${metrics.tcpRetransmits}" +
                             " · TUN waits ${metrics.tunWriteWaits} (${metrics.tunWriteWaitMs} ms total)"
                         SessionStore.telemetry.postValue(
@@ -133,13 +149,14 @@ class ReceiverVpnService : VpnService() {
                             "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             "\nTUN drops ${metrics.tunDropped} · $perf" +
                             "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
-                            "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B")
+                            "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B" +
+                            "\n" + connectivity)
                         SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
                             "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             " · TUN drops ${metrics.tunDropped}" +
                             "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
-                            "\n$perf" +
+                            "\n$perf" + "\n" + connectivity +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))
                     }
@@ -204,6 +221,17 @@ class ReceiverVpnService : VpnService() {
                     }
                     break
                 }
+                // Reflect only the actual local sender link used by the protected
+                // SOCKS sockets. The network might change after Wi-Fi reconnect.
+                val currentUnderlying = try { link.underlyingNetwork() } catch (_: Exception) { null }
+                if (currentUnderlying != null && currentUnderlying != physicalUnderlying) {
+                    try {
+                        if (setUnderlyingNetworks(arrayOf(currentUnderlying))) {
+                            physicalUnderlying = currentUnderlying
+                            lastNetworkCheckAtMs = 0L
+                        }
+                    } catch (_: Exception) { /* keep the existing VPN; health probe decides reachability */ }
+                }
                 val alive = SenderHealthProbe.check(host, port, password,
                     setup = { socket ->
                         ReceiverSocketSetup.bindThenProtect(socket,
@@ -226,6 +254,41 @@ class ReceiverVpnService : VpnService() {
         watcher.start()
     }
 
+    /**
+     * These are Android capability declarations, not proof that every remote
+     * service works. In particular QR Wi-Fi is intentionally local-only.
+     * Sample at most once per five seconds to avoid slowing the VPN bridge.
+     * Do not report network addresses, SSIDs or credentials.
+     */
+    private fun networkConnectivityDiagnostics(): String {
+        val now = SystemClock.elapsedRealtime()
+        if (lastNetworkCheckAtMs != 0L && now - lastNetworkCheckAtMs < 5_000L) return networkStatus
+        lastNetworkCheckAtMs = now
+        networkStatus = try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            fun describe(caps: NetworkCapabilities?): String {
+                if (caps == null) return "unknown"
+                val inet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                val vpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                return "internet=$inet, validated=$validated, vpn=$vpn, wifi=$wifi"
+            }
+            val vpn = cm.allNetworks.firstOrNull { network ->
+                cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+            val underlying = physicalUnderlying
+            val vpnCaps = vpn?.let { cm.getNetworkCapabilities(it) }
+            val underlyingCaps = underlying?.let { cm.getNetworkCapabilities(it) }
+            "Android VPN network: ${describe(vpnCaps)}" +
+                "\nSender link (local-only expected): ${describe(underlyingCaps)}" +
+                "\nQR Wi-Fi request active: ${PeerWifiConnector.network != null}"
+        } catch (_: Exception) {
+            "Android network capabilities unavailable"
+        }
+        return networkStatus
+    }
+
     private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Receiver", text,
         Intent(this, ReceiverVpnService::class.java).setAction(ACTION_STOP))
     private fun fail(message: String, senderLost: Boolean = false) {
@@ -237,6 +300,9 @@ class ReceiverVpnService : VpnService() {
         // Invalidate callbacks before tearing down the VPN. Stop both explicit
         // app button and notification action through this same cleanup path.
         ++generation
+        physicalUnderlying = null
+        lastNetworkCheckAtMs = 0L
+        networkStatus = "Network state not yet checked"
         peerWatchdog?.interrupt(); peerWatchdog = null
         try { probe?.close() } catch (_: Exception) {}
         probe = null
