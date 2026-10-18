@@ -16,6 +16,8 @@ class ConnectionFormState : ViewModel() {
     var showQr: Boolean = false
     // Plaintext exists only in memory; an opt-in custom password is encrypted at rest.
     var customP2pPassword: String = ""
+    var customProxyPassword: String = ""
+    var pendingAutoReceiver: Boolean = false
     var customP2pPasswordInitialized: Boolean = false
     var p2pSuffix: String = ""
     // Non-secret disclosure state follows Activity across rotation only.

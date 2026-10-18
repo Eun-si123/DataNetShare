@@ -26,11 +26,13 @@ class ReceiverVpnService : VpnService() {
         const val EXTRA_SOCKS_HOST = "socks_host"
         const val EXTRA_SOCKS_PORT = "socks_port"
         const val EXTRA_PASSWORD = "proxy_password"
+        const val EXTRA_RELEASE_PEER_ON_LOSS = "release_peer_on_loss"
     }
     private var pfd: ParcelFileDescriptor? = null
     private var bridge: Tun2Socks? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var probe: Socket? = null
+    private var releasePeerOnLoss = false
     @Volatile private var peerWatchdog: Thread? = null
     @Volatile private var recentTcpError: String? = null
     @Volatile private var recentUdpError: String? = null
@@ -38,10 +40,11 @@ class ReceiverVpnService : VpnService() {
     @Volatile private var generation = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) { cleanup(); com.datanet.share.common.PeerWifiConnector.release(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
         recentTcpError = null
         recentUdpError = null
+        releasePeerOnLoss = intent?.getBooleanExtra(EXTRA_RELEASE_PEER_ON_LOSS, false) ?: false
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
@@ -176,7 +179,7 @@ class ReceiverVpnService : VpnService() {
                     main.post {
                         if (generation == token && SessionStore.current.mode == SessionStore.Mode.RECEIVER) {
                             SessionStore.note(NetworkEvent.SENDER_DISCONNECTED)
-                            fail("Sender disconnected or unreachable. Receiver VPN was stopped; reconnect when sharing resumes.")
+                            fail("Sender disconnected or unreachable. Receiver VPN was stopped; reconnect when sharing resumes.", senderLost = true)
                         }
                     }
                     break
@@ -190,8 +193,9 @@ class ReceiverVpnService : VpnService() {
 
     private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Receiver", text,
         Intent(this, ReceiverVpnService::class.java).setAction(ACTION_STOP))
-    private fun fail(message: String) {
+    private fun fail(message: String, senderLost: Boolean = false) {
         cleanup()
+        if (!senderLost || releasePeerOnLoss) com.datanet.share.common.PeerWifiConnector.release()
         SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "failed", message)); stopSelf()
     }
     private fun cleanup() {
@@ -216,6 +220,7 @@ class ReceiverVpnService : VpnService() {
         val unexpected = SessionStore.current.mode == SessionStore.Mode.RECEIVER &&
             SessionStore.current.busy
         cleanup()
+        if (releasePeerOnLoss) com.datanet.share.common.PeerWifiConnector.release()
         if (unexpected) {
             SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "failed",

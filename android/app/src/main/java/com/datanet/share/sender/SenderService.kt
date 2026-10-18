@@ -30,6 +30,8 @@ class SenderService : Service() {
         const val ACTION_STOP = "com.datanet.share.sender.STOP"
         const val EXTRA_BIND_HOST = "bind_host"
         const val EXTRA_DEFAULT_ROUTE = "default_route"
+        const val EXTRA_WIFI_FALLBACK = "wifi_fallback"
+        const val EXTRA_PROXY_PASSWORD = "custom_proxy_password"
         const val EXTRA_P2P_SUFFIX = "p2p_ssid_suffix"
         const val EXTRA_P2P_PASSWORD = "p2p_wifi_password"
         const val EXTRA_P2P_BAND = "p2p_band"
@@ -39,6 +41,8 @@ class SenderService : Service() {
     private var observer: Observer<WifiDirectHost.State>? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var defaultRoute = false
+    private var wifiFallback = false
+    private var sessionPasswordOverride = ""
     private val idleReclaimed = AtomicLong()
     @Volatile private var recentUpstreamFailure: String? = null
     private val main = Handler(Looper.getMainLooper())
@@ -57,6 +61,9 @@ class SenderService : Service() {
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Sender").apply { acquire() }
             defaultRoute = intent?.getBooleanExtra(EXTRA_DEFAULT_ROUTE, false) ?: false
+            wifiFallback = !defaultRoute && (intent?.getBooleanExtra(EXTRA_WIFI_FALLBACK, false) ?: false)
+            sessionPasswordOverride = intent?.getStringExtra(EXTRA_PROXY_PASSWORD).orEmpty()
+            require(sessionPasswordOverride.isEmpty() || com.datanet.share.common.ProxyPasswordPolicy.valid(sessionPasswordOverride)) { "Invalid SOCKS5 password" }
             recentUpstreamFailure = null
             idleReclaimed.set(0)
             // Do not hold a cellular network up when the user explicitly selected Android routing.
@@ -93,11 +100,12 @@ class SenderService : Service() {
 
     private fun openProxy(token: Int, host: String, ssid: String = "", wifiPassword: String = "") {
         if (socks != null || token != session) return
-        val password = ByteArray(16).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
-        val server = Socks5Server(host, Constants.SOCKS5_PORT, password, AndroidUpstream(defaultRoute),
+        val password = sessionPasswordOverride.ifEmpty { ByteArray(16).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) } }
+        val upstream = AndroidUpstream(defaultRoute, this, wifiFallback)
+        val server = Socks5Server(host, Constants.SOCKS5_PORT, password, upstream,
             onStats = { clients, rx, tx ->
                 if (token == session) {
-                    val route = if (defaultRoute) describeDefaultRoute() else if (CellularNetworkTracker.cellularAvailable()) "Mobile data" else "Waiting for mobile data"
+                    val route = if (defaultRoute) describeDefaultRoute() else upstream.routeSummary()
                     val recent = recentUpstreamFailure
                     val idleCount = idleReclaimed.get()
                     SessionStore.telemetry.postValue("Sender clients $clients · RX $rx B · TX $tx B · idle TCP reclaimed $idleCount")
@@ -113,7 +121,7 @@ class SenderService : Service() {
         try {
             server.start()
             SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "active",
-                "SOCKS5: $host:${Constants.SOCKS5_PORT}\nUsername: datanet\n${if (defaultRoute) "Upstream: Android default route" else "Upstream: mobile data only"}", host, password, ssid, wifiPassword))
+                "SOCKS5: $host:${Constants.SOCKS5_PORT}\nUsername: datanet\n${if (defaultRoute) "Upstream: Android default route" else if (wifiFallback) "Upstream: cellular, fallback to validated Wi-Fi" else "Upstream: mobile data only"}", host, password, ssid, wifiPassword))
             getSystemService(NotificationManager::class.java).notify(Constants.SENDER_NOTIFICATION_ID, notification("SOCKS5 at $host:${Constants.SOCKS5_PORT} · tap for credentials"))
         } catch (e: Exception) { fail("Proxy could not start: ${e.message}") }
     }
@@ -148,6 +156,7 @@ class SenderService : Service() {
         socks?.stop(); socks = null
         wifiHost?.stop(); wifiHost = null
         CellularNetworkTracker.stop()
+        sessionPasswordOverride = ""
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
