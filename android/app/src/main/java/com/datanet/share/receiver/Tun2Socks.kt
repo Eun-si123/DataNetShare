@@ -32,7 +32,8 @@ data class BridgeStats(
     val udpQueueOverflows: Long = 0,
     val negotiatedTcpWindowScale: Long = 0,
     val ignoredIpv4Icmp: Long = 0,
-    val ignoredIpv6Packets: Long = 0
+    val ignoredIpv6Packets: Long = 0,
+    val oversizedUdpReplies: Long = 0
 )
 
 class Tun2Socks(
@@ -60,6 +61,7 @@ class Tun2Socks(
     private val windowScaledFlows = AtomicLong()
     private val ipv4IcmpIgnored = AtomicLong()
     private val ipv6Ignored = AtomicLong()
+    private val oversizedUdpReplies = AtomicLong()
     private val tunWriteWaits = AtomicLong()
     private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
@@ -80,7 +82,8 @@ class Tun2Socks(
                         udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
                         tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
                         idleTcpReclaimed.get(), udpQueueOverflows.get(),
-                        windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get()))
+                        windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get(),
+                        oversizedUdpReplies.get()))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
@@ -194,7 +197,8 @@ class Tun2Socks(
                 if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
                 onUdpError(message)
             },
-            onConnected = { udpConnected.incrementAndGet() })
+            onConnected = { udpConnected.incrementAndGet() },
+            onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
         udp[key] = flow; udpAttempts.incrementAndGet(); flow.send(packet.payload)
         Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
     }

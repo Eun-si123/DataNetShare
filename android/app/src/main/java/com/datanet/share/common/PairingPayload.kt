@@ -8,9 +8,9 @@ import java.net.URLEncoder
  * Private in-person handoff format, not an Android deep link or a long-lived invite.
  * Contains plaintext Wi-Fi and SOCKS credentials; never log or persist its contents.
  *
- * The proxy password is regenerated whenever the sender starts a new session, so old
- * QR codes stop authenticating after Stop/restart. This is NOT a single-scan token:
- * someone who photographs the QR can reuse it until the session ends.
+ * Random proxy passwords rotate on restart. Reusing an explicit custom password
+ * can keep old QR authentication valid across sessions. This is NOT a single-scan
+ * token: someone who photographs the QR can reuse its still-valid credentials.
  */
 data class PairingPayload(
     val host: String,

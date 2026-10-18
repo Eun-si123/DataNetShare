@@ -1,5 +1,7 @@
 # DataNet Share 5.1-dev architecture
 
+Checked against maintained source at `be234dc` and the unreleased UDP diagnostics change, 2026-10-18 UTC. Historical version notes in other documents are not the current resource limits.
+
 ## Ownership and lifecycle
 
 `MainActivity` observes an in-process `SessionStore` with one sender/receiver owner. Reopening/rotating the activity does not start a second service to query state. Starting a new mode is refused while another mode is starting/active. The sender and receiver are foreground services with Stop notification actions; they use `START_NOT_STICKY` so Android does not resurrect an empty session after killing them.
@@ -13,11 +15,12 @@
 `Socks5Server` has no Android dependency. Its `Upstream` interface supplies TCP connections, DNS resolution and UDP sockets; `AndroidUpstream` supplies the phone-specific routing.
 
 - Default mode requests and retains an internet-capable cellular Network. DNS uses `Network.getAllByName`, TCP uses its socket factory, UDP uses `Network.bindSocket`. No silent unbound fallback occurs if cellular disappears.
+- Explicit cellular-first/Wi-Fi-fallback mode may select Android-validated infrastructure Wi-Fi for new sockets when cellular is unavailable/unvalidated, then prefer recovered cellular for new sockets. Existing sockets are not migrated. A local-only peer link is not an Internet fallback.
 - Optional default-route mode uses Android's normal resolver/sockets. This is for intentionally using an existing VPN or other default route, with no VPN privacy/kill-switch guarantee. Route changes are handled by Android; existing TCP connections may break.
-- Both Wi-Fi Direct and local modes bind the proxy to one explicit local IPv4 address and require RFC 1929 username/password (`datanet` plus 16 random bytes encoded as 32 hex characters). Credentials rotate each session.
+- Both Wi-Fi Direct and local modes bind the proxy to one explicit local IPv4 address and require RFC 1929 username/password. The default is `datanet` plus 16 random bytes encoded as 32 hex characters, rotated each session. An optional 12–128-character printable ASCII custom password is held only for the session; reusing it permits reuse of old QR credentials.
 - TCP relay propagates EOF via `shutdownOutput`, preserving the other direction until it finishes. Stop closes tracked client/upstream sockets, including idle handshakes. A connect attempt already inside a platform connect/DNS operation can take until its deadline before its worker returns.
 - Each UDP association belongs to its TCP control connection and one pinned UDP client endpoint. Replies come from connected destination sockets, not arbitrary remote senders. The relay address returned is the listener's actual local address, never `0.0.0.0`.
-- Limits: 64 simultaneous SOCKS control clients; 32 remote UDP destinations per association; 128 upstream UDP destination sockets globally; 15-second authentication timeout; two-minute UDP idle expiry. A new socket/packet beyond a limit is rejected/dropped. UDP receive capacity resets for every datagram.
+- Limits: 128 simultaneous SOCKS control clients by default; 32 remote UDP destinations per association; 128 upstream UDP destination sockets globally; 15-second handshake read timeout; 45-second TCP inactivity and 30-second UDP inactivity expiry. A new socket/packet beyond a limit is rejected/dropped. UDP receive capacity resets for every datagram. Blocking connect/DNS/write calls can outlast read-side idle checks; these are not hard total session deadlines.
 
 ## Experimental Android receiver
 
@@ -31,17 +34,21 @@ Proxy sockets are protected from the receiver's own VPN and bound to a non-cellu
 
 `TcpFlow` handles one original IPv4 four-tuple. App-to-proxy data is accepted in sequence, trimmed when partially duplicated and acknowledged only after fitting in a bounded queue. Its advertised receive window reflects queued bytes. Server-to-app segments are retained until acknowledged, retransmitted with bounded backoff, and limited by the advertised peer window. SYN/FIN consume sequence space; serial arithmetic wraps at 32 bits. Local FIN drains queued writes and half-closes the upstream; the response remains readable until its own FIN is acknowledged. A shared maintenance thread handles retransmission, zero-window probes and idle expiry. Closed flows are removed from the map.
 
-This remains a small custom TCP implementation: no full congestion-control algorithm, window-scale negotiation, SACK, IP reassembly, TCP Fast Open or general RFC interoperability certification. It should remain labeled experimental until tested against real Android apps and adverse links. A maintained native tun/netstack may be a better long-term foundation; replacing this bridge is a separate licensing/build/ABI decision.
+Window Scaling is negotiated only with a valid peer SYN option. SYN windows stay unscaled; later windows use the negotiated shifts with local byte caps. MSS is at most 1400 and bounded by the peer offer (536 fallback). This remains a small custom TCP implementation: no full congestion-control algorithm, SACK, IP reassembly, TCP Fast Open or general RFC interoperability certification. It should remain labeled experimental until tested against real Android apps and adverse links. A maintained native tun/netstack may be a better long-term foundation; replacing this bridge is a separate licensing/build/ABI decision.
 
 `UdpFlow` creates a separate SOCKS5 association for each original IPv4 four-tuple, preventing cross-app response collisions at a common DNS/game endpoint. The first packet is queued while the association opens. A connected relay socket filters the peer; responses are checked against the original destination. Idle/control-close/failure closes both TCP control and UDP sockets, including partial initialization. Responses above the 1472-byte IPv4 UDP payload limit are dropped because fragmentation is not implemented.
 
-Receiver limits: 64 TCP flows, 32 UDP flows, up to 65535 queued TCP upload bytes per flow, up to 65535 unacknowledged download bytes constrained by the peer window, 32 queued datagrams per UDP flow. Idle flows expire after two minutes. Individual flow errors close that flow; TUN read/write failure stops the service visibly.
+The unreleased diagnostics count these oversized replies after destination validation, without retaining addresses, payloads or per-packet log entries. Bridge stats sample the aggregate in the existing maintenance cycle. A large DNS UDP reply without TC can still time out; this counter does not add fragmentation, change DNS packets or make a resolver retry TCP.
+
+Receiver limits: shared 120-flow TCP/UDP budget, max 112 TCP and 40 UDP, reserving eight sender slots for probes. Per-flow TCP upload capacity is 65535 bytes without scaling or 262140 with scaling; unacknowledged downloads are bounded by the peer window and at most 262140 bytes. Each UDP flow queues at most 64 packets. TCP inactivity expires after 90 seconds (10 seconds for an unfinished handshake); UDP inactivity after 30 seconds. Under capacity pressure only sufficiently idle/abandoned flows are reclaimed. Individual flow errors close that flow; TUN read/write failure stops the service visibly.
 
 ## Session QR pairing (5.1-dev.3)
 
-`PairingPayload` is a small Android-free, versioned codec with strict IPv4/port, 128-bit random hexadecimal password, optional Wi-Fi SSID/passphrase, input-size and duplicate/unknown-field validation. The QR payload is `datanetshare://pair/v1?...`; **no exported intent/deep-link handler** accepts the URL. `MainActivity` generates the QR bitmap only when explicitly shown for an active sender, and the receiver's built-in ZXing camera scanner fills the editable fields without activating Android VPN automatically.
+`PairingPayload` is a small Android-free, versioned codec with strict IPv4/port/password, optional Wi-Fi SSID/passphrase, input-size and duplicate/unknown-field validation. It supports random session secrets and the explicit custom password policy. The QR payload is `datanetshare://pair/v1?...`; **no exported intent/deep-link handler** accepts the URL. `MainActivity` generates the QR bitmap only when explicitly shown for an active sender.
 
-The QR embeds the *current* SOCKS5 password already generated by `SenderService`; it does **not** create a persistent alternate credential or grant true one-redemption. The password rotates on Stop/restart, invalidating a captured QR then; while sharing is active, any photographed code can be replayed. Wi-Fi Direct credentials can be copied into Android Wi-Fi settings; the app makes no attempt to bypass network consent dialogs or force Wi-Fi joining.
+The QR embeds the *current* SOCKS5 password supplied by `SenderService`; it does **not** grant true one-redemption. Random secrets rotate on restart, but manually reused secrets can keep old QR authentication valid. On Android 10+, the receiver can request the exact QR Wi-Fi through OS consent, verify IPv4 and sender TCP reachability, then enter the normal VPN consent flow. Manual joining remains available. No process-wide binding or consent bypass is used.
+
+A custom Wi-Fi Direct passphrase is separately remembered as Android Keystore-backed AES-GCM ciphertext. This is distinct from the session-only SOCKS secret and receiver form; there is no plaintext storage fallback.
 
 `ConnectionFormState` holds the unsaved receiver password, optional scanned Wi-Fi credentials, current QR visibility and pending VPN consent intent across Activity recreation. This avoids password loss on rotation without storing secrets in preferences/saved-instance bundles. The state is cleared on process death. The QR bitmap is removed when hidden or the sender stops.
 
@@ -49,7 +56,7 @@ The QR embeds the *current* SOCKS5 password already generated by `SenderService`
 
 ## Build and package identity
 
-The maintained source is Kotlin-only, minSdk 26 / targetSdk 34. Debug builds use `com.datanet.share.dev`, version `5.1-dev` / versionCode 31, and do not replace upstream packages. Release builds are unsigned until a private signing process is configured. CI uploads development artifacts, not a public release.
+The maintained source is Kotlin-only, minSdk 26 / targetSdk 34. At this source baseline, versionName is `5.1-dev.21` / versionCode 51. Debug builds use `com.datanet.share.dev` and do not replace upstream packages. Release builds are unsigned until a private signing process is configured. Source-verification CI uploads debug artifacts; a separate main-branch workflow publishes development previews. These unreleased fixes do not change versions, signing or publication workflows.
 
 ## Primary references
 

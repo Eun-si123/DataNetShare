@@ -1,17 +1,17 @@
 # Security and privacy notes — 5.1-dev
 
-Updated 2026-10-16 KST. These notes describe the maintained source and its boundaries. They are not an independent audit, malware certification or proof of production safety. Any older audit bundled in the upstream ZIP describes an earlier version.
+Updated 2026-10-18 UTC. These notes describe the maintained source and its boundaries. They are not an independent audit, malware certification or proof of production safety. Any older audit bundled in the upstream ZIP describes an earlier version.
 
 ## Implemented controls
 
-- **Authenticated in both sender modes:** RFC 1929 user `datanet`, fresh random 32-hex-character password each session. Wi-Fi group credentials are distinct from proxy credentials.
+- **Authenticated in both sender modes:** RFC 1929 user `datanet`, fresh random 32-hex-character password each session by default. An explicit custom SOCKS password is session-memory only, but reusing it allows old QR authentication across sessions. Wi-Fi group credentials are distinct from proxy credentials.
 - **Local scope:** Bind to the Wi-Fi Direct group address or an explicitly selected USB/Wi-Fi IPv4 address. No wildcard listener. No unauthenticated bulk speed-test listener is started.
-- **Cellular routing by default:** Resolve names and create/bind outbound sockets using a cellular Android Network. Refuse missing/broken cellular routing; no silent default-network fallback. The user can explicitly opt into Android default routing.
+- **Cellular routing by default:** Resolve names and create/bind outbound sockets using a cellular Android Network. Refuse missing/broken cellular routing; no silent default-network fallback. The user can explicitly enable cellular-first with Android-validated infrastructure Wi-Fi fallback, or separately opt into Android default routing. Existing sockets are not migrated.
 - **Bounded resource use:** Connection, UDP destination, flow and queue limits; handshake/connect/idle deadlines; Stop closes tracked sockets and releases wake locks/network requests. No process-wide routing or phone security settings are changed.
 - **Flow separation:** Per-original-flow receiver UDP associations and sender association-local destination sockets replace the previous ambiguous shared UDP NAT. Source endpoint validation and connected relay/upstream UDP sockets restrict unsolicited packets.
 - **Packet handling:** Validate IPv4/TCP/UDP sizes and offsets; reject fragmented packets; suppress/trim duplicate TCP ingress; track acknowledgements and retransmissions; preserve half-close. This is still an experimental custom netstack.
 - **Lifecycle:** Probe credentials before installing VPN routes; fail on socket protection/link selection failures; stop on TUN failure; stale Wi-Fi callbacks cannot restart stopped sessions. Sender/receiver startup is mutually exclusive.
-- **Credentials/signing:** No release key/password fallback in the maintained build. Debug package is separate. Passwords are not saved to preferences or logs; notifications omit them. Explicit clipboard copying is a user action.
+- **Credentials/signing:** No release key/password fallback in the maintained build. Debug package is separate. SOCKS secrets and receiver form passwords are not persisted. Custom Wi-Fi Direct passphrases are separately stored as Android Keystore-backed AES-GCM ciphertext, with no plaintext fallback. Logs/notifications omit passwords. Explicit clipboard copying is a user action.
 
 ## Boundaries that matter in use
 
@@ -29,7 +29,7 @@ Updated 2026-10-16 KST. These notes describe the maintained source and its bound
 
 ## Session QR credentials (5.1-dev.3)
 
-The sender shows its connection QR only after the user taps **Show connection QR** during an active sharing session. The code includes plaintext SOCKS5 password and, if available, Wi-Fi Direct SSID/passphrase. **Hiding the image does not revoke the password.** A photographed QR can be reused until the sender stops/restarts and rotates its 128-bit random session password. This is session-scoped, **not a single-scan pairing token**; that would require a distinct sender-side one-redemption exchange and replay protection.
+The sender shows its connection QR only after the user taps **Show connection QR** during an active sharing session. The code includes plaintext SOCKS5 password and, if available, Wi-Fi Direct SSID/passphrase. **Hiding the image does not revoke the password.** A photographed QR can be reused during the session. Restarting with a new random secret invalidates old proxy authentication; explicitly reusing a custom secret can keep it valid across sessions. This is **not a single-scan pairing token**; that would require a distinct sender-side one-redemption exchange and replay protection.
 
 The receiver's local ZXing scanner accepts only a size-bounded, versioned DataNetShare payload with validated IPv4, port and passwords. It fills form fields but never joins a wireless network or enables an Android VPN without user interaction. The transient form and pending VPN consent live only in an Activity ViewModel and are not written to SharedPreferences or saved instance-state. QR contents are not uploaded to a service, logged or sent to analytics. An explicit **Copy Wi-Fi password** action does use Android clipboard. A nearby observer or screenshot can still capture a visible code; do not share a screenshot publicly.
 

@@ -5,10 +5,60 @@ import com.datanet.share.common.Ipv4Packet
 import com.datanet.share.sender.ProxyFixture
 import org.junit.Assert.*
 import org.junit.Test
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
+    @Test fun oversizeReplyIsCountedAndNextReplyStillArrives() = ProxyFixture().use { fixture ->
+        DatagramSocket(InetSocketAddress(InetAddress.getLoopbackAddress(), 0)).use { server ->
+            Thread({
+                try {
+                    repeat(3) {
+                        val query = DatagramPacket(ByteArray(1), 1)
+                        server.receive(query)
+                        val size = when (query.data[0].toInt()) { 1 -> 1472; 2 -> 1473; else -> 100 }
+                        val response = ByteArray(size) { query.data[0] }
+                        server.send(DatagramPacket(response, response.size, query.socketAddress))
+                    }
+                } catch (_: java.io.IOException) { /* test cleanup closes receive */ }
+            }, "test-udp-mtu-boundary").apply { isDaemon = true; start() }
+            val output = LinkedBlockingQueue<ByteArray>()
+            val oversized = CountDownLatch(1)
+            val delivered = CountDownLatch(2)
+            val drops = AtomicInteger()
+            val received = AtomicInteger()
+            val errors = LinkedBlockingQueue<String>()
+            val flow = UdpFlow(FlowKey(0x0a000001, 10003, 0x7f000001, server.localPort),
+                "127.0.0.1", fixture.proxy.boundPort, fixture.password, { true }, { true },
+                { output.add(it) }, { received.addAndGet(it); delivered.countDown() }, {}, {},
+                onError = { errors.add(it) },
+                onOversizedReply = { drops.incrementAndGet(); oversized.countDown() })
+            try {
+                flow.send(byteArrayOf(1))
+                Thread({ flow.start() }, "test-udp-mtu-flow").apply { isDaemon = true; start() }
+                val fullMtu = output.poll(5, TimeUnit.SECONDS)!!
+                assertEquals(1500, fullMtu.size)
+                assertArrayEquals(ByteArray(1472) { 1 }, Ipv4Packet.parse(fullMtu)!!.payload)
+                flow.send(byteArrayOf(2))
+                assertTrue("oversize UDP reply must be diagnosed", oversized.await(3, TimeUnit.SECONDS))
+                flow.send(byteArrayOf(3))
+                assertArrayEquals(ByteArray(100) { 3 },
+                    Ipv4Packet.parse(output.poll(3, TimeUnit.SECONDS)!!)!!.payload)
+                assertTrue("oversize reply must not produce a malformed TUN packet", output.isEmpty())
+                assertTrue(delivered.await(3, TimeUnit.SECONDS))
+                assertEquals("count only the single oversize reply", 1, drops.get())
+                assertEquals("RX counts only packets delivered to TUN", 1572, received.get())
+                assertTrue("oversize replies do not fail the association", errors.isEmpty())
+            } finally { flow.close() }
+        }
+    }
+
     @Test fun firstPacketsAndTwoAppsUsingSameEndpointArePreserved() = ProxyFixture().use { fixture ->
         val output = LinkedBlockingQueue<Ipv4Packet>()
         fun create(sourcePort: Int) = UdpFlow(FlowKey(0x0a000001, sourcePort, 0x7f000001, fixture.udpPort),
