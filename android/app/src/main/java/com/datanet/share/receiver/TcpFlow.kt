@@ -30,19 +30,40 @@ class TcpFlow(
     // Aggregate only; no destinations, packets or credentials in this callback.
     private val onRetransmit: () -> Unit = {},
     // SYN-advertised peer MSS. Must not transmit larger segments than peer accepts.
-    peerMss: Int = 1460
+    peerMss: Int = 1460,
+    // Negotiated only for a SYN containing RFC 7323 WSopt.
+    peerWindowScale: Int? = null
 ) {
     companion object {
-        private const val CAPACITY = 65_535
+        private const val LEGACY_CAPACITY = 65_535
+        // Bound each scaled flow to about 256 KiB: 112 flows < 29 MiB
+        // of TCP upload buffering even at full utilization.
+        private const val WINDOW_SHIFT = 2
+        private const val SCALED_CAPACITY = LEGACY_CAPACITY shl WINDOW_SHIFT
         private const val MSS = 1400
         // RFC 793/879: explicitly advertise the segment size that our TUN bridge
         // can handle without fragmentation, instead of relying on 536-byte fallback.
         private val SYN_MSS_OPTION = byteArrayOf(2, 4, (MSS ushr 8).toByte(), MSS.toByte())
+        // MSS(4) + WSopt(3) + NOP(1): properly aligned.
+        private val SYN_SCALED_OPTION = SYN_MSS_OPTION +
+            byteArrayOf(3, 3, WINDOW_SHIFT.toByte(), 1)
         private const val MASK = 0xffffffffL
         private fun unsigned(value: Int) = value.toLong() and MASK
         private fun distance(from: Long, to: Long) = (to - from) and MASK
     }
     private val transmitMss = minOf(MSS, peerMss.coerceAtLeast(1))
+    private val peerScale = peerWindowScale?.coerceIn(0, 14)
+    private val capacity = if (peerScale != null) SCALED_CAPACITY else LEGACY_CAPACITY
+    // SYN windows are always unscaled; post-handshake advertised windows
+    // are quantized to 4-byte units if we offered scale=2.
+    private fun advertisedWindow(syn: Boolean = false): Int {
+        val remaining = (capacity - queuedBytes).coerceAtLeast(0)
+        return if (peerScale != null && !syn)
+            (remaining ushr WINDOW_SHIFT).coerceAtMost(65_535)
+        else remaining.coerceAtMost(65_535)
+    }
+    private fun peerAdvertisedWindow(raw: Int): Int =
+        (raw.toLong() shl (peerScale ?: 0)).coerceAtMost(SCALED_CAPACITY.toLong()).toInt()
     private data class Segment(val sequence: Long, val flags: Int, val payload: ByteArray,
                                var sent: Long, var attempts: Int = 0) {
         val length: Int get() = payload.size + (if (flags and 3 != 0) 1 else 0)
@@ -55,7 +76,7 @@ class TcpFlow(
     private var expected = (unsigned(initialAppSequence) + 1) and MASK
     private var next = unsigned(initialSequence)
     private var acknowledged = next
-    private var peerWindow = CAPACITY
+    private var peerWindow = LEGACY_CAPACITY
     private var appFin = false
     private var outputFinished = false
     private var remoteFin = false
@@ -91,7 +112,7 @@ class TcpFlow(
             if (distance(acknowledged, ack) <= distance(acknowledged, next)) {
                 val previousAck = acknowledged
                 val previousWindow = peerWindow
-                acknowledged = ack; peerWindow = packet.window
+                acknowledged = ack; peerWindow = peerAdvertisedWindow(packet.window)
                 while (pending.isNotEmpty()) {
                     val segment = pending.first()
                     if (distance(segment.sequence, ack) < segment.length || distance(segment.sequence, ack) >= 0x80000000L) break
@@ -121,7 +142,7 @@ class TcpFlow(
             val sequence = unsigned(packet.sequence)
             val overlap = distance(sequence, expected)
             val data = if (overlap <= packet.payload.size) packet.payload.copyOfRange(overlap.toInt(), packet.payload.size) else null
-            if (data != null && data.isNotEmpty() && queuedBytes + data.size <= CAPACITY) {
+            if (data != null && data.isNotEmpty() && queuedBytes + data.size <= capacity) {
                 writes.add(Write(data)); queuedBytes += data.size
                 expected = (expected + data.size) and MASK; onTx(data.size); lock.notifyAll()
             }
@@ -236,7 +257,7 @@ class TcpFlow(
         }
         if (peerWindow == 0 && now - lastProbe > 1_000_000_000L) {
             lastProbe = now
-            writePacket(IpPackets.tcp(key, ((next - 1) and MASK).toInt(), expected.toInt(), 0x10, CAPACITY - queuedBytes, ByteArray(0)))
+            writePacket(IpPackets.tcp(key, ((next - 1) and MASK).toInt(), expected.toInt(), 0x10, advertisedWindow(), ByteArray(0)))
         }
     }
     private fun sendTracked(flags: Int, payload: ByteArray) {
@@ -246,10 +267,12 @@ class TcpFlow(
     }
     private fun emit(segment: Segment) {
         writePacket(IpPackets.tcp(key, segment.sequence.toInt(), expected.toInt(),
-            segment.flags, CAPACITY - queuedBytes, segment.payload,
-            if (segment.flags and 0x02 != 0) SYN_MSS_OPTION else ByteArray(0)))
+            segment.flags, advertisedWindow(segment.flags and 0x02 != 0), segment.payload,
+            if (segment.flags and 0x02 != 0)
+                if (peerScale != null) SYN_SCALED_OPTION else SYN_MSS_OPTION
+            else ByteArray(0)))
     }
-    private fun sendAck() { if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x10, CAPACITY - queuedBytes, ByteArray(0))) }
+    private fun sendAck() { if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x10, advertisedWindow(), ByteArray(0))) }
     fun abort() = synchronized(lock) {
         if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x14, 0, ByteArray(0)))
         close()

@@ -29,7 +29,10 @@ data class BridgeStats(
     val tunWriteWaitMs: Long,
     val activeUdp: Int,
     val idleTcpReclaimed: Long = 0,
-    val udpQueueOverflows: Long = 0
+    val udpQueueOverflows: Long = 0,
+    val negotiatedTcpWindowScale: Long = 0,
+    val ignoredIpv4Icmp: Long = 0,
+    val ignoredIpv6Packets: Long = 0
 )
 
 class Tun2Socks(
@@ -54,6 +57,9 @@ class Tun2Socks(
     private val tcpRetransmits = AtomicLong()
     private val idleTcpReclaimed = AtomicLong()
     private val udpQueueOverflows = AtomicLong()
+    private val windowScaledFlows = AtomicLong()
+    private val ipv4IcmpIgnored = AtomicLong()
+    private val ipv6Ignored = AtomicLong()
     private val tunWriteWaits = AtomicLong()
     private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
@@ -73,7 +79,8 @@ class Tun2Socks(
                         tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
                         udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
                         tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
-                        idleTcpReclaimed.get(), udpQueueOverflows.get()))
+                        idleTcpReclaimed.get(), udpQueueOverflows.get(),
+                        windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get()))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
@@ -105,6 +112,20 @@ class Tun2Socks(
                     if (poll.revents.toInt() and OsConstants.POLLIN == 0) continue
                     val count = input.read(buffer)
                     if (count < 0) error("VPN interface ended")
+                    // The current bridge only decodes IPv4 TCP/UDP.
+                    // Count discarded ICMP/IPv6 packets for Speedtest/app
+                    // compatibility diagnosis without recording destinations.
+                    if (count > 0) {
+                        val version = (buffer[0].toInt() and 255) ushr 4
+                        if (version == 6) {
+                            ipv6Ignored.incrementAndGet()
+                            continue
+                        }
+                        if (version == 4 && count >= 20 && (buffer[9].toInt() and 255) == 1) {
+                            ipv4IcmpIgnored.incrementAndGet()
+                            continue
+                        }
+                    }
                     val packet = Ipv4Packet.parse(buffer, count) ?: continue
                     if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
                 }
@@ -136,10 +157,16 @@ class Tun2Socks(
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
                 onError = onTcpError,
-                onConnected = { tcpConnected.incrementAndGet() },
+                onConnected = {
+                    tcpConnected.incrementAndGet()
+                    if (packet.offeredWindowScale() != null) windowScaledFlows.incrementAndGet()
+                },
                 onRetransmit = { tcpRetransmits.incrementAndGet() },
-                peerMss = packet.offeredMss() ?: 536)
-            tcp[key] = flow; tcpAttempts.incrementAndGet(); flow.start()
+                peerMss = packet.offeredMss() ?: 536,
+                peerWindowScale = packet.offeredWindowScale())
+            tcp[key] = flow
+            tcpAttempts.incrementAndGet()
+            flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
         } else tcp[key]?.receive(packet)
     }

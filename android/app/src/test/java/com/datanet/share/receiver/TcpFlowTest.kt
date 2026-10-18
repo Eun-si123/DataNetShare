@@ -63,6 +63,53 @@ class TcpFlowTest {
         } finally { flow.close() }
     }
 
+    @Test fun scaledUploadBufferAcceptsMoreThan64KiBButNeverBeyond256KiB() {
+        val key = FlowKey(0x0a000001, 50009, 0x08080808, 443)
+        val responses = LinkedBlockingQueue<Ipv4Packet>()
+        val count = java.util.concurrent.atomic.AtomicInteger()
+        val flow = TcpFlow(key, 100, "127.0.0.1", 1, "unused", { true },
+            { responses.add(Ipv4Packet.parse(it)!!) }, {}, { count.addAndGet(it) }, {},
+            initialSequence = 1000, peerWindowScale = 7)
+        try {
+            flow.start()
+            assertEquals(0x12, responses.poll(1, TimeUnit.SECONDS)!!.flags)
+            flow.receive(incoming(key, 101, 1001))
+            var appSequence = 101
+            repeat(200) {
+                flow.receive(incoming(key, appSequence, 1001, 0x18,
+                    window = 2048, bytes = ByteArray(1400) { 0x42 }))
+                // 262140 can hold exactly 187 chunks of 1400 bytes. Never
+                // ACK bytes we cannot buffer; the peer will retry later.
+                if (it < 187) appSequence += 1400
+            }
+            assertEquals(187 * 1400, count.get())
+            assertEquals(appSequence, responses.toList().last().acknowledgement)
+            assertEquals((262140 - 187 * 1400) / 4, responses.toList().last().window)
+        } finally { flow.close() }
+    }
+
+    @Test fun legacyUploadDoesNotAdvertiseScalingOrOverflowQueue() {
+        val key = FlowKey(0x0a000001, 50008, 0x08080808, 443)
+        val responses = LinkedBlockingQueue<Ipv4Packet>()
+        val count = java.util.concurrent.atomic.AtomicInteger()
+        val flow = TcpFlow(key, 100, "127.0.0.1", 1, "unused", { true },
+            { responses.add(Ipv4Packet.parse(it)!!) }, {}, { count.addAndGet(it) }, {},
+            initialSequence = 1000)
+        try {
+            flow.start()
+            assertEquals(4, responses.poll(1, TimeUnit.SECONDS)!!.tcpOptions.size)
+            flow.receive(incoming(key, 101, 1001))
+            var appSequence = 101
+            repeat(60) {
+                flow.receive(incoming(key, appSequence, 1001, 0x18,
+                    bytes = ByteArray(1400) { 0x44 }))
+                if (it < 46) appSequence += 1400
+            }
+            assertEquals(46 * 1400, count.get())
+            assertEquals(65535 - 46 * 1400, responses.toList().last().window)
+        } finally { flow.close() }
+    }
+
     @Test fun lostSynAckIsRetransmittedWithSameSequence() {
         val retransmissions = java.util.concurrent.atomic.AtomicInteger()
         val packets = LinkedBlockingQueue<Ipv4Packet>()

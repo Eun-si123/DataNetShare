@@ -50,28 +50,31 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='50' versionName='5.1-dev.20'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='51' versionName='5.1-dev.21'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.20-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.21-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.20-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.21-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.20"
+          TAG="v5.1-dev.21"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.20 — experimental Android preview
+          ## DataNet Share 5.1-dev.21 — experimental Android preview
 
           Android 8+, debug-signed com.datanet.share.dev. Not a production release.
 
+          - RFC 7323 TCP Window Scale is negotiated only with a peer SYN offering WSopt; SYN-ACK includes MSS1400 and shift 2. SYN window is unscaled; subsequent incoming/outgoing advertised windows honor negotiated shifts and bounded 256KiB per-flow queue. Legacy peers retain 65535-byte windows.
+          - Receiver aggregate counters for established Window Scale flows and unsupported IPv4 ICMP / IPv6 packets (no protocol support added), without recording addresses or credentials.
+          - New browser result shown by user: down 45.60Mbps, up 30.38Mbps, ping 160ms. All speed gains and native Speedtest app compatibility unverified; require repeated on-device A/B versus dev.20.
           - Sender session peer usage: display authenticated SOCKS5 client IPv4 address,
             number of active SOCKS connections, received Internet/download payload bytes and
             uploaded/client-to-Internet payload bytes. Includes successfully relayed TCP and UDP.
@@ -110,10 +113,10 @@ jobs:
           Tests and limitations: docs/TESTING.md
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.20-debug.apk \
+            dist/DataNetShare-5.1-dev.21-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.20 (Android preview)" \
+            --title "DataNet Share 5.1-dev.21 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md

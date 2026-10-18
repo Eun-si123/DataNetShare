@@ -38,6 +38,36 @@ class TcpSynOptionsTest {
         } finally { flow.close() }
     }
 
+    @Test fun windowScaleOnlyWhenSynNegotiatesAndCheckChecksum() {
+        val packetQueue = LinkedBlockingQueue<ByteArray>()
+        val flow = TcpFlow(key, 100, "127.0.0.1", 8282, "unused",
+            { true }, { packetQueue.add(it) }, {}, {}, {}, initialSequence = 200,
+            peerWindowScale = 7)
+        try {
+            flow.start()
+            val synAck = packetQueue.poll(1, TimeUnit.SECONDS)!!
+            assertEquals(48, synAck.size) // IPv4(20) TCP(28)
+            assertEquals(7, (synAck[32].toInt() and 255) ushr 4)
+            assertArrayEquals(byteArrayOf(2, 4, 5, 0x78, 3, 3, 2, 1),
+                synAck.copyOfRange(40, 48))
+            // SYN-ACK header window MUST NOT be scaled.
+            assertEquals(65535, Ipv4Packet.parse(synAck)!!.window)
+            val pseudo = ByteBuffer.allocate(12 + synAck.size - 20).order(ByteOrder.BIG_ENDIAN)
+                .putInt(key.destination).putInt(key.source).put(0).put(6)
+                .putShort((synAck.size - 20).toShort())
+                .put(synAck, 20, synAck.size - 20).array()
+            assertEquals(0, IpPackets.checksum(pseudo))
+            val senderAck = Ipv4Packet(key, 6, 101, 201, 0x10, 1024, byteArrayOf())
+            flow.receive(senderAck)
+            // We advertise 262140 >> 2 = 65535 after negotiation.
+            val receivedPayload = Ipv4Packet(key, 6, 101, 201, 0x18, 1024,
+                ByteArray(1400) { 7 })
+            flow.receive(receivedPayload)
+            val ack = packetQueue.poll(1, TimeUnit.SECONDS)!!
+            assertEquals(65535 - 350, Ipv4Packet.parse(ack)!!.window)
+        } finally { flow.close() }
+    }
+
     @Test fun aDataSegmentRemainsUnchangedAndOptionFree() {
         val payload = byteArrayOf(1, 2, 3, 4)
         val packet = IpPackets.tcp(key, 100, 200, 0x18, 4096, payload)
