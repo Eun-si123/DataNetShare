@@ -280,8 +280,7 @@ class MainActivity : AppCompatActivity() {
                     append(getString(R.string.peer_usage_row, peer.ip, peer.activeConnections,
                         com.datanet.share.common.FormatBytes.format(peer.txBytes),
                         com.datanet.share.common.FormatBytes.format(peer.rxBytes)))
-                    append('
-')
+                    append('\n')
                 }
             }.trimEnd()
         }
