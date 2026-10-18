@@ -31,6 +31,30 @@ data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, va
         }
         return null
     }
+    /**
+     * RFC 7323 WSopt appears in a SYN only. The peer's advertised shift
+     * applies to its subsequent ACK window fields, never its SYN field.
+     * Invalid/truncated options are treated as absent (legacy TCP).
+     */
+    fun offeredWindowScale(): Int? {
+        if (protocol != 6 || flags and 2 == 0) return null
+        var index = 0
+        while (index < tcpOptions.size) {
+            val kind = tcpOptions[index].toInt() and 255
+            if (kind == 0) return null
+            if (kind == 1) { index++; continue }
+            if (index + 1 >= tcpOptions.size) return null
+            val size = tcpOptions[index + 1].toInt() and 255
+            if (size < 2 || index + size > tcpOptions.size) return null
+            if (kind == 3 && size == 3) {
+                // RFC 7323 requires received scale counts above 14 be
+                // interpreted as 14, rather than shifting by invalid bits.
+                return (tcpOptions[index + 2].toInt() and 255).coerceAtMost(14)
+            }
+            index += size
+        }
+        return null
+    }
     companion object {
         fun parse(bytes: ByteArray, count: Int = bytes.size): Ipv4Packet? {
             if (count !in 20..bytes.size) return null
