@@ -2,6 +2,17 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.16 — experimental receiver packet overhead reduction
+
+**This is a low-risk CPU/packet-overhead experiment, NOT a verified throughput fix.** Preserve 5.1-dev.15 as the field baseline.
+
+- Receiver TCP bridge raises SYN-ACK MSS from 1200 to 1400 (VPN TUN MTU remains 1500). Generated packets are still at most 1440 IPv4+TCP bytes for option-free data. This can reduce TCP packet processing count at equal payload throughput; Android/OEM acceptance and real performance are unverified.
+- Packet encoder no longer allocates a pseudoheader copy or an IPv4 header copy per TCP packet solely for checksum generation. The real IPv4/TCP checksums must be identical. Independent checksum regressions cover odd/even payload sizes, SYN-ACK options and UDP header compatibility.
+- **Unchanged:** 65,535-byte unscaled TCP window, Kotlin socket and per-flow thread model, full-per-packet payload copies, serialized VPN writes, existing congestion/loss recovery, Wi-Fi Direct band. These remain bottleneck candidates.
+- The receiver now parses SYN TCP MSS options and bounds the 1400-byte send size to the peer's advertised MSS (RFC fallback 536 when absent). Verify unusual low-MTU/nested-VPN behavior on real handsets.
+- Same-phone-pair A/B testing v5.1-dev.15 vs dev.16: identical sender 5G signal and receiver location; VultKR Seoul same Speedtest server and 3+ repeated measurements of down/up speeds, unloaded/loaded RTT, TCP retransmissions, TUN waits/drops, sender active clients, Android CPU/temperature and battery. Compare medians and note server/transport selection. A code-compile pass is not an objective speed result.
+- Next larger opportunity: mature tun2socks behind a feature flag (e.g. upstream MIT-licensed hev-socks5-tunnel) with Android JNI reproducible build/ABI checks and socket protection/route safety; compare side-by-side with the Kotlin backend. Do not remove Kotlin fallback until measured.
+
 ## 5.1-dev.15 candidate — QR Wi-Fi request and route fallback
 
 **Development candidate: Android hardware acceptance remains unverified.**

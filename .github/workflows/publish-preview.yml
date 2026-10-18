@@ -50,28 +50,32 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='45' versionName='5.1-dev.15'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='46' versionName='5.1-dev.16'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.15-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.16-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.15-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.16-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.15"
+          TAG="v5.1-dev.16"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.15 — experimental Android preview
+          ## DataNet Share 5.1-dev.16 — experimental Android preview
 
           Android 8+, debug-signed com.datanet.share.dev. Not a production release.
 
+          - EXPERIMENTAL PERFORMANCE CHANGE: reduce per-packet checksum/header temporary allocations,
+            and increase receiver-to-Android TCP MSS from 1200 to 1400 within VPN MTU 1500.
+            This does not implement TCP Window Scaling or change upstream routing.
+            Speed / CPU / battery benefit is NOT confirmed until identical real-handset A/B runs.
           - Android 10+ QR scan requests an OS-approved Wi-Fi join; upon IPv4 provisioning the app begins the VPN consent flow. Manual Wi-Fi connection remains available on failure. No permission bypass.
           - Optional sender SOCKS5 password (session-memory only) or secure random password when blank. Manually reused passwords allow old QR codes to authenticate.
           - Optional sender cellular-first route with validated Internet Wi-Fi fallback and return to cellular for **new** flows after Android validates recovery. Existing sockets are not migrated.
@@ -83,10 +87,10 @@ jobs:
           Tests and limitations: docs/TESTING.md
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.15-debug.apk \
+            dist/DataNetShare-5.1-dev.16-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.15 (Android preview)" \
+            --title "DataNet Share 5.1-dev.16 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
