@@ -31,7 +31,9 @@ class UdpFlow(
     private val onConnected: () -> Unit = {}
 ) {
     private val closed = AtomicBoolean()
-    private val queue = ArrayBlockingQueue<ByteArray>(32)
+    // Bounded ~96 KiB per flow for ordinary <=1472-byte datagrams.
+    // Speed tests can burst before the SOCKS UDP ASSOCIATE handshake finishes.
+    private val queue = ArrayBlockingQueue<ByteArray>(64)
     private var control: Socket? = null
     private var udp: DatagramSocket? = null
     @Volatile private var lastActivity = System.nanoTime()

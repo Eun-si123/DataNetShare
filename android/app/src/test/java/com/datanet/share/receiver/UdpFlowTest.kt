@@ -45,7 +45,7 @@ class UdpFlowTest {
             "test-only", { true }, { true }, {}, {}, {}, {},
             onError = { errors.add(it) })
         try {
-            repeat(32) { flow.send(byteArrayOf(it.toByte())) }
+            repeat(64) { flow.send(byteArrayOf(it.toByte())) }
             assertTrue(errors.isEmpty())
             flow.send(byteArrayOf(0x55))
             assertEquals(listOf("UDP packet queue full"), errors)

@@ -10,8 +10,10 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
+import com.datanet.share.R
 import com.datanet.share.common.Constants
 import com.datanet.share.common.NetworkEvent
+import com.datanet.share.common.PeerWifiConnector
 import com.datanet.share.common.ServiceNotifications
 import com.datanet.share.common.SessionStore
 import com.datanet.share.common.Socks5
@@ -31,7 +33,7 @@ class ReceiverVpnService : VpnService() {
     private var pfd: ParcelFileDescriptor? = null
     private var bridge: Tun2Socks? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var probe: Socket? = null
+    @Volatile private var probe: Socket? = null
     private var releasePeerOnLoss = false
     @Volatile private var peerWatchdog: Thread? = null
     @Volatile private var recentTcpError: String? = null
@@ -57,18 +59,49 @@ class ReceiverVpnService : VpnService() {
             require(com.datanet.share.common.Endpoint.isIpv4(host) && port in 1..65535) { "Enter the sender's IPv4 address and port" }
             ServiceCompat.startForeground(this, Constants.RECEIVER_NOTIFICATION_ID, notification("Checking sender and proxy password…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             val token = ++generation
-            // Probe before installing routes so wrong addresses/passwords do not black-hole other apps.
-            val socket = Socket(); probe = socket
+            // Probe before VPN installation. QR Wi-Fi can have IPv4 provisioned
+            // before the group owner is actually reachable on the local link.
             Thread({
                 try {
-                    socket.use {
-                        check(ReceiverSocketSetup.bindThenProtect(it, { socket -> ReceiverLink(this, host).bind(socket) }, { socket -> protect(socket) })) { "Could not protect sender socket (VPN permission revoked or protection denied)" }
-                        it.soTimeout = 10_000
-                        it.connect(InetSocketAddress(host, port), 10_000)
-                        Socks5.authenticateClient(DataInputStream(it.getInputStream()), it.getOutputStream(), password)
+                    val qrRequestedNetwork = PeerWifiConnector.network != null
+                    val link = ReceiverLink(this, host)
+                    for (attempt in 1..SenderProbeRetryPolicy.MAX_ATTEMPTS) {
+                        if (generation != token) return@Thread
+                        val socket = Socket()
+                        probe = socket
+                        try {
+                            socket.use {
+                                check(ReceiverSocketSetup.bindThenProtect(it,
+                                    { candidate -> link.bind(candidate) },
+                                    { candidate -> protect(candidate) })) {
+                                    "Could not protect sender socket (VPN permission revoked or protection denied)"
+                                }
+                                it.soTimeout = 10_000
+                                it.connect(InetSocketAddress(host, port),
+                                    if (qrRequestedNetwork) SenderProbeRetryPolicy.CONNECT_TIMEOUT_MS else 10_000)
+                                Socks5.authenticateClient(DataInputStream(it.getInputStream()),
+                                    it.getOutputStream(), password)
+                            }
+                            break
+                        } catch (e: Exception) {
+                            if (!SenderProbeRetryPolicy.shouldRetry(e, attempt, qrRequestedNetwork)) throw e
+                            try { Thread.sleep(SenderProbeRetryPolicy.BETWEEN_ATTEMPTS_MS) }
+                            catch (_: InterruptedException) { return@Thread }
+                        } finally {
+                            if (probe === socket) probe = null
+                        }
                     }
-                    main.post { if (generation == token) { probe = null; startTunnel(host, port, password) } }
-                } catch (e: Exception) { main.post { if (generation == token) fail("Sender check failed: ${e.message}") } }
+                    main.post { if (generation == token) startTunnel(host, port, password) }
+                } catch (e: Exception) {
+                    main.post {
+                        if (generation == token) {
+                            val message = if (SenderProbeRetryPolicy.routeError(e))
+                                getString(R.string.sender_peer_route_failed)
+                            else "Sender check failed: ${e.message}"
+                            fail(message)
+                        }
+                    }
+                }
             }, "receiver-check").apply { isDaemon = true; start() }
         } catch (e: Exception) { fail(e.message ?: "Receiver could not start") }
         return START_NOT_STICKY
@@ -99,11 +132,13 @@ class ReceiverVpnService : VpnService() {
                             "Receiver TCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             "\nTUN drops ${metrics.tunDropped} · $perf" +
+                            "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
                             "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B")
                         SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
                             "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             " · TUN drops ${metrics.tunDropped}" +
+                            "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
                             "\n$perf" +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))

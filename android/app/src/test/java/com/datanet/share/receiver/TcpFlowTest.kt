@@ -45,6 +45,24 @@ class TcpFlowTest {
         }
     }
 
+    @Test fun capacityReclaimPreservesFreshFlowButCanRemoveAbandonedSyn() {
+        val key = FlowKey(0x0a000001, 59901, 0x7f000001, 443)
+        val packets = LinkedBlockingQueue<Ipv4Packet>()
+        val flow = TcpFlow(key, 10, "127.0.0.1", 1, "unused",
+            { true }, { packets.add(Ipv4Packet.parse(it)!!) }, {}, {}, {},
+            initialSequence = 1000)
+        try {
+            flow.start()
+            assertFalse(flow.reclaimableForCapacity())
+            assertFalse(flow.reclaimableForCapacity(System.nanoTime() + 4_000_000_000L))
+            assertTrue(flow.reclaimableForCapacity(System.nanoTime() + 7_000_000_000L))
+            flow.receive(incoming(key, 11, 1001))
+            assertFalse("freshly established TCP cannot be reclaimed", flow.reclaimableForCapacity())
+            assertTrue("quiet established TCP is reclaimable under pressure",
+                flow.reclaimableForCapacity(System.nanoTime() + 22_000_000_000L))
+        } finally { flow.close() }
+    }
+
     @Test fun lostSynAckIsRetransmittedWithSameSequence() {
         val retransmissions = java.util.concurrent.atomic.AtomicInteger()
         val packets = LinkedBlockingQueue<Ipv4Packet>()
@@ -167,6 +185,8 @@ class TcpFlowTest {
                     if (packet.payload.isEmpty() && packet.flags and 1 == 0) continue
                     assertEquals("broken sequence during sustained download", acknowledged,
                         packet.sequence)
+                    assertFalse("unacknowledged download must never be reclaimed",
+                        flow.reclaimableForCapacity(System.nanoTime() + 22_000_000_000L))
                     result.write(packet.payload)
                     acknowledged += packet.payload.size
                     if (packet.flags and 1 != 0) { acknowledged++; fin = true }

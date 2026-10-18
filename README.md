@@ -6,6 +6,10 @@ Share an Android phone’s connection through an **authenticated SOCKS5 proxy**,
 
 This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Foundation and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1); the receiver socket hotfix is in [PR #3](https://github.com/Eun-si123/DataNetShare/pull/3).
 
+## v5.1-dev.17 — receiver capacity, UDP queues and QR recovery
+
+User field diagnostics showed 106 TCP limit rejections with only 80 permitted flows and eight UDP queue overflows. The receiver now shares a bounded 120-flow TCP/UDP admission budget (up to 112 TCP when UDP is idle), reclaims only genuinely idle or abandoned flows under pressure, and expands per-UDP packet queues 32 to 64. Receiver diagnostics expose reclaimed idle TCP and UDP queue overflows. QR-requested Wi-Fi now retries only transient route errors before instructing the user to check the currently active sender SSID and fall back to manual connection. Throughput improvement is NOT established; real-device A/B tests are required.
+
 ## v5.1-dev.16 experimental packet efficiency (real-phone A/B pending)
 
 Receiver TCP MSS was raised from 1200 to 1400 inside the 1500-byte VPN MTU, and per-packet TCP pseudoheader/IPv4 header checksum **temporary byte-array allocations** were removed. The checksum behavior is regression-tested; real-world speed, latency, CPU and battery improvements are **not yet verified**. Current small unscaled TCP window and Kotlin userspace TCP stack remain bottleneck candidates. See docs/TESTING.md for same-server, same-device v5.1-dev.15 vs v5.1-dev.16 test criteria.
@@ -64,7 +68,7 @@ The sender displays the *actual* Wi-Fi Direct SSID/passphrase after the OS creat
 
 ## Get an APK (public preview)
 
-**Easy install:** [Download the current v5.1-dev.16 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.16/DataNetShare-5.1-dev.16-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.16 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.16) and expand **Assets** for `DataNetShare-5.1-dev.16-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
+**Easy install:** [Download the current v5.1-dev.17 preview APK directly](https://github.com/Eun-si123/DataNetShare/releases/download/v5.1-dev.17/DataNetShare-5.1-dev.17-debug.apk) (Android 8.0+). You can also open the [exact v5.1-dev.17 release page](https://github.com/Eun-si123/DataNetShare/releases/tag/v5.1-dev.17) and expand **Assets** for `DataNetShare-5.1-dev.17-debug.apk`. This is a **pre-release**, not the repository's stable Latest release. Do not download the Source code archives. `SHA256SUMS.txt` is provided for integrity verification. The preview is a debug-signed test build for Android 8.0+; its signing key is not stable across future builds, so future updates may require uninstalling this package and losing local settings. It is **not** a production-certified app.
 
 **Alternative (development CI):** Open a successful [Android source verification](https://github.com/Eun-si123/DataNetShare/actions/workflows/android-ci.yml) run, download and unzip `datanetshare-debug-apk`, then install `app-debug.apk` on your phone(s):
 

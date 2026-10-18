@@ -2,6 +2,14 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.17 — Receiver capacity and QR peer-route readiness
+
+User's v5.1-dev.16 receiver diagnostics: 246 TCP attempts/222 connected, 106 TCP admission rejections at the fixed 80-flow limit, 17 TCP timeouts, 1 TCP upload error, 8 UDP packet queue overflows, 26 retransmissions, zero TUN drops and zero TUN write waits. Sender: 24 clients, 22 idle reclaimed, no recorded internal failure. User's Speedtest showed a **best-record** 42.2 Mbps down/19.5 up, not a controlled single-run result.
+
+- Bounded shared TCP+UDP budget 120 (sender supports 128, reserve 8 for probes), max 112 TCP, max 40 UDP. Under saturation, reclaim only half-open SYNs older than 6s or established flows quiet for 20s with no unacknowledged or queued data. Background idle timeout 90s established / 10s half-open; no forced active-download eviction. UDP queue 32 to 64 packets per association. Surface new idle TCP reclaim and UDP queue overflow metrics.
+- QR-requested Wi-Fi may receive IPv4 before the group owner is actually routable. Retry only route errors (EHOSTUNREACH/ENETUNREACH) up to three short attempts when app-requested peer Wi-Fi exists; never retry password, VPN-protect or unrelated errors. If it fails, show the sender SSID/QR matching and manual-Wi-Fi guidance. Different Wi-Fi names visible in screenshots at different times do not prove they were from the same session.
+- Same-device/same-server A/B against v5.1-dev.16: repeat at least 3 runs and record down/up, unloaded and loaded ping, TCP admissions and idle reclamations, UDP queue overflows, TCP retransmits, TUN waits/drops and device CPU/temp. Test QR system approval, mismatched/expired QR, manual join, system VPN revocation, sender stop during retry. This does NOT prove the existing 30–40Mbps download bottleneck resolved, and increasing active flows may raise memory/thread usage.
+
 ## 5.1-dev.16 — experimental receiver packet overhead reduction
 
 **This is a low-risk CPU/packet-overhead experiment, NOT a verified throughput fix.** Preserve 5.1-dev.15 as the field baseline.

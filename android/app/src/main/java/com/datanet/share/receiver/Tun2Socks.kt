@@ -27,7 +27,9 @@ data class BridgeStats(
     val tcpRetransmits: Long,
     val tunWriteWaits: Long,
     val tunWriteWaitMs: Long,
-    val activeUdp: Int
+    val activeUdp: Int,
+    val idleTcpReclaimed: Long = 0,
+    val udpQueueOverflows: Long = 0
 )
 
 class Tun2Socks(
@@ -50,13 +52,14 @@ class Tun2Socks(
     private val udpAttempts = AtomicLong(); private val udpConnected = AtomicLong()
     private val tunWriteDrops = AtomicLong()
     private val tcpRetransmits = AtomicLong()
+    private val idleTcpReclaimed = AtomicLong()
+    private val udpQueueOverflows = AtomicLong()
     private val tunWriteWaits = AtomicLong()
     private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
-    // Bounded slots: 80 TCP + 32 UDP remain below the sender's 128-client limit,
-    // leaving room for the initial authentication probe and brief handovers.
-    private val maxTcpFlows = 80
+    // The joint admission budget reserves eight sender SOCKS5 clients for probes.
+    // With few UDP associations, TCP may borrow unused capacity up to 112.
 
     fun start() {
         check(!running); running = true
@@ -69,7 +72,8 @@ class Tun2Socks(
                     onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
                         tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
                         udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
-                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size))
+                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
+                        idleTcpReclaimed.get(), udpQueueOverflows.get()))
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
@@ -112,7 +116,22 @@ class Tun2Socks(
         if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
-            if (tcp.size >= maxTcpFlows) { onTcpError("Receiver TCP capacity reached ($maxTcpFlows flows)"); return }
+            if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
+                // Reclaim only genuinely idle established flows or abandoned
+                // handshakes; never kill a flow with unacknowledged TCP data.
+                val now = System.nanoTime()
+                tcp.values.forEach { flow ->
+                    if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size) &&
+                        flow.reclaimableForCapacity(now)) {
+                        flow.close()
+                        idleTcpReclaimed.incrementAndGet()
+                    }
+                }
+                if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
+                    onTcpError("Receiver TCP capacity reached (active ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
+                    return
+                }
+            }
             lateinit var flow: TcpFlow
             flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
@@ -128,23 +147,26 @@ class Tun2Socks(
         val key = packet.key
         val existing = udp[key]
         if (existing != null) { existing.send(packet.payload); return }
-        if (udp.size >= UdpFlowPolicy.MAX_FLOWS) {
+        if (!TcpCapacityPolicy.allowUdp(tcp.size, udp.size)) {
             // Free a genuinely idle QUIC/DNS session instead of rejecting every
             // new flow until the background 30s idle timer eventually expires.
             val now = System.nanoTime()
             udp.values.forEach { flow ->
-                if (UdpFlowPolicy.shouldEvictAtCapacity(udp.size,
-                    flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS))) flow.close()
+                if (!TcpCapacityPolicy.allowUdp(tcp.size, udp.size) &&
+                    flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS)) flow.close()
             }
-            if (udp.size >= UdpFlowPolicy.MAX_FLOWS) {
-                onUdpError("Receiver UDP capacity reached (${UdpFlowPolicy.MAX_FLOWS} flows)")
+            if (!TcpCapacityPolicy.allowUdp(tcp.size, udp.size)) {
+                onUdpError("Receiver UDP capacity reached (TCP ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
                 return
             }
         }
         lateinit var flow: UdpFlow
         flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
             { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) },
-            onError = onUdpError,
+            onError = { message ->
+                if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
+                onUdpError(message)
+            },
             onConnected = { udpConnected.incrementAndGet() })
         udp[key] = flow; udpAttempts.incrementAndGet(); flow.send(packet.payload)
         Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }

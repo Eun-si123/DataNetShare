@@ -96,4 +96,5 @@
     <string name="qr_wifi_permission_denied">Nearby Wi-Fi permission denied. Connect manually in Android Wi-Fi settings.</string>
     <string name="qr_wifi_requesting">Android Wi-Fi connection requested. Approve the system dialog to continue.</string>
     <string name="qr_wifi_unavailable">Android could not connect to the QR Wi-Fi. Join manually from Wi-Fi settings, then start VPN.</string>
+    <string name="sender_peer_route_failed">QR Wi-Fi was assigned an address, but the sender is unreachable. Check the live sender Wi-Fi name and QR code match, stop/restart sharing, or join manually in Android Wi-Fi settings.</string>
 </resources>
