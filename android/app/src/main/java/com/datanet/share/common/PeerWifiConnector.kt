@@ -39,6 +39,7 @@ object PeerWifiConnector {
         if (value != null) main.post { value(status) }
     }
 
+    @androidx.annotation.RequiresApi(29)
     @Synchronized fun request(context: Context, ssid: String, password: String) {
         require(Build.VERSION.SDK_INT >= 29) { "Android 10+ required" }
         require(ssid.isNotEmpty() && ssid.toByteArray(Charsets.UTF_8).size <= 32)
