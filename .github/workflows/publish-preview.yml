@@ -50,28 +50,33 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='47' versionName='5.1-dev.17'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='48' versionName='5.1-dev.18'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.17-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.18-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.17-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.18-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.17"
+          TAG="v5.1-dev.18"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.17 — experimental Android preview
+          ## DataNet Share 5.1-dev.18 — experimental Android preview
 
           Android 8+, debug-signed com.datanet.share.dev. Not a production release.
 
+          - QR app-requested local-only Wi-Fi is not considered ready from IPv4 assignment alone:
+            use that Network's socketFactory to verify the sender's local SOCKS port with
+            bounded retries before launching VPN consent. Do not send credentials in readiness
+            check, bind the whole process to Wi-Fi, or change saved Android networks.
+            Keep manual join fallback for unsupported network requests and unreachable senders.
           - Receiver congestion trial: shared 120-flow TCP/UDP limit with max 112 TCP and 40 UDP, reserving eight sender slots for probes. Reclaim only abandoned half-open or genuinely idle, not active, TCP. UDP queues increase from 32 to 64 packets with bounded memory. Report reclaimed idle TCP and UDP queue overflow counts.
           - QR app-requested Wi-Fi: when Android assigned IPv4 but the sender route is not ready, retry only EHOSTUNREACH/ENETUNREACH up to three times. Do not retry bad SOCKS passwords or VPN permission failures. If necessary check current sender QR/SSID and connect manually.
           - Motivation: v5.1-dev.16 receiver reported 106 TCP capacity rejections, 17 TCP timeouts, 8 UDP queue overflows. No verified speed improvement is claimed.
@@ -90,10 +95,10 @@ jobs:
           Tests and limitations: docs/TESTING.md
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.17-debug.apk \
+            dist/DataNetShare-5.1-dev.18-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.17 (Android preview)" \
+            --title "DataNet Share 5.1-dev.18 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
