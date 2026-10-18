@@ -96,4 +96,5 @@
     <string name="qr_wifi_permission_denied">근처 Wi-Fi 접근 권한이 없어 자동 연결하지 못했습니다. Wi-Fi 설정에서 직접 연결하세요.</string>
     <string name="qr_wifi_requesting">Wi-Fi 연결을 요청했어요. Android 시스템 승인 창에서 연결을 허용하세요.</string>
     <string name="qr_wifi_unavailable">QR의 Wi-Fi에 자동 연결하지 못했습니다. Wi-Fi 설정에서 직접 연결한 뒤 VPN을 시작하세요.</string>
+    <string name="sender_peer_route_failed">QR로 요청한 Wi-Fi에 IP가 생겼지만 송신기까지 통신할 수 없습니다. 송신기의 현재 Wi-Fi 이름과 QR 코드가 일치하는지 확인한 뒤 공유를 다시 시작하거나 Wi-Fi 설정에서 직접 연결하세요.</string>
 </resources>
