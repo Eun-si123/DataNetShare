@@ -28,7 +28,9 @@ class UdpFlow(
     private val onTx: (Int) -> Unit,
     private val onClose: () -> Unit,
     private val onError: (String) -> Unit = {},
-    private val onConnected: () -> Unit = {}
+    private val onConnected: () -> Unit = {},
+    // Aggregate only; no packet bytes, endpoints or per-packet UI/log messages.
+    private val onOversizedReply: () -> Unit = {}
 ) {
     private val closed = AtomicBoolean()
     // Bounded ~96 KiB per flow for ordinary <=1472-byte datagrams.
@@ -105,7 +107,10 @@ class UdpFlow(
                 if (decoded.address.port != key.destinationPort ||
                     decoded.address.host != InetAddress.getByAddress(key.destinationBytes).hostAddress) continue
                 // Oversize datagrams require IP fragmentation, which this IPv4 receiver does not implement.
-                if (decoded.payload.size > 1472) continue
+                if (decoded.payload.size > 1472) {
+                    onOversizedReply()
+                    continue
+                }
                 writePacket(IpPackets.udp(key, decoded.payload)); onRx(decoded.payload.size)
                 lastActivity = System.nanoTime()
             }
