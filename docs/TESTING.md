@@ -2,6 +2,14 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## v5.1-dev.18 — QR local Wi-Fi sender-reachability readiness
+
+Some Samsung Wi-Fi Settings pages show the same Wi-Fi Direct SSID both as an app-requested local-only connection and as a saved network with automatic selection disabled due to no Internet. These separate entries do not themselves establish a bug. The user experienced an EHOSTUNREACH SOCKS probe after the QR-requested Wi-Fi got IPv4, while manual connection later worked.
+
+Receiver QR auto-join now waits until a TCP socket created by the QR-requested Android Network's socketFactory connects to the current sender's local SOCKS port. Merely receiving IPv4 no longer triggers VPN startup. This probe makes up to five bounded attempts; it sends no SOCKS credentials and does not bind the whole process to the local-only network. Cancel/disconnect invalidates the probe. On failure, the app instructs the user to confirm a fresh QR/SSID and use manual Wi-Fi join. App's IPv4+socket checks and Android VPN auth remain distinct. Wi-Fi Direct BUSY and 30–40Mbps throughput remain separate outstanding issues.
+
+Real device acceptance: fresh QR and normal Android approval, Wi-Fi denial/unavailable, sender absent, sender port delayed, lost QR network during probe, manual fallback, Android Wi-Fi duplicate network presentation and VPN still reachable after launch. This patch has not yet been device validated.
+
 ## 5.1-dev.17 — Receiver capacity and QR peer-route readiness
 
 User's v5.1-dev.16 receiver diagnostics: 246 TCP attempts/222 connected, 106 TCP admission rejections at the fixed 80-flow limit, 17 TCP timeouts, 1 TCP upload error, 8 UDP packet queue overflows, 26 retransmissions, zero TUN drops and zero TUN write waits. Sender: 24 clients, 22 idle reclaimed, no recorded internal failure. User's Speedtest showed a **best-record** 42.2 Mbps down/19.5 up, not a controlled single-run result.
