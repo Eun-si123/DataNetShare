@@ -2,6 +2,17 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.19 — local-only QR Wi-Fi and apps that report "no Internet"
+
+User's non-Samsung receiver now successfully joins QR Wi-Fi and loads browser pages through the DataNet Share VPN, but Android shows an exclamation/question mark and "available through DataNet Share Dev"; Ookla Speedtest fails to find ISP or servers. This is a **partial-success** report, not proof of end-to-end connectivity for all apps.
+
+- QR connection uses Android WifiNetworkSpecifier, which by design can create a local-only Wi-Fi network without NET_CAPABILITY_INTERNET or VALIDATED. Android may not show a normal Internet Wi-Fi symbol. Do not claim to "repair" this underlying Wi-Fi by adding Internet capability, modifying system network validation or forcing process-wide routing.
+- Receiver's SOCKS sockets are explicitly bound to the local sender network. Before establishing the VPN, Builder.setUnderlyingNetworks() now declares that network, and the VPN service refreshes it after a successful link change. Android's VPN API explicitly documents this for bound underlying socket traffic and UI status; it **does not certify Internet validation**.
+- Safe receiver diagnostics now display available Android VPN network and selected underlying network INTERNET/VALIDATED/VPN/WIFI flags, plus whether the QR-requested Wi-Fi remains active. No addresses, network names, credentials, or raw HTTP queries are reported. Sampling is capped at every five seconds.
+- Test on the same phone: QR join, browser HTTPS site, Speedtest native app ISP/server discovery, web speed test, then copy both sender and receiver *sanitized* diagnostics. If VPN network is reported unvalidated, that is a strong candidate for app refusal; if validated but Speedtest fails, check DNS/UDP, IPv6, ICMP/protocol support. Neither diagnosis alone establishes which check Ookla internally uses.
+- When uninstalling with an active sender Wi-Fi Direct group, the app may lose the ability to remove that P2P group and the OS can return BUSY on reinstall. Always stop sharing before uninstall. If already orphaned, toggle sender Wi-Fi or reboot. Do not forcibly delete another app's group.
+- Current Kotlin receiver remains IPv4 TCP/UDP only; IPv6, ICMP, fragment reassembly and mature congestion control remain unsupported. Throughput and Speedtest compatibility are unverified; do not promise a change in the Wi-Fi icon or server discovery.
+
 ## v5.1-dev.18 — QR local Wi-Fi sender-reachability readiness
 
 Some Samsung Wi-Fi Settings pages show the same Wi-Fi Direct SSID both as an app-requested local-only connection and as a saved network with automatic selection disabled due to no Internet. These separate entries do not themselves establish a bug. The user experienced an EHOSTUNREACH SOCKS probe after the QR-requested Wi-Fi got IPv4, while manual connection later worked.
