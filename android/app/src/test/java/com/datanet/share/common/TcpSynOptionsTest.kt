@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 class TcpSynOptionsTest {
     private val key = FlowKey(0x0a090002, 33333, 0x08080808, 443)
 
-    @Test fun synAckAdvertisesMss1200AndHasValidTcpChecksum() {
+    @Test fun synAckAdvertisesMss1400AndHasValidTcpChecksum() {
         val produced = LinkedBlockingQueue<ByteArray>()
         val flow = TcpFlow(key, 100, "127.0.0.1", 8282, "not-used",
             { true }, { produced.add(it) }, {}, {}, {}, initialSequence = 200)
@@ -22,7 +22,7 @@ class TcpSynOptionsTest {
             assertEquals(0x45, packet[0].toInt() and 0xff)
             assertEquals(6, (packet[32].toInt() and 0xff) ushr 4) // TCP data offset
             assertEquals(0x12, packet[33].toInt() and 0xff)
-            assertArrayEquals(byteArrayOf(2, 4, 4, 0xb0.toByte()), packet.copyOfRange(40, 44))
+            assertArrayEquals(byteArrayOf(2, 4, 5, 0x78.toByte()), packet.copyOfRange(40, 44))
             assertEquals(0, IpPackets.checksum(packet.copyOfRange(0, 20)))
 
             // TCP checksum validation independently recomputes full RFC 793 pseudoheader.

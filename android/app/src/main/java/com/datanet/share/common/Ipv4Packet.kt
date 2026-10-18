@@ -9,7 +9,28 @@ data class FlowKey(val source: Int, val sourcePort: Int, val destination: Int, v
 }
 
 data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, val acknowledgement: Int,
-                      val flags: Int, val window: Int, val payload: ByteArray) {
+                      val flags: Int, val window: Int, val payload: ByteArray,
+                      val tcpOptions: ByteArray = ByteArray(0)) {
+    /** Peer SYN's advertised TCP MSS; missing/invalid option returns null (RFC default 536). */
+    fun offeredMss(): Int? {
+        if (protocol != 6 || flags and 2 == 0) return null
+        var index = 0
+        while (index < tcpOptions.size) {
+            val kind = tcpOptions[index].toInt() and 255
+            if (kind == 0) return null
+            if (kind == 1) { index++; continue }
+            if (index + 1 >= tcpOptions.size) return null
+            val length = tcpOptions[index + 1].toInt() and 255
+            if (length < 2 || index + length > tcpOptions.size) return null
+            if (kind == 2 && length == 4) {
+                val mss = ((tcpOptions[index + 2].toInt() and 255) shl 8) or
+                    (tcpOptions[index + 3].toInt() and 255)
+                return mss.takeIf { it > 0 }
+            }
+            index += length
+        }
+        return null
+    }
     companion object {
         fun parse(bytes: ByteArray, count: Int = bytes.size): Ipv4Packet? {
             if (count !in 20..bytes.size) return null
@@ -28,9 +49,12 @@ data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, va
             if (protocol == 6) {
                 val tcpHeader = (bytes[ihl + 12].toInt() and 255) ushr 4 shl 2
                 if (tcpHeader < 20 || ihl + tcpHeader > total) return null
+                val flags = bytes[ihl + 13].toInt() and 255
                 return Ipv4Packet(key, 6, buffer.getInt(ihl + 4), buffer.getInt(ihl + 8),
-                    bytes[ihl + 13].toInt() and 255, buffer.getShort(ihl + 14).toInt() and 65535,
-                    bytes.copyOfRange(ihl + tcpHeader, total))
+                    flags, buffer.getShort(ihl + 14).toInt() and 65535,
+                    bytes.copyOfRange(ihl + tcpHeader, total),
+                    if (flags and 2 != 0 && tcpHeader > 20)
+                        bytes.copyOfRange(ihl + 20, ihl + tcpHeader) else ByteArray(0))
             }
             val udpLength = buffer.getShort(ihl + 4).toInt() and 65535
             if (udpLength < 8 || ihl + udpLength != total) return null
@@ -59,10 +83,9 @@ object IpPackets {
         buffer.putShort(34, window.coerceIn(0, 65535).toShort())
         if (options.isNotEmpty()) System.arraycopy(options, 0, packet, 40, options.size)
         System.arraycopy(payload, 0, packet, 20 + transportHeader, payload.size)
-        val pseudo = ByteBuffer.allocate(12 + packet.size - 20).order(ByteOrder.BIG_ENDIAN)
-            .putInt(key.destination).putInt(key.source).put(0).put(6).putShort((packet.size - 20).toShort())
-            .put(packet, 20, packet.size - 20).array()
-        buffer.putShort(36, checksum(pseudo).toShort())
+        // RFC 793 pseudoheader checksum without allocating/copying an extra
+        // 12 + transport-length buffer for every VPN/TCP packet.
+        buffer.putShort(36, tcpChecksum(packet).toShort())
         return packet
     }
     fun udp(key: FlowKey, payload: ByteArray): ByteArray {
@@ -77,18 +100,41 @@ object IpPackets {
             put(0, 0x45); putShort(2, packet.size.toShort()); putShort(6, 0x4000)
             put(8, 64); put(9, protocol.toByte()); putInt(12, key.destination); putInt(16, key.source)
             putShort(20, key.destinationPort.toShort()); putShort(22, key.sourcePort.toShort())
-            putShort(10, checksum(packet.copyOfRange(0, 20)).toShort())
+            putShort(10, checksumRange(packet, 0, 20).toShort())
         }
         return packet
     }
-    fun checksum(bytes: ByteArray): Int {
-        var sum = 0L
-        var i = 0
-        while (i < bytes.size) {
-            sum += ((bytes[i].toInt() and 255) shl 8) or (if (i + 1 < bytes.size) bytes[i + 1].toInt() and 255 else 0)
+    private fun tcpChecksum(packet: ByteArray): Int {
+        // Pseudoheader: source + destination IPv4 addresses, zero + TCP
+        // protocol, TCP segment length. Packet IPs are already in wire order.
+        var sum = 6L + (packet.size - 20).toLong()
+        var i = 12
+        while (i < 20) {
+            sum += ((packet[i].toInt() and 255) shl 8) or (packet[i + 1].toInt() and 255)
             i += 2
         }
-        while (sum ushr 16 != 0L) sum = (sum and 65535) + (sum ushr 16)
+        return finishChecksum(addWords(packet, 20, packet.size, sum))
+    }
+
+    private fun addWords(bytes: ByteArray, start: Int, end: Int, initial: Long = 0L): Long {
+        var sum = initial
+        var i = start
+        while (i < end) {
+            sum += ((bytes[i].toInt() and 255) shl 8) or
+                (if (i + 1 < end) bytes[i + 1].toInt() and 255 else 0)
+            i += 2
+        }
+        return sum
+    }
+
+    private fun finishChecksum(value: Long): Int {
+        var sum = value
+        while (sum ushr 16 != 0L) sum = (sum and 65535L) + (sum ushr 16)
         return sum.inv().toInt() and 65535
     }
+
+    private fun checksumRange(bytes: ByteArray, start: Int, end: Int): Int =
+        finishChecksum(addWords(bytes, start, end))
+
+    fun checksum(bytes: ByteArray): Int = checksumRange(bytes, 0, bytes.size)
 }

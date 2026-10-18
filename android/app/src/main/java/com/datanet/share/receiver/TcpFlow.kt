@@ -28,11 +28,13 @@ class TcpFlow(
     private val onError: (String) -> Unit = {},
     private val onConnected: () -> Unit = {},
     // Aggregate only; no destinations, packets or credentials in this callback.
-    private val onRetransmit: () -> Unit = {}
+    private val onRetransmit: () -> Unit = {},
+    // SYN-advertised peer MSS. Must not transmit larger segments than peer accepts.
+    peerMss: Int = 1460
 ) {
     companion object {
         private const val CAPACITY = 65_535
-        private const val MSS = 1200
+        private const val MSS = 1400
         // RFC 793/879: explicitly advertise the segment size that our TUN bridge
         // can handle without fragmentation, instead of relying on 536-byte fallback.
         private val SYN_MSS_OPTION = byteArrayOf(2, 4, (MSS ushr 8).toByte(), MSS.toByte())
@@ -40,6 +42,7 @@ class TcpFlow(
         private fun unsigned(value: Int) = value.toLong() and MASK
         private fun distance(from: Long, to: Long) = (to - from) and MASK
     }
+    private val transmitMss = minOf(MSS, peerMss.coerceAtLeast(1))
     private data class Segment(val sequence: Long, val flags: Int, val payload: ByteArray,
                                var sent: Long, var attempts: Int = 0) {
         val length: Int get() = payload.size + (if (flags and 3 != 0) 1 else 0)
@@ -138,11 +141,11 @@ class TcpFlow(
             onConnected() // SOCKS CONNECT succeeded; distinct from VPN flow creation
             remote.soTimeout = 0
             Thread({ writer(remote) }, "tun-tcp-writer").apply { isDaemon = true; start() }
-            val buffer = ByteArray(MSS)
+            val buffer = ByteArray(transmitMss)
             while (!closed) {
                 val available = synchronized(lock) {
                     while (!closed && (!established || distance(acknowledged, next) >= peerWindow)) lock.wait(1000)
-                    if (closed) 0 else minOf(MSS.toLong(), peerWindow - distance(acknowledged, next)).toInt()
+                    if (closed) 0 else minOf(transmitMss.toLong(), peerWindow - distance(acknowledged, next)).toInt()
                 }
                 if (available <= 0) break
                 val count = input.read(buffer, 0, available)

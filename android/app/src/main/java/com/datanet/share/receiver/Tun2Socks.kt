@@ -118,7 +118,8 @@ class Tun2Socks(
                 { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
                 onError = onTcpError,
                 onConnected = { tcpConnected.incrementAndGet() },
-                onRetransmit = { tcpRetransmits.incrementAndGet() })
+                onRetransmit = { tcpRetransmits.incrementAndGet() },
+                peerMss = packet.offeredMss() ?: 536)
             tcp[key] = flow; tcpAttempts.incrementAndGet(); flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
         } else tcp[key]?.receive(packet)
