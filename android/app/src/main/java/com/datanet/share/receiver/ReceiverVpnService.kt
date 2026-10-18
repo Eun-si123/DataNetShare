@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
+import com.datanet.share.R
 import com.datanet.share.common.Constants
 import com.datanet.share.common.NetworkEvent
 import com.datanet.share.common.PeerWifiConnector
