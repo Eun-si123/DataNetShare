@@ -50,28 +50,39 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='49' versionName='5.1-dev.19'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='50' versionName='5.1-dev.20'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.19-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.20-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.19-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.20-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.19"
+          TAG="v5.1-dev.20"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.19 — experimental Android preview
+          ## DataNet Share 5.1-dev.20 — experimental Android preview
 
           Android 8+, debug-signed com.datanet.share.dev. Not a production release.
 
+          - Sender session peer usage: display authenticated SOCKS5 client IPv4 address,
+            number of active SOCKS connections, received Internet/download payload bytes and
+            uploaded/client-to-Internet payload bytes. Includes successfully relayed TCP and UDP.
+            Aggregates sockets per IP; one phone can open 100+ sockets. Does not determine model
+            names, count other Wi-Fi-only peers, track visited sites, or persist per-IP history.
+            Bounded to 32 tracked IPs, approx 1Hz UI snapshots, cleared after sharing stops.
+            Private peer IPs are NOT added to the sanitized "Copy diagnostics" action.
+          - User reports ~41.7/37.34 Mbps using browser and YouTube works, while native speed
+            test ISP/server discovery fails. Four sender connection-capacity events and ten upstream
+            connection failures observed. No claim these issues are fixed or that higher SOCKS
+            limits improve speed; safe limits remain.
           - Receiver VPN declares the actual local sender network via Android VpnService.Builder.setUnderlyingNetworks, and refreshes it when the protected SOCKS path changes.
           - Adds privacy-safe Android INTERNET/VALIDATED/VPN/WIFI capability diagnostics for visible VPN and sender link, sampled at most every five seconds.
           - User-reported QR Wi-Fi is local-only: Android can show an exclamation/question mark despite working browser TCP via VPN. No claim that Wi-Fi will display a regular Internet icon, or that native Ookla Speedtest server search now works.
@@ -99,10 +110,10 @@ jobs:
           Tests and limitations: docs/TESTING.md
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.19-debug.apk \
+            dist/DataNetShare-5.1-dev.20-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.19 (Android preview)" \
+            --title "DataNet Share 5.1-dev.20 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md

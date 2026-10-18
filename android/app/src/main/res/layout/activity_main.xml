@@ -21,6 +21,26 @@
             android:layout_height="wrap_content" android:textColor="#B5BCC8"
             android:textSize="13sp" android:layout_marginBottom="12dp"/>
 
+        <!-- Connection-level SOCKS peers, NOT distinct Wi-Fi associations.
+             IPs are shown only on the sender screen, not in safe diagnostics. -->
+        <LinearLayout android:id="@+id/peerUsagePanel"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp" android:orientation="vertical"
+            android:padding="12dp" android:background="#1F2937"
+            android:visibility="gone">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/peer_usage_title" android:textColor="#FFFFFF"
+                android:textStyle="bold" android:textSize="15sp"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/peer_usage_help" android:textColor="#B5BCC8"
+                android:textSize="12sp" android:layout_marginTop="4dp"/>
+            <TextView android:id="@+id/peerUsageText"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/peer_usage_empty" android:textColor="#BFDBFE"
+                android:textSize="13sp" android:fontFamily="monospace"
+                android:layout_marginTop="8dp"/>
+        </LinearLayout>
+
         <!-- Choose the role before connecting; hide the selector while a session runs. -->
         <TextView android:id="@+id/modeLabel" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="@string/select_role"

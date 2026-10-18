@@ -1,6 +1,7 @@
 package com.datanet.share.common
 
 import androidx.lifecycle.MutableLiveData
+import com.datanet.share.sender.PeerUsageLedger
 
 /** In-process state survives activity recreation without starting services just to query them. */
 object SessionStore {
@@ -18,6 +19,8 @@ object SessionStore {
     }
     val state = MutableLiveData(State())
     val stats = MutableLiveData("")
+    /** UI-only local per-IP usage. Never copied into sanitized diagnostics. */
+    val peerUsage = MutableLiveData<List<PeerUsageLedger.Snapshot>>(emptyList())
     // Strictly aggregate counters only. Used by the safe diagnostic copy action.
     val telemetry = MutableLiveData("")
     private val diagnosticJournal = DiagnosticJournal()
@@ -29,9 +32,12 @@ object SessionStore {
     @Synchronized fun publish(value: State) { current = value; state.postValue(value) }
     @Synchronized fun claim(mode: Mode): Boolean {
         if (current.busy) return false
-        resetDiagnostics(); telemetry.postValue(""); publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
+        resetDiagnostics(); telemetry.postValue(""); peerUsage.postValue(emptyList())
+        publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
     }
     fun stopped(mode: Mode) {
-        if (current.mode == mode) { publish(State()); stats.postValue(""); telemetry.postValue("") }
+        if (current.mode == mode) {
+            publish(State()); stats.postValue(""); telemetry.postValue(""); peerUsage.postValue(emptyList())
+        }
     }
 }

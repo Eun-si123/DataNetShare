@@ -21,6 +21,8 @@ class Socks5ServerTest {
             assertEquals(5, input.readUnsignedByte()); assertEquals(255, input.readUnsignedByte())
             assertEquals(-1, input.read())
         }
+        // Failed authentication must not create a tracked peer.
+        assertTrue(fixture.proxy.peerSnapshots().isEmpty())
         Socket("127.0.0.1", fixture.proxy.boundPort).use { client ->
             client.soTimeout = 3000
             try { Socks5.authenticateClient(DataInputStream(client.getInputStream()), client.getOutputStream(), "wrong"); fail("accepted wrong password") }
@@ -46,6 +48,9 @@ class Socks5ServerTest {
                 assertArrayEquals(hash, client.getInputStream().readBytes())
             }
             assertArrayEquals(payload, result.get(5, TimeUnit.SECONDS))
+            val usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
+            assertEquals("TCP client-to-Internet usage", payload.size.toLong(), usage.rxBytes)
+            assertEquals("TCP Internet-to-client usage", hash.size.toLong(), usage.txBytes)
         }
     }
     @Test fun udpSmallThenLargePacketsAndConcurrentAssociationsStayIsolated() = ProxyFixture().use { fixture ->
