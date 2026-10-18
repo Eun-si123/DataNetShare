@@ -39,6 +39,20 @@ class PacketChecksumEquivalenceTest {
         assertNull(Ipv4Packet.parse(malformed)!!.offeredMss())
     }
 
+    @Test fun parsesPeerWindowScaleWithLegacyAndMalformedFallbacks() {
+        fun parse(option: ByteArray) = Ipv4Packet.parse(
+            IpPackets.tcp(key, 100, 0, 0x02, 4096, ByteArray(0), option))!!
+        assertEquals(7, parse(byteArrayOf(1, 3, 3, 7)).offeredWindowScale())
+        assertEquals(14, parse(byteArrayOf(3, 3, 30, 1)).offeredWindowScale())
+        assertEquals(0, parse(byteArrayOf(3, 3, 0, 1)).offeredWindowScale())
+        assertNull(parse(byteArrayOf(2, 4, 5, 0x78.toByte())).offeredWindowScale())
+        assertNull(parse(byteArrayOf(3, 2, 7, 1)).offeredWindowScale())
+        assertNull(parse(byteArrayOf(3, 4, 7, 0)).offeredWindowScale())
+        assertNull(parse(byteArrayOf(0, 3, 3, 7)).offeredWindowScale())
+        assertNull(Ipv4Packet.parse(
+            IpPackets.tcp(key, 100, 0, 0x10, 4096, ByteArray(0)))!!.offeredWindowScale())
+    }
+
     @Test fun udpHeaderChecksumStillValid() {
         for (length in listOf(0, 1, 2, 1200, 1400)) {
             val packet = IpPackets.udp(key, ByteArray(length) { 0x55 })

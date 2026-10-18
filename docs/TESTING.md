@@ -2,6 +2,16 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## 5.1-dev.21 — negotiated TCP Window Scaling and protocol diagnostic counters
+
+2026-10-18 field baseline: browser speed-test screen shows 45.60 Mbps download, 30.38 Mbps upload, and 160 ms ping. It is a single result, not evidence that a change has improved throughput. YouTube/web browsing works, while native speed-test apps still fail ISP/server discovery.
+
+Receiver TCP now negotiates RFC 7323 Window Scale only if incoming SYN offers valid WSopt. It sends aligned MSS1400 + shift=2 SYN-ACK options, and applies the peer shift to subsequent ACK windows. SYN window remains unscaled. Receive payload buffer is capped at 262140 bytes per scaled flow (at most ~28 MiB queued uploads across 112 TCP flows, excluding other retransmission and thread buffers). Malformed or absent WSopt falls back to the old 65535-byte window and MSS-only handshake. Tests cover options/checksums, retransmits, memory/window limits, legacy behavior and sustained TCP transfers. This is not a native TCP engine and may not substantially improve Internet speed.
+
+The receiver now also reports established flows with negotiated WS and counters of unsupported IPv4 ICMP and IPv6 packets seen on its TUN interface. This is diagnostic only: no ICMP/IPv6 connectivity was added and zero counts do not prove other apps work. It does not record destination addresses or passwords.
+
+A/B acceptance: test dev.20 vs dev.21 three or more times per version with same phones/location/server; record throughput, idle/loaded latency, retransmits, TUN drops/waits, WS count and ignored-protocol counts. Check real native Speedtest ISP/server discovery separately. Monitor CPU, memory, temperatures and reconnect/fallback; roll back if stability declines. Ping from the Internet speed test is not necessarily local peer TCP RTT. Other candidates: mature tun2socks backend and DNS/UDP/IPv6 compatibility, after controlled evidence.
+
 ## 5.1-dev.20 — sender session peer IP statistics, before transport-engine redesign
 
 **User field evidence (2026-10-18):** local-only QR Wi-Fi and normal Wi-Fi icon now work; web-based speed test showed approximately 41.7 Mbps download and 37.34 Mbps upload in a blurred image. Android sender reported 106 simultaneous SOCKS connections, 27 idle TCP cleanup events, ten upstream connect failures (latest SocketTimeoutException), and four sender client-limit events. YouTube and web browsing work while native Speedtest/Speednet-style apps cannot discover ISP or servers. This is **partial application compatibility**; a single browser speed result does not demonstrate full IPv6/UDP/ICMP support or remove the ~40Mbps throughput ceiling.
