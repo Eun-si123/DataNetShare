@@ -150,6 +150,7 @@ class ReceiverVpnService : VpnService() {
                             "\nTUN drops ${metrics.tunDropped} · $perf" +
                             "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
                             "\nTCP WS negotiated ${metrics.negotiatedTcpWindowScale} · ignored ICMPv4 ${metrics.ignoredIpv4Icmp} / IPv6 ${metrics.ignoredIpv6Packets}" +
+                            "\nUDP replies dropped above VPN MTU: ${metrics.oversizedUdpReplies}" +
                             "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B" +
                             "\n" + connectivity)
                         SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
@@ -158,6 +159,7 @@ class ReceiverVpnService : VpnService() {
                             " · TUN drops ${metrics.tunDropped}" +
                             "\nTCP idle reclaimed ${metrics.idleTcpReclaimed} · UDP queue overflows ${metrics.udpQueueOverflows}" +
                             "\nTCP WS negotiated ${metrics.negotiatedTcpWindowScale} · ignored ICMPv4 ${metrics.ignoredIpv4Icmp} / IPv6 ${metrics.ignoredIpv6Packets}" +
+                            "\nUDP replies dropped above VPN MTU: ${metrics.oversizedUdpReplies}" +
                             "\n$perf" + "\n" + connectivity +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))

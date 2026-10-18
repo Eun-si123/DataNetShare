@@ -452,4 +452,51 @@ For phone-to-phone acceptance, use two owned devices on an isolated local link. 
 
 ## Remaining engineering limits
 
-The receiver lacks full congestion control, SACK/window-scale negotiation, fragment reassembly and IPv6/ICMP transport. It uses bounded worker threads rather than a native event-driven netstack. No throughput, battery-life, thermal or long-duration reliability improvement is claimed without equivalent before/after measurements. Release signing and stable update delivery are not configured.
+The receiver negotiates bounded Window Scaling, but lacks full congestion control, SACK, fragment reassembly and IPv6/ICMP transport. It uses bounded worker threads rather than a native event-driven netstack. No throughput, battery-life, thermal or long-duration reliability improvement is claimed without equivalent before/after measurements. Release signing and stable update delivery are not configured.
+
+## Unreleased — UDP MTU visibility and DNS transport evidence
+
+Checked 2026-10-18 UTC against `be234dc` on independent branch `fix/udp-mtu-diagnostics-20261018`. [PR #25](https://github.com/Eun-si123/DataNetShare/pull/25) separately fixes TCP duplicate-ACK recovery; it is not included in this branch's 97-test count. Existing docs incorrectly described 64 sender clients, 64/32 receiver flows, absent Window Scaling and always-rotating custom secrets. Architecture/security notes now follow the current source; the stale diagnostic text claiming an 80-flow TCP cap is also corrected.
+
+**Confirmed issue:** `UdpFlow` silently drops a destination-validated SOCKS reply with payload above 1472 bytes, since the 1500-byte IPv4 VPN does not support fragmentation. A successful UDP association and zero TUN-write drops therefore did not establish UDP delivery. Add a session-only aggregate `oversizedUdpReplies` counter to bridge stats, receiver display and copied telemetry. Count only after destination validation; retain no endpoints or contents and emit no per-packet logs/UI events. Packet handling and limits remain unchanged. This does **not** fix oversized UDP, implement DNS rewriting or establish why a particular native app fails.
+
+Host evidence (Gradle 8.5 / OpenJDK 21, production SOCKS/flow code and loopback sockets, no external DNS/server):
+
+| Test | Actual result |
+| --- | --- |
+| UDP response 1472 bytes | Returned as a valid 1500-byte IPv4 packet |
+| UDP response 1473 bytes | Still dropped; diagnostic test failed before counter wiring, passes after; exactly one drop counted |
+| Small reply after oversized reply on same association | Delivered; RX total excludes oversized payload; association stays usable |
+| DNS A and AAAA responses via IPv4 UDP | Both first queries survive setup and return exact DNS response bytes; AAAA resolution does not require IPv6 transport |
+| UDP DNS TC response, then explicit client retry over TCP | Complete >2000-byte DNS answer delivered over several MTU-bounded TCP segments |
+
+All **97 tests passed** on this branch (94 existing + 3 new). Android/JDK 17 unit/lint/debug-build results are tracked on the PR. `DnsTransportTest` emulates a resolver's TCP retry: it neither runs Android DnsResolver nor proves any native app performs that retry. A large UDP answer with TC unset remains unsupported and can still time out. Larger buffers/client limits do not address this cause. Increasing MTU or adding fragmentation/DNS rewriting would change transport behavior and needs separate correctness/resource-bound tests; aggregate visibility is the smaller safe change.
+
+### Consolidated handset checks for the next session
+
+Use two owned phones and the same link/upstream/server. Save sanitized diagnostics before/after each case; keep QR, credentials, SSIDs, private addresses, raw logs and packet captures out of public reports.
+
+| Hypothesis / check | How to distinguish it |
+| --- | --- |
+| DNS UDP versus TCP | In a diagnostic client actually included in the receiver VPN, compare `dig @1.1.1.1 example.com A +bufsize=1232`, the same AAAA query, and `dig @1.1.1.1 example.com A +tcp`. Small UDP failure with working TCP differs from a large-response MTU drop. Test a controlled large DNS answer with/without TC separately. A zero oversize count does not exclude loss of IPv4 fragments before `UdpFlow`. |
+| General UDP / QUIC | Use a controlled UDP echo or STUN service and HTTPS on the same reachable server; compare association attempts, successful replies, queue overflows and the new oversize counter. Do not infer UDP support from TCP browsing. |
+| IPv6 / ICMP | Compare IPv4 and IPv6 HTTPS explicitly; IPv6 routing and remote ping remain unsupported. A working AAAA DNS answer is not a successful IPv6 connection. Do not interpret locally synthesized ping replies from another engine as remote reachability. |
+| Android network validation | Capture safe VPN/underlay INTERNET/VALIDATED flags before and during native server discovery, alongside browser success/failure. Record QR-requested versus manually joined Wi-Fi. Do not modify validation or infer an app's internal decision from the flags alone. |
+| TCP / resource cost | Compare repeated same-server upload/download, idle/loaded RTT, retransmits, TUN drops/waits, active TCP/UDP, CPU/RAM and temperatures. At least three comparable runs per build; old 40–45 Mbps observations are not an A/B benchmark. |
+| Lifecycle / recovery | Deny/cancel QR and VPN permissions, rotate, turn screen off, stop sender first, revoke VPN, then reconnect. On test phones, exercise Stop during P2P group creation and subsequent restart; record whether a late creation leaves BUSY. Do not delete unrelated groups. |
+
+### Engine alternatives and open findings
+
+Source-only comparison of [HevSocks5Tunnel at `780b396b0fc3d0355fc0614e221e3446933669c4`](https://github.com/heiher/hev-socks5-tunnel/tree/780b396b0fc3d0355fc0614e221e3446933669c4): root MIT license, lwIP/task-system/core/YAML submodules, Android NDK build and dual-stack/TCP/UDP features. No native build, dependency audit, packet trial or performance benchmark was performed here.
+
+| Approach | Security, compatibility and maintenance tradeoff | Decision |
+| --- | --- | --- |
+| Retain current code unchanged | Known loss-recovery/diagnostic gaps remain; no new integration risk or evidence of better throughput | Rejected for the confirmed small defects |
+| Small Kotlin corrections | Preserve binding/protection/authentication and bounds; host-reproducible behavior, little build cost; custom-stack limitations remain | Implemented in independent TCP and UDP PRs |
+| Replace only TCP with another stack | Two packet/session engines must coordinate TUN ownership, UDP routing and shutdown; more boundary states, uncertain performance | No implementation without a measured prototype |
+| Optional complete receiver backend | Potentially broader TCP/IPv6 handling and different per-flow scheduling; requires JNI/ABI/dependency updates, bounded resources and protected/bound sockets | Best next structural experiment only after safeguards below; keep Kotlin fallback |
+| Immediate full replacement | Removes fallback before OEM/API/routing/lifetime validation; upstream benchmark numbers do not predict these phones | Deferred |
+
+Concrete integration obstacles found in that pinned candidate: `Application.mk` defaults to Android API 29 (this app supports 26), sample MTU is 8500, and `max-session-count` defaults to zero/unlimited. The inspected `hev_socks5_session_bind` configures socket marking/TCP Fast Open; its JNI entrypoint does not supply this app's `VpnService.protect()` and local `Network.bindSocket()` adapter. A prototype must prove every TCP/UDP control/relay socket is protected and bound before connect, fail closed on errors, preserve sender budgets and disable unsafe defaults. The C API offers `main_from_str`, preferable to persisting session secrets in a config file. Use standard SOCKS UDP mode: its UDP-in-TCP extension is not implemented by this sender. Advertised optional ICMP Echo is a **local reply**, not remote ICMP tunneling. Pin/review transitive code/licenses and test API 26/28/29/34+, ABIs, 16 KiB pages, descriptor ownership, Stop/restart and loaded-latency/CPU/RAM before any default switch.
+
+Other unresolved candidates from source review: a Wi-Fi Direct create callback arriving after Stop is ignored before ownership is recorded, so cleanup may miss a just-created group (needs controlled OEM reproduction); sender read-idle checks do not bound a blocked TCP write; per-flow reader/writer/control threads and timed waits remain scheduling/stack-memory candidates. These are hypotheses/limits, not confirmed causes of the field speed or app failures. Next work should prioritize the handset protocol matrix, then a host blocked-write/Stop stress fixture and P2P cancellation state-machine reproduction before broader redesign. Keep the existing [agent-workflow PR #24](https://github.com/Eun-si123/DataNetShare/pull/24) separate; no overlapping agent guidance/handoff files were created here.
