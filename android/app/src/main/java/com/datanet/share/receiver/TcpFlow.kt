@@ -62,6 +62,7 @@ class TcpFlow(
     private var finAcknowledged = false
     private var established = false
     private var lastActivity = System.nanoTime()
+    private var createdAt = lastActivity
     private var lastProbe = 0L
     private var duplicateAcks = 0
     @Volatile private var closed = false
@@ -69,6 +70,18 @@ class TcpFlow(
 
     fun start() = synchronized(lock) { if (!closed) sendTracked(0x12, ByteArray(0)) }
     fun retransmitSyn() = synchronized(lock) { pending.firstOrNull { it.flags and 2 != 0 }?.let(::emit) }
+
+    /**
+     * Capacity pressure must never indiscriminately kill active downloads.
+     * A half-open SYN can be retired sooner, while established flows must have
+     * no unacknowledged data, queued writes, or activity for a meaningful period.
+     */
+    fun reclaimableForCapacity(now: Long = System.nanoTime()): Boolean = synchronized(lock) {
+        if (closed) return@synchronized false
+        if (!established) return@synchronized now - createdAt >= TcpCapacityPolicy.HALF_OPEN_RECLAIM_NANOS
+        now - lastActivity >= TcpCapacityPolicy.IDLE_RECLAIM_NANOS &&
+            pending.isEmpty() && writes.isEmpty() && queuedBytes == 0
+    }
 
     fun receive(packet: Ipv4Packet) = synchronized(lock) {
         if (closed) return@synchronized
@@ -149,6 +162,7 @@ class TcpFlow(
                 }
                 if (available <= 0) break
                 val count = input.read(buffer, 0, available)
+                if (count > 0) synchronized(lock) { lastActivity = System.nanoTime() }
                 if (count < 0) { synchronized(lock) { if (!closed && !remoteFin) { remoteFin = true; sendTracked(0x11, ByteArray(0)) } }; break }
                 synchronized(lock) {
                     // A peer can shrink its window while read() is blocked. Keep this one chunk bounded.
@@ -194,7 +208,12 @@ class TcpFlow(
                 }
                 val bytes = item.payload ?: continue
                 output.write(bytes)
-                synchronized(lock) { queuedBytes -= bytes.size; sendAck(); lock.notifyAll() }
+                synchronized(lock) {
+                    lastActivity = System.nanoTime()
+                    queuedBytes -= bytes.size
+                    sendAck()
+                    lock.notifyAll()
+                }
             }
         } catch (e: Exception) { if (!closed) { onError("TCP upload failed (${e.javaClass.simpleName})"); abort() } }
     }
@@ -202,7 +221,14 @@ class TcpFlow(
     /** Called by the single bridge maintenance thread, including when the upstream reader blocks. */
     fun tick(now: Long = System.nanoTime()) = synchronized(lock) {
         if (closed) return@synchronized
-        if (now - lastActivity > 120_000_000_000L) { onError("TCP flow idle timeout"); abort(); return@synchronized }
+        val inactiveNanos = if (established) now - lastActivity else now - createdAt
+        val timeoutNanos = if (established) TcpCapacityPolicy.IDLE_TIMEOUT_NANOS
+            else TcpCapacityPolicy.HALF_OPEN_TIMEOUT_NANOS
+        if (inactiveNanos > timeoutNanos) {
+            onError(if (established) "TCP flow idle timeout" else "TCP handshake timed out")
+            abort()
+            return@synchronized
+        }
         val oldest = pending.firstOrNull()
         if (oldest != null && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
             if (++oldest.attempts > 8) { onError("TCP peer did not acknowledge retransmissions"); abort(); return@synchronized }
