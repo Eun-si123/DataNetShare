@@ -2,6 +2,24 @@
 
 Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
 
+## Unreleased — TCP loss recovery after Window Scaling
+
+Source baseline: `be234dc` (5.1-dev.21), checked 2026-10-18 UTC. An independent branch fixes two confirmed receiver bugs; no preview version or release is created by this change.
+
+`TcpFlow` compared an ACK's 16-bit wire window with the previous scaled/capped byte window. With a nonzero negotiated shift this suppressed fast retransmit even after three identical ACKs. FIN packets could also be counted as duplicate ACKs, contrary to [RFC 5681 section 2](https://www.rfc-editor.org/rfc/rfc5681#section-2). Keep the previous wire field separately and exclude SYN/FIN. Flow/queue limits and Window Scale negotiation are unchanged.
+
+Validation uses the production sender and receiver flow against loopback sockets. `TcpLossRecoveryTest` injects ACKs without calling the retransmission timer, verifies the actual retransmitted segment, and covers legacy/shift=0/2/7/14, window updates above the local cap, FIN and payload. The existing 94 tests passed on the baseline; all three new tests failed before the fix. After the fix all **97 host tests passed** (Gradle 8.5 / OpenJDK 21). Android/JDK 17 validation is tracked on the PR's `Android source verification` workflow.
+
+| Same injected event | Before | After |
+| --- | --- | --- |
+| Third duplicate ACK, shift=2 | No immediate retransmission | Exactly one immediate retransmission of the missing segment |
+| FIN after two duplicates, legacy window | Spurious fast retransmission | FIN excluded and duplicate count reset |
+| Window changes while both scaled values exceed the send cap | No eventual fast recovery | Update resets count; third subsequent duplicate retransmits |
+
+This is a functional loss-recovery comparison, **not a throughput, CPU, battery or Android RTT benchmark**. Keeping the old behavior would retain timeout-based stalls; comparing only effective windows would hide real window updates above the cap. A native engine replacement is disproportionate to this isolated regression and remains a separate measured experiment.
+
+Physical acceptance: on the same phone pair/link/server, compare baseline and patched builds for three or more runs; confirm WS negotiation, clean upload/download/half-close, sender Stop and reconnect. Where a controlled test network can induce loss/reordering, record recovery latency, retransmits, TUN waits/drops, loaded RTT, CPU/RAM and thermal state. Check browser and native app discovery separately. No physical-device or native Speedtest fix is claimed.
+
 ## 5.1-dev.21 — negotiated TCP Window Scaling and protocol diagnostic counters
 
 2026-10-18 field baseline: browser speed-test screen shows 45.60 Mbps download, 30.38 Mbps upload, and 160 ms ping. It is a single result, not evidence that a change has improved throughput. YouTube/web browsing works, while native speed-test apps still fail ISP/server discovery.
