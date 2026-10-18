@@ -28,7 +28,8 @@ class Socks5Server(
     private val onIdleClose: () -> Unit = {},
     private val maxClients: Int = 128,
     private val tcpIdleMillis: Long = 45_000,
-    private val socketPollMillis: Int = 2_000
+    private val socketPollMillis: Int = 2_000,
+    private val onPeers: (List<PeerUsageLedger.Snapshot>) -> Unit = {}
 ) {
     init {
         require(maxClients in 1..192) { "Sender client limit must be bounded" }
@@ -48,10 +49,14 @@ class Socks5Server(
     private val associations = ConcurrentHashMap.newKeySet<UdpAssociate>()
     private val rx = AtomicLong()
     private val tx = AtomicLong()
+    private val usage = PeerUsageLedger()
+    private val lastPeersSent = AtomicLong(0)
     @Volatile private var running = false
     private var listener: ServerSocket? = null
     val boundPort: Int get() = listener?.localPort ?: 0
     val clientCount: Int get() = clients.size
+    /** Read-only session snapshot; client IPs are local UI data, not diagnostics. */
+    fun peerSnapshots(): List<PeerUsageLedger.Snapshot> = usage.snapshot()
 
     @Synchronized fun start() {
         check(!running) { "Proxy is already running" }
@@ -59,6 +64,7 @@ class Socks5Server(
         val server = ServerSocket()
         try { server.reuseAddress = true; server.bind(InetSocketAddress(bindHost, port), minOf(maxClients, 128)) }
         catch (e: Exception) { server.close(); throw e }
+        usage.clear()
         listener = server; running = true
         Thread({
             try {
@@ -68,10 +74,15 @@ class Socks5Server(
                     if (!permits.tryAcquire()) { onClientLimit(); client.close(); continue }
                     clients.add(client); sockets.add(client)
                     Thread({
-                        try { if (running) handleClient(client) }
-                        finally {
+                        var peer: PeerUsageLedger.Entry? = null
+                        try {
+                            if (running) handleClient(client) {
+                                usage.open(client.inetAddress.hostAddress).also { peer = it }
+                            }
+                        } finally {
+                            usage.close(peer)
                             clients.remove(client); sockets.remove(client); client.close(); permits.release()
-                            onStats(clients.size, rx.get(), tx.get())
+                            publishStats()
                         }
                     }, "socks-client").apply { isDaemon = true; start() }
                 }
@@ -80,9 +91,19 @@ class Socks5Server(
         Thread({
             while (running) {
                 try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                if (running) onStats(clients.size, rx.get(), tx.get())
+                if (running) publishStats()
             }
         }, "socks-stats").apply { isDaemon = true; start() }
+    }
+
+    private fun publishStats() {
+        onStats(clients.size, rx.get(), tx.get())
+        // Socket closes can arrive in huge bursts during speed tests.
+        // UI peer snapshots are no more frequent than once per second.
+        val now = System.nanoTime()
+        val previous = lastPeersSent.get()
+        if (now - previous > 1_000_000_000L &&
+            lastPeersSent.compareAndSet(previous, now)) onPeers(usage.snapshot())
     }
 
     @Synchronized fun stop() {
@@ -97,11 +118,12 @@ class Socks5Server(
         sockets.forEach { try { it.close() } catch (_: IOException) {} }
     }
 
-    private fun handleClient(client: Socket) {
+    private fun handleClient(client: Socket, authenticated: () -> PeerUsageLedger.Entry?) {
         try {
             client.tcpNoDelay = true; client.soTimeout = 15_000
             val input = DataInputStream(client.getInputStream()); val output = client.getOutputStream()
             Socks5.authenticateServer(input, output, authPassword)
+            val peer = authenticated()
             if (input.readUnsignedByte() != 5) throw IOException("Invalid SOCKS request")
             val command = input.readUnsignedByte()
             if (input.readUnsignedByte() != 0) throw IOException("Invalid SOCKS reserved byte")
@@ -139,15 +161,15 @@ class Socks5Server(
                         // EOF only half-closes a stream. Do not join forever when the
                         // opposite side stops responding without sending its own FIN.
                         val upload = Thread({
-                            relay(client, remote, rx, lastProgress, idleReported)
+                            relay(client, remote, rx, lastProgress, idleReported, peer, uploading = true)
                         }, "socks-upload").apply { isDaemon = true; start() }
-                        relay(remote, client, tx, lastProgress, idleReported)
+                        relay(remote, client, tx, lastProgress, idleReported, peer, uploading = false)
                         upload.join()
                     } finally { sockets.remove(remote); remote.close() }
                 }
                 3 -> {
                     client.soTimeout = 1000
-                    val assoc = UdpAssociate(client)
+                    val assoc = UdpAssociate(client, peer)
                     associations.add(assoc)
                     try {
                         assoc.start()
@@ -164,7 +186,8 @@ class Socks5Server(
     }
 
     private fun relay(from: Socket, to: Socket, counter: AtomicLong,
-                      lastProgress: AtomicLong, idleReported: AtomicBoolean) {
+                      lastProgress: AtomicLong, idleReported: AtomicBoolean,
+                      peer: PeerUsageLedger.Entry?, uploading: Boolean) {
         try {
             val input = from.getInputStream(); val output = to.getOutputStream()
             val buffer = ByteArray(32 * 1024)
@@ -190,6 +213,7 @@ class Socks5Server(
                     output.write(buffer, 0, count)
                     lastProgress.set(System.nanoTime())
                     counter.addAndGet(count.toLong())
+                    if (uploading) peer?.received(count) else peer?.sent(count)
                 }
             }
         } catch (_: IOException) {
@@ -198,7 +222,8 @@ class Socks5Server(
         }
     }
 
-    private inner class UdpAssociate(private val client: Socket) {
+    private inner class UdpAssociate(private val client: Socket,
+                                     private val peer: PeerUsageLedger.Entry?) {
         private val relay = DatagramSocket(InetSocketAddress(client.localAddress, 0))
         private val remoteSockets = ConcurrentHashMap<InetSocketAddress, DatagramSocket>()
         @Volatile var closed = false
@@ -224,6 +249,7 @@ class Socks5Server(
                         lastActivity.set(System.nanoTime())
                         remote.send(DatagramPacket(data.payload, data.payload.size))
                         rx.addAndGet(data.payload.size.toLong())
+                        peer?.received(data.payload.size)
                     } catch (_: SocketTimeoutException) { continue }
                     catch (_: IOException) { if (relay.isClosed) break }
                 }
@@ -252,7 +278,9 @@ class Socks5Server(
                             val response = Socks5.encodeDatagram(Socks5.Address(destination.address.hostAddress!!, destination.port), payload)
                             if (response.size > 65_507) continue
                             relay.send(DatagramPacket(response, response.size, endpoint))
-                            tx.addAndGet(payload.size.toLong()); lastActivity.set(System.nanoTime())
+                            tx.addAndGet(payload.size.toLong())
+                            peer?.sent(payload.size)
+                            lastActivity.set(System.nanoTime())
                         }
                     } catch (_: IOException) { /* close() unblocks receive */ }
                     finally { remoteSockets.remove(destination, socket); socket.close(); datagramPermits.release() }

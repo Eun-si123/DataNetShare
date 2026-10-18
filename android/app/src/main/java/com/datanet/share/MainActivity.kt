@@ -39,6 +39,7 @@ import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
 import com.datanet.share.common.WifiPasswordVault
 import com.datanet.share.receiver.ReceiverVpnService
+import com.datanet.share.sender.PeerUsageLedger
 import com.datanet.share.sender.SenderService
 import com.datanet.share.sender.WifiDirectProfile
 
@@ -271,6 +272,19 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_label, version)
         SessionStore.state.observe(this) { state -> render(state) }
         SessionStore.stats.observe(this) { text -> findViewById<TextView>(R.id.statsText).text = text }
+        SessionStore.peerUsage.observe(this) { peers ->
+            findViewById<TextView>(R.id.peerUsageText).text = if (peers.isEmpty()) {
+                getString(R.string.peer_usage_empty)
+            } else buildString {
+                peers.forEach { peer ->
+                    append(getString(R.string.peer_usage_row, peer.ip, peer.activeConnections,
+                        com.datanet.share.common.FormatBytes.format(peer.txBytes),
+                        com.datanet.share.common.FormatBytes.format(peer.rxBytes)))
+                    append('
+')
+                }
+            }.trimEnd()
+        }
         SessionStore.diagnostics.observe(this) { text -> findViewById<TextView>(R.id.diagnosticSummary).text = text }
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -281,6 +295,9 @@ class MainActivity : AppCompatActivity() {
             "starting" -> R.string.starting; "active" -> R.string.active; "failed" -> R.string.failed; else -> R.string.idle
         })
         findViewById<TextView>(R.id.detailsText).text = state.details
+        findViewById<View>(R.id.peerUsagePanel).visibility =
+            if (state.mode == SessionStore.Mode.SENDER && state.status == "active")
+                View.VISIBLE else View.GONE
         val roleGroup = findViewById<RadioGroup>(R.id.roleGroup)
         val transportGroup = findViewById<RadioGroup>(R.id.transportGroup)
         val active = state.busy
