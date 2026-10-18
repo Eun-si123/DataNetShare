@@ -454,7 +454,8 @@ class MainActivity : AppCompatActivity() {
             receiverWifiPermission.launch(permission); return
         }
         try {
-            PeerWifiConnector.request(this, form.wifiSsid, form.wifiPassword)
+            PeerWifiConnector.request(this, form.wifiSsid, form.wifiPassword,
+                host.text.toString().trim(), port.text.toString().toIntOrNull() ?: 0)
             showMessage(getString(R.string.qr_wifi_requesting))
         } catch (_: Exception) {
             form.pendingAutoReceiver = false
@@ -463,6 +464,14 @@ class MainActivity : AppCompatActivity() {
     }
     private fun peerWifiChanged(status: PeerWifiConnector.Status) {
         when (status) {
+            PeerWifiConnector.Status.CHECKING_SENDER -> if (form.pendingAutoReceiver) {
+                showMessage(getString(R.string.qr_wifi_checking_sender))
+            }
+            PeerWifiConnector.Status.SENDER_UNREACHABLE -> if (form.pendingAutoReceiver) {
+                form.pendingAutoReceiver = false
+                PeerWifiConnector.release()
+                showMessage(getString(R.string.qr_wifi_sender_unreachable))
+            }
             PeerWifiConnector.Status.CONNECTED -> if (form.pendingAutoReceiver) {
                 form.pendingAutoReceiver = false
                 if (!SessionStore.current.busy) startReceiver()
