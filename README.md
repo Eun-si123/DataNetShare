@@ -6,6 +6,15 @@ Share an Android phone’s connection through an **authenticated SOCKS5 proxy**,
 
 This is [Eun-si123’s fork](https://github.com/Eun-si123/DataNetShare) of [Keggin-AI/DataNetShare](https://github.com/Keggin-AI/DataNetShare), based on the archived upstream v5 source. The actively maintained project is in [`android/`](android/). **5.1-dev is a development candidate, not a certified production release.** Foundation and build evidence are in [PR #1](https://github.com/Eun-si123/DataNetShare/pull/1); the receiver socket hotfix is in [PR #3](https://github.com/Eun-si123/DataNetShare/pull/3).
 
+## Experimental QR Wi-Fi automation and fallback (v5.1-dev.15 candidate)
+
+This candidate is **not yet validated on real Android hardware**. On Android 10+, receiver QR scanning can request an OS-approved Wi-Fi connection to the sender's access point and, after IPv4 provisioning, start the normal receiver VPN consent flow. Manual connection remains available for denied/unsupported network requests.
+
+Sender Advanced settings now offer an optional **session-only custom SOCKS5 password** (12–128 printable ASCII characters without spaces) and **cellular-first with validated Wi-Fi fallback**. Blank custom password produces a new random password each session. Reusing a custom password also preserves old QR authentication across sessions; do not treat QR codes as single-use. When the cellular network recovers, **new** connections return to cellular. Existing sockets are not migrated and local-only Wi-Fi Direct is not used as an Internet fallback. Using Android default route is a separate option.
+
+Receiver can optionally release the QR-requested local Wi-Fi when its sender disconnects, letting Android use mobile data or a previously saved Wi-Fi network. This does not auto-join arbitrary networks or detect every case of sender-upstream Internet failure. **The existing ~30 Mbps throughput problem is not claimed fixed.**
+
+
 ## Real-phone performance / VPN stop investigation (5.1-dev.11)
 
 A real device report showed **110/113 TCP connections, 35 successful UDP associations, 10 UDP flow-limit rejections (at the old 32 cap), 67 TCP retransmissions, 1 retransmission exhaustion, and no TUN packet drops**. This indicates the sender and SOCKS authentication are mostly working, but does **not** imply the VPN's throughput or latency is acceptable.

@@ -35,7 +35,7 @@ data class PairingPayload(
 
     private fun isValid(): Boolean =
         Endpoint.isIpv4(host) && port in 1..65535 &&
-            PASSWORD.matches(password) &&
+            ProxyPasswordPolicy.valid(password) &&
             ((ssid.isEmpty() && wifiPassword.isEmpty()) ||
                 (ssid.length in 1..64 && wifiPassword.length in 8..63 &&
                     ssid.none { Character.isISOControl(it) } && wifiPassword.none { Character.isISOControl(it) }))
@@ -43,7 +43,6 @@ data class PairingPayload(
     companion object {
         private const val PREFIX = "datanetshare://pair/v1?"
         private const val MAX_QR_LENGTH = 1024
-        private val PASSWORD = Regex("[0-9a-f]{32}")
         private val FIELDS = setOf("h", "p", "pw", "s", "w")
         private fun escape(value: String) = URLEncoder.encode(value, "UTF-8")
 

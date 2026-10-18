@@ -50,140 +50,43 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
-          "$AAPT" dump badging "$APK" | grep -F "versionCode='44' versionName='5.1-dev.14'"
+          "$AAPT" dump badging "$APK" | grep -F "versionCode='45' versionName='5.1-dev.15'"
           "$SIGNER" verify --verbose --print-certs "$APK"
           mkdir -p dist
-          cp "$APK" dist/DataNetShare-5.1-dev.14-debug.apk
+          cp "$APK" dist/DataNetShare-5.1-dev.15-debug.apk
           cd dist
-          sha256sum DataNetShare-5.1-dev.14-debug.apk > SHA256SUMS.txt
+          sha256sum DataNetShare-5.1-dev.15-debug.apk > SHA256SUMS.txt
       - name: Publish immutable GitHub prerelease with direct APK download
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v5.1-dev.14"
+          TAG="v5.1-dev.15"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to replace a published APK"
             exit 1
           fi
           cat > release-notes.md <<'NOTES'
-          ## DataNet Share 5.1-dev.14 — Android preview (not a stable release)
+          ## DataNet Share 5.1-dev.15 — experimental Android preview
 
-          **Download:** `DataNetShare-5.1-dev.14-debug.apk` in Assets below (not Source code ZIP).
-          Android 8.0+, package `com.datanet.share.dev`. This is a debug-signed development preview, distributed for optional testing.
+          Android 8+, debug-signed com.datanet.share.dev. Not a production release.
 
-          ### QR camera orientation follows device rotation (5.1-dev.14)
-          - Fix user feedback: a permanently portrait-locked QR camera is not desired either.
-          - The QR scanner honors Android's auto-rotate setting. With auto-rotate enabled, turn the phone to change between portrait and landscape; with it disabled, do not force a rotation upon opening scanner.
-          - Use screenOrientation=fullUser and ScanOptions.setOrientationLocked(false) on a dedicated camera Activity. Android vendor hardware and screen orientation remain subject to real-device testing.
+          - Android 10+ QR scan requests an OS-approved Wi-Fi join; upon IPv4 provisioning the app begins the VPN consent flow. Manual Wi-Fi connection remains available on failure. No permission bypass.
+          - Optional sender SOCKS5 password (session-memory only) or secure random password when blank. Manually reused passwords allow old QR codes to authenticate.
+          - Optional sender cellular-first route with validated Internet Wi-Fi fallback and return to cellular for **new** flows after Android validates recovery. Existing sockets are not migrated.
+          - Optional receiver Wi-Fi release and VPN teardown on sender-loss allows Android to select its own mobile/saved Wi-Fi network, never an arbitrary AP.
+          - Receiver is still experimental IPv4, no complete TCP congestion control, IPv6 or ICMP; ~30 Mbps throughput report is not fixed.
+          - OEM Wi-Fi Direct join, system approval, carrier routing and fallback behavior require physical-device tests. SOCKS authentication is not local-link encryption.
+          - Future debug APK signing identities may change; uninstall/reinstall may be required.
 
-          ### Persistent Wi-Fi password and upright QR scanning
-          - Remember manually configured Wi-Fi Direct passphrases by default, encrypted at rest with a non-exportable Android Keystore key. Remembered passwords survive app process death/restart; clearing the field and starting again deletes the saved password.
-          - Keep existing password until user edits it, explicitly resets to Auto, clears app data, or uninstalls. No plaintext SharedPreferences or debug logs.
-          - Use a dedicated non-exported QR scanner Activity with Android screenOrientation=fullUser and unlocked ZXing rotation; it follows the phone's auto-rotate setting, allowing portrait and landscape rather than forcing either.
-          - JVM crypto regressions validate AES-GCM encryption/decryption, tampering and distinct IVs. Physical Android Keystore and camera-rotation behavior still require device testing.
-
-          ### New Wi-Fi Direct controls (Android 10+)
-          - Configure the Wi-Fi Direct SSID suffix (shown as DIRECT-xyYourName), password (8–63 printable ASCII), and requested 2.4 GHz/5 GHz/automatic band in the sender's Advanced settings.
-          - With Auto/blank defaults, the original Android-managed group creation is unchanged. Custom Wi-Fi password is now remembered encrypted using Android Keystore AES-GCM. Blank input clears the stored password and restores automatic generation; the SOCKS5 password still rotates on every session.
-          - Android 8–9 can still use automatic Wi-Fi Direct but cannot apply custom group credentials through the public API.
-          - Wi-Fi Direct does **not** give third-party apps router-style WPA2/WPA3 mode, Wi-Fi 4/5/6/7 PHY, exact channel or WMM/QoS controls. Band requests may fail on unsupported hardware; no silent fallback.
-          - Host unit tests validate SSID/password constraints and pairing QR compatibility. OEM/real-phone Wi-Fi Direct creation remains unverified.
-
-          ### UDP capacity, TCP recovery and unexpected VPN shutdown handling
-          - User device telemetry on 5.1-dev.10 showed 10 rejected UDP flows at the previous 32-association cap, 67 TCP retransmissions, one retransmission exhaustion, and two TCP upload failures with zero TUN drops.
-          - Raise receiver UDP capacity from 32 to a **bounded 40**, leaving eight sender SOCKS5 slots free under peak 80 TCP + 40 UDP. When full, reclaim UDP flows idle for 15+ seconds before rejecting a new flow.
-          - Stop silently dropping UDP packets when a flow's outgoing queue is full; record a sanitized queue-overflow diagnostic. Report unexpected UDP relay read errors.
-          - Retransmit oldest outstanding TCP data after three duplicate ACKs rather than always waiting for the 500 ms timeout; no congestion-control equivalence to a full TCP stack is implied.
-          - If Android destroys the receiver VPN service without a user Stop, preserve a visible failure status rather than reverting silently to Ready. The sender watchdog also detects revoked VPN consent and preserves an error category.
-          - Automatic protocol and application builds do **not** validate unexpected OS process kills, full system VPN state transitions or physical-device speed improvements.
-
-          ### Receiver stop and sender disconnect safety
-          - The app's single Stop button now sends the same explicit STOP service action as the foreground notification, including while starting.
-          - Receiver verifies the paired sender SOCKS5 endpoint with a protected, authenticated liveness probe every 5 seconds. Three consecutive failures automatically close the VPN and display a disconnected message; transient failures do not disconnect immediately.
-          - During all receiver cleanup paths, close the Android VPN descriptor before draining bridge TCP/UDP flows. This prevents stuck receiver sockets from leaving an unusable system VPN route.
-          - Receiver stop no longer snapshots concurrent maps with toList(), which could throw while flows remove themselves.
-          - Loopback tests verify authenticated reachability, disconnected endpoint, incorrect passwords, and the consecutive-failure threshold.
-          - Physical Android device validation still required; Android Always-on VPN settings may control system-level reconnection behavior.
-
-          ### Download latency investigation and safe performance counters
-          - Report receiver TCP retransmitted segments, nonblocking TUN write-wait count and cumulative TUN wait time next to TCP/UDP connection counts and drops.
-          - The Copy safe diagnostics button now includes only aggregated performance counters, not IPs, QR, passphrases, requested destinations or packet contents.
-          - Normal sender idle TCP cleanup is moved out of the yellow error list to the sender's regular connection statistics.
-          - Measurements on physical devices remain required. This is instrumentation for loaded latency, not a claim that the tunnel is faster or latency is fixed.
-
-          ### Sender stop race fixed during publish verification
-          - Prevent a rare NoSuchElementException when client sockets disconnect while the sender enumerates and closes SOCKS5 connections on Stop.
-          - Iterate ConcurrentHashMap-backed client socket and UDP association sets directly, rather than taking a Kotlin size-based toList() snapshot during concurrent removal.
-          - Add a concurrent-stop regression test and keep the same v5.1-dev.10 APK version because the previous publication failed before a release was created.
-
-          ### Simpler connection controls and progressive setup
-          - Replace three separate start buttons and the detached Stop button with one contextual Connect/Cancel/Disconnect button for both sender and receiver.
-          - Select Share or Receive first; only the selected mode's configuration is visible. During connection, the settings collapse and the same main action changes to Disconnect.
-          - Sender Wi-Fi Direct is the default; USB/Wi-Fi and advanced routing are still available. Receiver scanning is QR-first with optional manual IPv4/port/password fields.
-          - Keep connection status, sender credentials/QR, throughput counters, and safe diagnostics accessible without digging through both setup forms.
-          - Tested action routing across roles and link types; real-device UX and accessibility verification are still required.
-
-          ### Sender connection slot exhaustion fixes
-          - Stop opening SOCKS upstream sockets for TCP SYNs that never complete the app-side ACK handshake.
-          - Reclaim idle TCP relay connections after 45 seconds; both directions share an activity timer so active downloads continue. Remove idle UDP associations after 30 seconds.
-          - Increase sender bounded proxy capacity 64 → 128 and receiver TCP flow capacity 64 → 80 (receiver UDP cap stays 32). This mitigates browser bursts without unbounded per-flow threads.
-          - Report reclaimed idle TCP sessions in network diagnostics; retain warnings when capacity is reached.
-          - Regression tests cover orphan SYNs consuming zero sender slots, idle sockets releasing the last proxy slot, and prior TCP half-close/downlink integrity.
-
-          ### Better diagnostics for browser and speed-test failures
-          - Always-visible network diagnostics on both sender and receiver, with a copy button omitting passwords, endpoints and QR details.
-          - Bounded in-memory counters record sender upstream/connection-capacity failures, receiver TCP/UDP flow limits, UDP setup/read failures, TCP resets/timeouts and TUN congestion.
-          - Errors are visible even while the sender or VPN stays in the Connected state. An empty log does not prove that browsing or speed tests work.
-          - Regression coverage includes journal concurrency/capacity/privacy and formerly swallowed UDP setup failures.
-
-          ### TCP transport improvements first introduced in 5.1-dev.5
-          - Advertise an explicit 1200-byte MSS in the receiver's TCP SYN-ACK to prevent peer fallback to smaller default segments; preserve checksum and retransmission behavior.
-          - Retry congested nonblocking VPN TUN writes for a bounded period instead of immediately discarding on first EAGAIN or EINTR.
-          - Unit tests assert TCP MSS option, IPv4/TCP checksums, matching SYN retransmission, and bounded TUN write retries.
-          - This is a transport-layer improvement, not a guarantee that Ookla Speedtest, FAST.com or HTTP/3 work on physical Android phones.
-
-          ### Connection reset diagnosis and route fixes
-          - When the sender is using "mobile-data only", another connected Wi-Fi is *not* used for Internet egress. If mobile data is missing, new connections now report SOCKS network unreachable (3), rather than a generic connection refused.
-          - When "Use Android default route" is selected, the sender no longer unnecessarily requests a separate cellular Network and now displays Android's selected Wi-Fi/VPN/cellular path in stats.
-          - Recent upstream errors appear on the sender; the receiver surfaces recent TCP failure categories to aid diagnosis without logging destinations or passwords.
-          - A multi-megabyte TCP download regression test now exercises speed-test-like traffic.
-
-          ### New in this preview
-          - Session-scoped QR shown only on an active sender. The receiving app has an in-app camera scanner to fill the sender IP, SOCKS port, and session password.
-          - QR can include Wi-Fi Direct SSID/password for manual network joining. Receiver can copy the Wi-Fi password and open Android Wi-Fi settings.
-          - The QR is invalid after Stop/restart because the proxy password rotates. It is **not single-scan**: anyone with a photo can connect during the active session.
-          - The QR scanner does not require cloud access; no credentials are saved to preferences, analytics or log output. Camera permission is needed to scan.
-          - Receiver VPN permission pending across Activity rotation is now retained in memory, not the saved-instance bundle.
-
-          ### Fix in this preview
-          - Fix a reported Android receiver startup failure: `Sender check failed: Could not protect sender socket`.
-          - Select/bind the local Wi-Fi socket before calling Android VPN protection for the credential probe, TCP and UDP flows.
-          - Four JVM regression tests cover socket setup and failures. Android device verification remains pending.
-
-          ### Implemented
-          - Authenticated SOCKS5 TCP/UDP sharing over Wi-Fi Direct, USB tethering, or a private Wi-Fi network.
-          - Mobile-data-only egress by default; optional Android default route for explicit existing-VPN use.
-          - Experimental Android IPv4 receiver and Korean UI/help.
-          - Host protocol tests, Android JVM tests, lint and APK build checked before release.
-
-          ### Known limitations and security
-          - **Real Android-to-Android, OEM, Wi-Fi Direct, battery, and carrier tests are still pending.** Expect connection failures on some devices/networks.
-          - Receiver lacks IPv6, ICMP, IP fragment reassembly, and complete TCP interoperability; some games/apps may fail.
-          - SOCKS5 authentication is **not encryption**; use a trusted private network or USB. No carrier-tethering-bypass or VPN kill-switch guarantee.
-          - **Debug signing key is generated on the CI runner.** A later APK may have a different certificate and require uninstall/reinstall, losing app settings. This is not an update-stable public release.
-          - Release APK uses `com.datanet.share.dev` and does not replace the original upstream app.
-
-          See [Korean install guide](https://github.com/Eun-si123/DataNetShare/blob/main/docs/README.ko.md), [test matrix](https://github.com/Eun-si123/DataNetShare/blob/main/docs/TESTING.md), and [security notes](https://github.com/Eun-si123/DataNetShare/blob/main/docs/SECURITY-REVIEW.md).
-
-          **Integrity:** `SHA256SUMS.txt` contains the APK digest. Source is pinned to this release tag.
+          Tests and limitations: docs/TESTING.md
           NOTES
           gh release create "$TAG" \
-            dist/DataNetShare-5.1-dev.14-debug.apk \
+            dist/DataNetShare-5.1-dev.15-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "DataNet Share 5.1-dev.14 (Android preview)" \
+            --title "DataNet Share 5.1-dev.15 (Android preview)" \
             --prerelease \
             --notes-file release-notes.md
