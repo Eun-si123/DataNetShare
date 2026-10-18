@@ -221,6 +221,41 @@ class TcpFlowTest {
         }
     }
 
+    @Test fun peerWithSmallAdvertisedMssNeverReceivesOversizedTcpSegments() =
+        ProxyFixture().use { fixture ->
+            ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+                val bytes = ByteArray(2500) { (it % 251).toByte() }
+                Thread({ server.accept().use { it.getOutputStream().write(bytes) } },
+                    "test-limited-mss-server").apply { isDaemon = true; start() }
+                val key = FlowKey(0x0a000001, 50001, 0x7f000001, server.localPort)
+                val packets = LinkedBlockingQueue<Ipv4Packet>()
+                val flow = TcpFlow(key, 100, "127.0.0.1", fixture.proxy.boundPort,
+                    fixture.password, { true }, { packets.add(Ipv4Packet.parse(it)!!) },
+                    {}, {}, {}, initialSequence = 4000, peerMss = 600)
+                try {
+                    flow.start()
+                    assertEquals(0x12, packets.poll(2, TimeUnit.SECONDS)!!.flags)
+                    flow.receive(incoming(key, 101, 4001, window = 65535))
+                    Thread({ flow.openUpstream() }, "test-mss-connect")
+                        .apply { isDaemon = true; start() }
+                    var next = 4001
+                    val captured = java.io.ByteArrayOutputStream()
+                    val deadline = System.nanoTime() + 8_000_000_000L
+                    while (captured.size() < bytes.size && System.nanoTime() < deadline) {
+                        val packet = packets.poll(100, TimeUnit.MILLISECONDS) ?: continue
+                        if (packet.payload.isNotEmpty()) {
+                            assertTrue("must respect peer MSS", packet.payload.size <= 600)
+                            assertEquals(next, packet.sequence)
+                            captured.write(packet.payload)
+                            next += packet.payload.size
+                            flow.receive(incoming(key, 101, next, window = 65535))
+                        }
+                    }
+                    assertArrayEquals(bytes, captured.toByteArray())
+                } finally { flow.close() }
+            }
+        }
+
     @Test fun zeroReceiveWindowPausesDownloadsUntilWindowUpdate() = ProxyFixture().use { fixture ->
         ServerSocket(0).use { destination ->
             Thread({ destination.accept().use { it.getOutputStream().write(ByteArray(2048) { 7 }) } }, "test-window").apply { isDaemon = true; start() }
