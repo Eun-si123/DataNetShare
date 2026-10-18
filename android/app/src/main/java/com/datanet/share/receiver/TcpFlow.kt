@@ -77,6 +77,9 @@ class TcpFlow(
     private var next = unsigned(initialSequence)
     private var acknowledged = next
     private var peerWindow = LEGACY_CAPACITY
+    // Preserve the wire field for duplicate-ACK detection. The scaled/capped
+    // byte window is a different unit and can hide real window updates.
+    private var peerWireWindow = LEGACY_CAPACITY
     private var appFin = false
     private var outputFinished = false
     private var remoteFin = false
@@ -111,8 +114,9 @@ class TcpFlow(
             val ack = unsigned(packet.acknowledgement)
             if (distance(acknowledged, ack) <= distance(acknowledged, next)) {
                 val previousAck = acknowledged
-                val previousWindow = peerWindow
-                acknowledged = ack; peerWindow = peerAdvertisedWindow(packet.window)
+                val previousWireWindow = peerWireWindow
+                acknowledged = ack; peerWireWindow = packet.window
+                peerWindow = peerAdvertisedWindow(packet.window)
                 while (pending.isNotEmpty()) {
                     val segment = pending.first()
                     if (distance(segment.sequence, ack) < segment.length || distance(segment.sequence, ack) >= 0x80000000L) break
@@ -126,7 +130,8 @@ class TcpFlow(
                 // Window updates, SYN/FIN ACKs and payload packets do not count.
                 val oldest = pending.firstOrNull()
                 val isDuplicate = established && ack == previousAck &&
-                    packet.window == previousWindow && packet.payload.isEmpty() &&
+                    packet.window == previousWireWindow && packet.payload.isEmpty() &&
+                    packet.flags and 3 == 0 &&
                     oldest != null && oldest.payload.isNotEmpty()
                 duplicateAcks = if (isDuplicate) (duplicateAcks + 1).coerceAtMost(4) else 0
                 if (duplicateAcks == 3 && oldest != null) {

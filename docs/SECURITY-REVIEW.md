@@ -19,7 +19,7 @@ Updated 2026-10-16 KST. These notes describe the maintained source and its bound
 
 **The default-route option is not a VPN kill switch.** A running VPN may exclude this app, disappear, or change its underlying network. The app deliberately follows Android in this optional mode; verify the actual traffic path if privacy matters. Default mobile-only mode explicitly binds to cellular and therefore does not imply use of an existing sender VPN.
 
-**Built-in receiver is experimental and IPv4-only.** The custom TCP stack is bounded and tested synthetically but lacks full congestion control, SACK, window scaling, IP reassembly and broad interoperability coverage. It does not tunnel ICMP or IPv6. Oversize UDP replies are dropped. Do not infer “all apps/games work” from unit tests or a green build.
+**Built-in receiver is experimental and IPv4-only.** The custom TCP stack negotiates bounded Window Scaling when offered by the peer; it lacks full congestion control, SACK, IP reassembly and broad interoperability coverage. The unreleased loss-recovery regression tests also cover scaled duplicate ACKs and exclude FIN from fast-retransmit detection (see [TESTING.md](TESTING.md)). It does not tunnel ICMP or IPv6. Oversize UDP replies are dropped. Do not infer “all apps/games work” from unit tests or a green build.
 
 **No carrier accounting guarantee.** Tethering detection and allowance depend on the carrier/plan/device/network. No Korean carrier quota or policy behavior has been verified.
 
