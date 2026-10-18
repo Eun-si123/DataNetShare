@@ -37,13 +37,13 @@
 
     <string name="show_pairing_qr">Show connection QR</string>
     <string name="hide_pairing_qr">Hide connection QR</string>
-    <string name="qr_sender_help">Scan this inside DataNet Share on the receiving phone. It contains SOCKS5 and (when available) Wi-Fi passwords. Anyone who can see or photograph it can connect until you stop sharing. A new code is generated for each sharing session; this is NOT limited to one scan.</string>
+    <string name="qr_sender_help">Scan this inside DataNet Share on the receiving phone. It contains SOCKS5 and (when available) Wi-Fi passwords. Anyone who can see or photograph it can connect until you stop sharing. Automatic SOCKS5 passwords rotate with each session; manually reused passwords do not. A code can be scanned more than once.</string>
     <string name="pairing_qr_description">Sensitive session QR code with Wi-Fi and proxy login details</string>
     <string name="scan_pairing_qr">Scan sender QR (camera)</string>
     <string name="qr_invalid">Not a valid DataNet Share session QR</string>
     <string name="qr_failed">Could not display the connection QR</string>
     <string name="qr_imported">Connection fields filled. Join the sender Wi-Fi, then start receiver VPN.</string>
-    <string name="scanned_wifi_details">Wi-Fi name: %1$s\nWi-Fi password: %2$s\nConnect using Android Wi-Fi settings, then return here. DataNet Share cannot silently join Wi-Fi.</string>
+    <string name="scanned_wifi_details">Wi-Fi name: %1$s\nWi-Fi password: %2$s\nOn Android 10+, scan the QR to request an OS-approved Wi-Fi connection; if it fails, use Android Wi-Fi settings.</string>
     <string name="copy_scanned_wifi_password">Copy Wi-Fi password</string>
     <string name="open_wifi_settings">Open Android Wi-Fi settings</string>
     <string name="qr_scan_prompt">Scan the sender’s DataNet Share session QR</string>
@@ -83,4 +83,17 @@
     <string name="p2p_password_save_failed">Could not securely remember the Wi-Fi password. No changes were applied; check device security storage and retry.</string>
     <string name="p2p_password_restore_failed">Saved Wi-Fi password could not be restored. Enter it again and start sharing to save it securely.</string>
     <string name="p2p_password_edit_help">Custom Wi-Fi passwords are encrypted and remembered on this device. Stop sharing before changing settings, then start again to apply. Blank password removes the saved one and uses automatic generation.</string>
+
+    <string name="wifi_fallback">Use validated Wi-Fi if mobile data is unavailable (optional)</string>
+    <string name="wifi_fallback_help">Prefers cellular. If cellular is unavailable/unvalidated or a new connection fails, retries new connections over validated Wi-Fi. Requires a separate internet-capable Wi-Fi link; does not migrate existing streams or guarantee recovery. Ignored when Android default route is selected.</string>
+    <string name="receiver_fallback">Release peer Wi-Fi if sender disappears (allow Android network fallback)</string>
+    <string name="receiver_fallback_help">Optional: after three failed sender checks, close VPN and release the QR-requested local Wi-Fi. Android may then choose cellular or a previously saved Wi-Fi. This is not a kill switch and cannot join arbitrary networks.</string>
+    <string name="proxy_custom_label">Custom SOCKS5 password (optional; session only)</string>
+    <string name="proxy_custom_hint">Blank = random; custom 12–128 printable ASCII, no spaces</string>
+    <string name="proxy_custom_invalid">Use 12–128 printable ASCII characters without spaces for a custom SOCKS5 password.</string>
+    <string name="qr_auto_join">After QR scan, request Wi-Fi connection and start receiver VPN (Android 10+)</string>
+    <string name="qr_wifi_android10_required">Automatic Wi-Fi request requires Android 10+. Join Wi-Fi manually, then start VPN.</string>
+    <string name="qr_wifi_permission_denied">Nearby Wi-Fi permission denied. Connect manually in Android Wi-Fi settings.</string>
+    <string name="qr_wifi_requesting">Android Wi-Fi connection requested. Approve the system dialog to continue.</string>
+    <string name="qr_wifi_unavailable">Android could not connect to the QR Wi-Fi. Join manually from Wi-Fi settings, then start VPN.</string>
 </resources>

@@ -33,6 +33,8 @@ import com.journeyapps.barcodescanner.ScanOptions
 import com.datanet.share.common.Endpoint
 import com.datanet.share.common.InterfaceEnumerator
 import com.datanet.share.common.PairingPayload
+import com.datanet.share.common.PeerWifiConnector
+import com.datanet.share.common.ProxyPasswordPolicy
 import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
 import com.datanet.share.common.WifiPasswordVault
@@ -46,6 +48,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var password: EditText
     private lateinit var addresses: Spinner
     private lateinit var defaultRoute: Switch
+    private lateinit var wifiFallback: Switch
+    private lateinit var receiverFallback: Switch
+    private lateinit var customProxyPassword: EditText
+    private lateinit var qrAutoJoin: Switch
     private lateinit var p2pNameSuffix: EditText
     private lateinit var p2pWifiPassword: EditText
     private lateinit var p2pBand: Spinner
@@ -57,6 +63,10 @@ class MainActivity : AppCompatActivity() {
     private val wifiPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val required = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
         if (grants[required] == true) startSender(true) else showMessage(getString(R.string.permission_required))
+    }
+    private val receiverWifiPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && form.pendingAutoReceiver) requestPeerWifi()
+        else { form.pendingAutoReceiver = false; showMessage(getString(R.string.qr_wifi_permission_denied)) }
     }
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val qrScanner = registerForActivityResult(ScanContract()) { result ->
@@ -71,7 +81,10 @@ class MainActivity : AppCompatActivity() {
             form.wifiSsid = pairing.ssid
             form.wifiPassword = pairing.wifiPassword
             renderImportedWifi()
-            showMessage(getString(R.string.qr_imported))
+            if (pairing.ssid.isNotEmpty() && qrAutoJoin.isChecked) {
+                form.pendingAutoReceiver = true
+                requestPeerWifi()
+            } else showMessage(getString(R.string.qr_imported))
         }
     }
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -84,6 +97,20 @@ class MainActivity : AppCompatActivity() {
         host = findViewById(R.id.receiverHost); port = findViewById(R.id.receiverPort)
         password = findViewById(R.id.receiverPassword); addresses = findViewById(R.id.bindAddress)
         defaultRoute = findViewById(R.id.defaultRoute)
+        wifiFallback = findViewById(R.id.wifiFallback)
+        receiverFallback = findViewById(R.id.receiverFallback)
+        customProxyPassword = findViewById(R.id.customProxyPassword)
+        qrAutoJoin = findViewById(R.id.qrAutoJoin)
+        customProxyPassword.setText(form.customProxyPassword)
+        customProxyPassword.doAfterTextChanged { form.customProxyPassword = it?.toString().orEmpty() }
+        customProxyPassword.isSaveEnabled = false
+        wifiFallback.isChecked = preferences.getBoolean("wifi_fallback", false)
+        receiverFallback.isChecked = preferences.getBoolean("receiver_fallback", false)
+        qrAutoJoin.isChecked = preferences.getBoolean("qr_auto_join", true)
+        receiverFallback.setOnCheckedChangeListener { _, enabled -> preferences.edit().putBoolean("receiver_fallback", enabled).apply() }
+        qrAutoJoin.setOnCheckedChangeListener { _, enabled -> preferences.edit().putBoolean("qr_auto_join", enabled).apply() }
+        wifiFallback.setOnCheckedChangeListener { _, enabled -> preferences.edit().putBoolean("wifi_fallback", enabled).apply() }
+        defaultRoute.setOnCheckedChangeListener { _, enabled -> wifiFallback.isEnabled = !enabled }
         p2pNameSuffix = findViewById(R.id.p2pNameSuffix)
         p2pWifiPassword = findViewById(R.id.p2pCustomPassword)
         p2pBand = findViewById(R.id.p2pBand)
@@ -128,10 +155,11 @@ class MainActivity : AppCompatActivity() {
         password.setText(form.receiverPassword)
         password.doAfterTextChanged { form.receiverPassword = it?.toString() ?: "" }
         renderImportedWifi()
+        defaultRoute.isChecked = preferences.getBoolean("default_route", false)
+        wifiFallback.isEnabled = !defaultRoute.isChecked
         if (savedInstanceState == null) {
             host.setText(preferences.getString("host", "192.168.49.1"))
             port.setText(preferences.getString("port", "8282"))
-            defaultRoute.isChecked = preferences.getBoolean("default_route", false)
         }
         refreshAddresses()
         roleGroup.setOnCheckedChangeListener { _, checked ->
@@ -298,6 +326,10 @@ class MainActivity : AppCompatActivity() {
         p2pNameSuffix.isEnabled = customEnabled
         p2pWifiPassword.isEnabled = customEnabled
         p2pBand.isEnabled = customEnabled
+        customProxyPassword.isEnabled = !active
+        wifiFallback.isEnabled = !active && !defaultRoute.isChecked
+        receiverFallback.isEnabled = !active
+        qrAutoJoin.isEnabled = !active
         val hasCredentials = state.mode == SessionStore.Mode.SENDER && state.status == "active"
         findViewById<View>(R.id.credsCard).visibility = if (hasCredentials) View.VISIBLE else View.GONE
         if (!hasCredentials) form.showQr = false
@@ -373,6 +405,10 @@ class MainActivity : AppCompatActivity() {
             preferences.edit().putString("p2p_suffix", profile.nameSuffix)
                 .putString("p2p_band", profile.band.name).apply()
         }
+        val customProxy = customProxyPassword.text.toString()
+        if (customProxy.isNotEmpty() && !ProxyPasswordPolicy.valid(customProxy)) {
+            showMessage(getString(R.string.proxy_custom_invalid)); return
+        }
         preferences.edit().putBoolean("role_share", true).putBoolean("share_direct", p2p).apply()
         if (p2p) {
             val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
@@ -384,6 +420,8 @@ class MainActivity : AppCompatActivity() {
         launchService(Intent(this, SenderService::class.java).apply {
             action = if (p2p) SenderService.ACTION_START else SenderService.ACTION_START_LOCAL
             putExtra(SenderService.EXTRA_BIND_HOST, bind); putExtra(SenderService.EXTRA_DEFAULT_ROUTE, defaultRoute.isChecked)
+            putExtra(SenderService.EXTRA_WIFI_FALLBACK, wifiFallback.isChecked && !defaultRoute.isChecked)
+            putExtra(SenderService.EXTRA_PROXY_PASSWORD, customProxy)
             if (p2p) {
                 putExtra(SenderService.EXTRA_P2P_SUFFIX, profile.nameSuffix)
                 putExtra(SenderService.EXTRA_P2P_PASSWORD, profile.passphrase)
@@ -401,9 +439,53 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, ReceiverVpnService::class.java).apply {
             action = ReceiverVpnService.ACTION_START; putExtra(ReceiverVpnService.EXTRA_SOCKS_HOST, address)
             putExtra(ReceiverVpnService.EXTRA_SOCKS_PORT, proxyPort); putExtra(ReceiverVpnService.EXTRA_PASSWORD, proxyPassword)
+            putExtra(ReceiverVpnService.EXTRA_RELEASE_PEER_ON_LOSS, receiverFallback.isChecked)
         }
         val permission = VpnService.prepare(this)
         if (permission == null) launchService(intent) else { form.pendingReceiver = intent; vpnPermission.launch(permission) }
+    }
+    private fun requestPeerWifi() {
+        if (Build.VERSION.SDK_INT < 29) {
+            form.pendingAutoReceiver = false
+            showMessage(getString(R.string.qr_wifi_android10_required)); return
+        }
+        val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
+        if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+            receiverWifiPermission.launch(permission); return
+        }
+        try {
+            PeerWifiConnector.request(this, form.wifiSsid, form.wifiPassword)
+            showMessage(getString(R.string.qr_wifi_requesting))
+        } catch (_: Exception) {
+            form.pendingAutoReceiver = false
+            showMessage(getString(R.string.qr_wifi_unavailable))
+        }
+    }
+    private fun peerWifiChanged(status: PeerWifiConnector.Status) {
+        when (status) {
+            PeerWifiConnector.Status.CONNECTED -> if (form.pendingAutoReceiver) {
+                form.pendingAutoReceiver = false
+                if (!SessionStore.current.busy) startReceiver()
+            }
+            PeerWifiConnector.Status.UNAVAILABLE, PeerWifiConnector.Status.LOST -> if (form.pendingAutoReceiver) {
+                form.pendingAutoReceiver = false
+                PeerWifiConnector.release()
+                showMessage(getString(R.string.qr_wifi_unavailable))
+            }
+            else -> Unit
+        }
+    }
+    override fun onResume() {
+        super.onResume()
+        PeerWifiConnector.setListener(::peerWifiChanged)
+    }
+    override fun onPause() {
+        PeerWifiConnector.setListener(null)
+        super.onPause()
+    }
+    override fun onDestroy() {
+        if (isFinishing && !SessionStore.current.busy) PeerWifiConnector.release()
+        super.onDestroy()
     }
     private fun stopRunningService(intent: Intent) {
         try {

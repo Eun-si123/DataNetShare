@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import com.datanet.share.common.InterfaceEnumerator
+import com.datanet.share.common.PeerWifiConnector
 import java.io.IOException
 import java.net.DatagramSocket
 import java.net.Inet4Address
@@ -24,7 +25,7 @@ class ReceiverLink(context: Context, host: String) {
         val mask = -1 shl (32 - prefix)
         return a and mask == b and mask
     }
-    private fun network(): Network? = manager.allNetworks.firstOrNull { network ->
+    private fun network(): Network? = (listOfNotNull(PeerWifiConnector.network) + manager.allNetworks.asList()).firstOrNull { network ->
         val caps = manager.getNetworkCapabilities(network)
         caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
             !caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&

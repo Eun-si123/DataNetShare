@@ -1,6 +1,18 @@
 # Validation and device acceptance
 
-Updated 2026-10-16 KST. This document separates source/loopback verification from actual Android device behavior.
+Updated 2026-10-18 KST. This document separates source/loopback verification from actual Android device behavior.
+
+## 5.1-dev.15 candidate — QR Wi-Fi request and route fallback
+
+**Development candidate: Android hardware acceptance remains unverified.**
+
+- Android 10+: after QR scan optionally request an OS-approved Wi-Fi connection to the QR's exact SSID/password. Wait for IPv4 provisioning before starting the receiver VPN consent flow. Manual Wi-Fi settings remain available on unsupported devices or when permissions/request fail. No system approval bypass.
+- Sender Advanced settings: optional SOCKS5 password 12–128 non-space printable ASCII, held only in memory for the session. Blank = new random secret. If the same custom secret is reused, previously issued QR codes can remain valid, unlike auto-generated secrets.
+- Sender optional cellular-first route policy: on missing/unvalidated cellular, new flows choose an Android-validated infrastructure Wi-Fi route. When cellular is Android-validated again, new flows prefer cellular. Existing TCP/UDP sockets are not migrated. Wi-Fi Direct peer-only link is not a validated Internet fallback.
+- Receiver optional loss behavior: after three consecutive sender probe failures, close VPN and release the QR-requested Wi-Fi link, allowing Android to select mobile data or an already saved Wi-Fi connection. Arbitrary nearby APs are not joined. If the sender is still reachable but has lost upstream Internet, this is not detected by its liveness probe.
+- Changes do not claim performance improvement for the previous ~30 Mbps bottleneck.
+
+**Physical acceptance checklist:** QR request grant/deny/cancel and rotation; local IPv4/SOCKS reachability; coexistence with regular Wi-Fi; cellular → validated Wi-Fi → cellular route using observed public egress and network state; Wi-Fi Direct only (no invalid Internet fallback); receiver VPN stop/local Wi-Fi release after sender loss; credentials/QR lifetime; repeat same-server loaded-latency and throughput measurements. Test user-disabled Android Auto-rotate, VPN Always-on/Lockdown, and different Android OEMs.
 
 ## 5.1-dev.14 — user-controlled QR scanner rotation
 

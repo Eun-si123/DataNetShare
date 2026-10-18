@@ -80,9 +80,23 @@
                     android:layout_height="wrap_content" android:minHeight="48dp"
                     android:text="@string/default_route" android:textColor="#E6E8EB"
                     android:textSize="14sp"/>
+                <Switch android:id="@+id/wifiFallback" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:text="@string/wifi_fallback" android:textColor="#E6E8EB"/>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/wifi_fallback_help" android:textColor="#B5BCC8"
+                    android:textSize="12sp" android:layout_marginBottom="8dp"/>
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:text="@string/route_help" android:textColor="#B5BCC8"
                     android:textSize="13sp"/>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/proxy_custom_label" android:labelFor="@id/customProxyPassword"
+                    android:textColor="#E6E8EB" android:textSize="13sp"/>
+                <EditText android:id="@+id/customProxyPassword" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:hint="@string/proxy_custom_hint" android:inputType="textPassword"
+                    android:singleLine="true" android:maxLength="128" android:saveEnabled="false"
+                    android:importantForAutofill="no" android:textColor="#FFFFFF"/>
                 <LinearLayout android:id="@+id/wifiDirectOptions"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:orientation="vertical" android:layout_marginTop="16dp">
@@ -137,6 +151,15 @@
                 android:text="@string/qr_import_help" android:textColor="#B5BCC8"
                 android:textSize="13sp" android:layout_marginTop="6dp"
                 android:layout_marginBottom="8dp"/>
+            <Switch android:id="@+id/qrAutoJoin" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="@string/qr_auto_join" android:textColor="#E6E8EB"/>
+            <Switch android:id="@+id/receiverFallback" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="@string/receiver_fallback" android:textColor="#E6E8EB"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/receiver_fallback_help" android:textColor="#B5BCC8"
+                android:textSize="12sp" android:layout_marginBottom="8dp"/>
             <Button android:id="@+id/btnScanQr" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:minHeight="52dp"
                 android:text="@string/scan_pairing_qr"/>
