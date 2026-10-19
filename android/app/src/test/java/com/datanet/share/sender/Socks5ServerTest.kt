@@ -97,6 +97,8 @@ class Socks5ServerTest {
     @Test fun validUdpPortPinRejectsLaterSameIpSourcePort() = ProxyFixture().use { fixture ->
         fixture.client().use { client ->
             val relay = fixture.associate(client)
+            // Auth and UDP ASSOCIATE handshake bytes are already part of peer usage.
+            val before = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
             DatagramSocket().use { pinned -> DatagramSocket().use { other ->
                 pinned.soTimeout = 3000
                 other.soTimeout = 300
@@ -120,8 +122,8 @@ class Socks5ServerTest {
                 send(pinned, byteArrayOf(3))
                 assertArrayEquals(byteArrayOf(3), response(pinned))
                 val usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
-                assertEquals(2L, usage.rxBytes)
-                assertEquals(2L, usage.txBytes)
+                assertEquals(before.rxBytes + 2L, usage.rxBytes)
+                assertEquals(before.txBytes + 2L, usage.txBytes)
             } }
         }
     }
