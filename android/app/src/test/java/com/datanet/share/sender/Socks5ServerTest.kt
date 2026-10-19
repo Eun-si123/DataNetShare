@@ -71,6 +71,62 @@ class Socks5ServerTest {
             } }
         } }
     }
+    @Test fun invalidFirstUdpDatagramCannotPinAssociationPort() = ProxyFixture().use { fixture ->
+        fixture.client().use { client ->
+            val relay = fixture.associate(client)
+            DatagramSocket().use { malformed ->
+                DatagramSocket().use { valid ->
+                    valid.soTimeout = 3000
+                    val invalidFrame = byteArrayOf(0, 0, 0, 1)
+                    malformed.send(DatagramPacket(invalidFrame, invalidFrame.size,
+                        InetSocketAddress(relay.host, relay.port)))
+                    val zeroPortFrame = Socks5.encodeDatagram(Socks5.Address("127.0.0.1", 0), byteArrayOf(42))
+                    malformed.send(DatagramPacket(zeroPortFrame, zeroPortFrame.size,
+                        InetSocketAddress(relay.host, relay.port)))
+                    Thread.sleep(150)
+                    val payload = byteArrayOf(7, 8, 9)
+                    val frame = Socks5.encodeDatagram(Socks5.Address("127.0.0.1", fixture.udpPort), payload)
+                    valid.send(DatagramPacket(frame, frame.size, InetSocketAddress(relay.host, relay.port)))
+                    val packet = DatagramPacket(ByteArray(65535), 65535)
+                    valid.receive(packet)
+                    assertArrayEquals(payload, Socks5.decodeDatagram(packet.data.copyOf(packet.length))!!.payload)
+                }
+            }
+        }
+    }
+    @Test fun validUdpPortPinRejectsLaterSameIpSourcePort() = ProxyFixture().use { fixture ->
+        fixture.client().use { client ->
+            val relay = fixture.associate(client)
+            // Auth and UDP ASSOCIATE handshake bytes are already part of peer usage.
+            val before = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
+            DatagramSocket().use { pinned -> DatagramSocket().use { other ->
+                pinned.soTimeout = 3000
+                other.soTimeout = 300
+                val target = InetSocketAddress(relay.host, relay.port)
+                fun send(socket: DatagramSocket, payload: ByteArray) {
+                    val frame = Socks5.encodeDatagram(Socks5.Address("127.0.0.1", fixture.udpPort), payload)
+                    socket.send(DatagramPacket(frame, frame.size, target))
+                }
+                fun response(socket: DatagramSocket): ByteArray {
+                    val packet = DatagramPacket(ByteArray(65535), 65535)
+                    socket.receive(packet)
+                    return Socks5.decodeDatagram(packet.data.copyOf(packet.length))!!.payload
+                }
+                send(pinned, byteArrayOf(1))
+                assertArrayEquals(byteArrayOf(1), response(pinned))
+                send(other, byteArrayOf(2))
+                try {
+                    other.receive(DatagramPacket(ByteArray(128), 128))
+                    fail("different UDP source port received relay data")
+                } catch (_: java.net.SocketTimeoutException) { }
+                send(pinned, byteArrayOf(3))
+                assertArrayEquals(byteArrayOf(3), response(pinned))
+                val usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
+                assertEquals(before.rxBytes + 2L, usage.rxBytes)
+                assertEquals(before.txBytes + 2L, usage.txBytes)
+            } }
+        }
+    }
     @Test fun stoppingClosesIdleHandshakeAndEstablishedConnections() = ProxyFixture().use { fixture ->
         val partial = Socket("127.0.0.1", fixture.proxy.boundPort).apply { soTimeout = 3000; getOutputStream().write(5) }
         val authenticated = fixture.client()
