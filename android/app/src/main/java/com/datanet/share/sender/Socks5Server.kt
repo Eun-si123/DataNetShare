@@ -227,7 +227,7 @@ class Socks5Server(
         private val relay = DatagramSocket(InetSocketAddress(client.localAddress, 0))
         private val remoteSockets = ConcurrentHashMap<InetSocketAddress, DatagramSocket>()
         @Volatile var closed = false
-        private var clientEndpoint: InetSocketAddress? = null
+        @Volatile private var clientEndpoint: InetSocketAddress? = null
         val port: Int get() = relay.localPort
         val lastActivity = AtomicLong(System.nanoTime())
 
@@ -240,10 +240,13 @@ class Socks5Server(
                         val packet = DatagramPacket(buffer, buffer.size); relay.receive(packet)
                         val source = packet.socketAddress as InetSocketAddress
                         if (source.address != client.inetAddress) continue
-                        if (clientEndpoint == null) clientEndpoint = source
-                        if (source != clientEndpoint) continue
+                        // Malformed datagrams must not claim the authenticated client's UDP port.
+                        // Only this relay thread writes the endpoint; upstream workers read it.
+                        val pinned = clientEndpoint
+                        if (pinned != null && source != pinned) continue
                         val data = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                         if (data.address.port == 0 || data.payload.size > 65_507) continue
+                        if (pinned == null) clientEndpoint = source
                         val destination = InetSocketAddress(upstream.resolve(data.address.host).first(), data.address.port)
                         val remote = remoteSockets[destination] ?: createRemote(destination) ?: continue
                         lastActivity.set(System.nanoTime())
