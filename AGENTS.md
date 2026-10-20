@@ -22,6 +22,12 @@ This is a **public, actively maintained Android networking fork**, not the archi
 | Durable decisions / recurring lessons | `docs/AGENT_MEMORY.md` |
 | Temporary task handoff (not feature truth) | `docs/WORK_HANDOFF.md` |
 
+## Optional shared agent context
+
+Trusted agents operating on the owner's miniPC can discover the [shared Agent Control Plane](https://github.com/Eun-si123/teamforge-unity-collab/blob/main/tools/agent-control-plane/README.md). Its **read-only MCP stdio** interface offers live GitHub status/Issues/PRs for TeamForge, BetterNet and DataNetShare, together with local agent-lease/checkpoint visibility. This is an optional aid: use the **current DataNetShare source, `docs/AGENT_WORKFLOW.md`, `docs/WORK_HANDOFF.md`, CI and physical evidence** as the canonical implementation and validation record.
+
+The service does not expose an internet API, start autonomous AI coding, publish private state, or grant a globally exclusive GitHub lock. Local SQLite resource claims protect only agents participating in that same DB. Never send passwords, QR contents, GitHub credentials or private task material to public artifacts.
+
 ## Non-negotiable boundaries
 
 - **Check the actual code and tests.** README, architecture notes, changelog, old branches, and dated test evidence can disagree; none alone certifies the current artifact or physical behavior.
