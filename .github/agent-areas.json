@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "repository": "Eun-si123/DataNetShare",
+  "areas": {
+    "sender": ["android/app/src/main/java/com/datanet/share/sender"],
+    "receiver": ["android/app/src/main/java/com/datanet/share/receiver"],
+    "shared-android": ["android/app/src/main/java/com/datanet/share/common", "android/app/src/main/res"],
+    "android-tests": ["android/app/src/test"],
+    "proxy-and-build": ["proxy-tests", "android/app/build.gradle.kts", ".github/workflows", "scripts"]
+  }
+}
