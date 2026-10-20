@@ -1,0 +1,63 @@
+name: Agent discovery and independent review
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '57 3 * * *'
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+# Guards duplicate jobs on the same ref, not external autonomous coders.
+concurrency:
+  group: agent-inspection-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Exercise discovery, receipt, and conflict checks
+        run: python3 -m unittest discover -s scripts -p 'test_agent_ops.py' -v
+      - name: Discover candidates and live overlapping PRs (read-only)
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/agent-ops.py scan --remote --output "$RUNNER_TEMP/agent-discovery.json"
+          python3 - "$RUNNER_TEMP/agent-discovery.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## Agent discovery (candidate areas only)')
+          print('Live PR overlap was checked. No tasks, claims, releases or commits were created.\n')
+          print('| Area | Status | Changed since inspection | Open PRs |')
+          print('| --- | --- | ---: | --- |')
+          for item in report['areas']:
+              prs = ', '.join('#' + str(p['number']) for p in item['active_prs']) or 'none'
+              count = item['changes_since_review']
+              print(f"| {item['area']} | {item['status']} | {count if count is not None else 'unreviewed'} | {prs} |")
+          print('\nTODO/FIXME markers are investigation hints, not confirmed defects. Exact checks belong in a scoped PR.')
+          PY
+      - name: Independently classify pull request diff and check whitespace
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          python3 scripts/agent-ops.py review --base "origin/$BASE_BRANCH" --output "$RUNNER_TEMP/agent-review.json"
+          python3 - "$RUNNER_TEMP/agent-review.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          r = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## Independent PR checklist')
+          print(f"Changed files: {len(r['changed_files'])}; source: {len(r['source_changes'])}; test files: {len(r['test_changes'])}")
+          print(f"Whitespace/diff check: {'PASS' if r['diff_check_pass'] else 'FAIL'}")
+          for warning in r['warnings']:
+              print('- ' + warning)
+          print('\nThis check is not a security audit or hardware/field validation; existing product CI is still required.')
+          PY
