@@ -22,7 +22,9 @@ object Socks5 {
             3 -> {
                 val size = input.readUnsignedByte()
                 if (size == 0) throw IOException("Empty SOCKS hostname")
-                String(ByteArray(size).also(input::readFully), Charsets.US_ASCII)
+                val bytes = ByteArray(size).also(input::readFully)
+                if (bytes.any { (it.toInt() and 255) !in 33..126 }) throw IOException("Invalid SOCKS hostname")
+                String(bytes, Charsets.US_ASCII)
             }
             else -> throw IOException("Unsupported SOCKS address type: $type")
         }
@@ -39,8 +41,10 @@ object Socks5 {
             output.write(if (literal.size == 4) 1 else 4)
             output.write(literal)
         } else {
+            // Reject non-ASCII before encoding; US_ASCII would otherwise replace characters with ?.
+            require(address.host.length in 1..255 &&
+                address.host.all { it.code in 33..126 }) { "Invalid SOCKS hostname" }
             val host = address.host.toByteArray(Charsets.US_ASCII)
-            require(host.size in 1..255) { "Invalid SOCKS hostname length" }
             output.write(3); output.write(host.size); output.write(host)
         }
         output.write(address.port ushr 8); output.write(address.port and 255)
