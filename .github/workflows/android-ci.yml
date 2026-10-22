@@ -34,7 +34,7 @@ jobs:
         run: gradle -p proxy-tests test --no-daemon
       - name: Upload host test results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: datanetshare-host-tests
           path: proxy-tests/build/test-results/test/
@@ -66,7 +66,7 @@ jobs:
         run: gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace --no-daemon
       - name: Upload Android validation reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: datanetshare-android-reports
           path: |
@@ -76,7 +76,7 @@ jobs:
           retention-days: 7
       - name: Upload debug APK (not release-signed)
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: datanetshare-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
