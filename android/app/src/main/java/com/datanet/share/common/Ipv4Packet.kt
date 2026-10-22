@@ -119,6 +119,9 @@ object IpPackets {
         return packet // IPv4 permits an omitted UDP checksum.
     }
     private fun header(key: FlowKey, protocol: Int, transportLength: Int): ByteArray {
+        // IPv4 Total Length is a 16-bit field. Reject oversized packets before
+        // truncating the length and emitting a frame the receiver cannot parse.
+        require(transportLength in 0..(65535 - 20)) { "IPv4 packet exceeds 65535 bytes" }
         val packet = ByteArray(20 + transportLength)
         ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN).apply {
             put(0, 0x45); putShort(2, packet.size.toShort()); putShort(6, 0x4000)
