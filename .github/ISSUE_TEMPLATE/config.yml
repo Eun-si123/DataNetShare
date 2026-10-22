@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Eun-si123/DataNetShare/security/advisories
+    about: Do not disclose secrets or exploitable security issues in a public Issue.
+  - name: Questions and troubleshooting
+    url: https://github.com/Eun-si123/DataNetShare/discussions
+    about: Use Discussions for general questions; use the bug form for reproducible defects.
