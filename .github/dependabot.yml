@@ -9,6 +9,12 @@ updates:
       time: "04:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
+    # Uncoordinated major upgrades have broken CI; track migrations in Issue #51.
+    # Restricts VERSION proposals only; Dependabot security updates remain enabled.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
       android-compatible:
         update-types:
@@ -23,6 +29,12 @@ updates:
       time: "04:15"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
+    # Uncoordinated major upgrades have broken CI; track migrations in Issue #51.
+    # Restricts VERSION proposals only; Dependabot security updates remain enabled.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
       proxy-tests-compatible:
         update-types:
@@ -37,6 +49,12 @@ updates:
       time: "04:30"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
+    # Uncoordinated major upgrades have broken CI; track migrations in Issue #51.
+    # Restricts VERSION proposals only; Dependabot security updates remain enabled.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
       actions-compatible:
         update-types:
