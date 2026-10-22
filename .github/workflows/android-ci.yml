@@ -23,6 +23,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Guard against untested Gradle / Kotlin version drift
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_build_toolchain_alignment.py' -q
+          python3 scripts/check_build_toolchain_alignment.py
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
@@ -45,6 +49,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Guard against untested Gradle / Kotlin version drift
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_build_toolchain_alignment.py' -q
+          python3 scripts/check_build_toolchain_alignment.py
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
