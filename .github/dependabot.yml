@@ -1,0 +1,44 @@
+# GitHub-native dependency update proposals; all changes require PR review and CI.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "04:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      android-compatible:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: gradle
+    directory: /proxy-tests
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "04:15"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      proxy-tests-compatible:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "04:30"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      actions-compatible:
+        update-types:
+          - minor
+          - patch
