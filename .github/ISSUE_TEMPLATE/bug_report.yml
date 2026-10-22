@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible defect in the maintained Android source.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is an experimental Android networking project. Reproducible device evidence is different from host/JVM tests. **Do not post secrets, QR contents, Wi-Fi/SOCKS passwords, private identifiers, or unredacted logs.** Report security vulnerabilities privately under the Security tab instead.
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      description: APK version and/or exact Git commit; avoid the historical ZIP as a source of current behavior.
+      placeholder: "e.g. 5.1-dev.21, commit abc123"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Test environment
+      description: Android versions, device models, network mode (Wi-Fi Direct, USB or private Wi-Fi), and which side is sender/receiver. Do not include private IPs or SSIDs.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Give safe, minimal steps and any relevant negative/control tests.
+      placeholder: |
+        1. Start sender using ...
+        2. Connect receiver using ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Actual behavior and frequency
+      description: Include whether this happens consistently, intermittently, or only on physical devices.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized evidence (optional)
+      description: CI/test URLs, error type, and sanitized logs or screenshots. Redact credentials, QR payloads, private network identifiers, and personal information.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed secrets and personal/private network identifiers from this public report.
+          required: true
+        - label: This is not an exploitable security vulnerability requiring a private report.
+          required: true
