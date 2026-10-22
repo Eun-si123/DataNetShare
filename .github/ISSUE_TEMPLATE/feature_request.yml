@@ -1,0 +1,36 @@
+name: Feature or improvement
+description: Propose a useful change with scope, trade-offs, and a way to verify it.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are candidates, not commitments. Please avoid sharing credentials or sensitive diagnostics. Distinguish user benefit from performance claims until controlled tests are available.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What cannot be done today, or which observed behavior should improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Focus on the user-visible result rather than prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and trade-offs
+      description: Include simpler approaches, costs, security or compatibility risks, and the option of making no change.
+    validations:
+      required: false
+  - type: textarea
+    id: validation
+    attributes:
+      label: How could this be verified?
+      description: Specify expected tests, real-device checks, or A/B measurements where relevant.
+    validations:
+      required: false
