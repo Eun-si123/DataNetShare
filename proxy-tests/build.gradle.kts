@@ -18,6 +18,7 @@ sourceSets {
             "com/datanet/share/receiver/TunWriteRetry.kt",
             "com/datanet/share/receiver/UdpFlowPolicy.kt",
             "com/datanet/share/receiver/TcpCapacityPolicy.kt",
+            "com/datanet/share/receiver/FlowAdmission.kt",
             "com/datanet/share/receiver/SenderProbeRetryPolicy.kt",
             "com/datanet/share/receiver/SenderHealthProbe.kt")
     }
