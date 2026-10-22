@@ -247,7 +247,9 @@ class Socks5Server(
                         val data = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                         if (data.address.port == 0 || data.payload.size > 65_507) continue
                         if (pinned == null) clientEndpoint = source
-                        val destination = InetSocketAddress(upstream.resolve(data.address.host).first(), data.address.port)
+                        // An empty DNS answer must not terminate the UDP relay worker.
+                        val address = upstream.resolve(data.address.host).firstOrNull() ?: continue
+                        val destination = InetSocketAddress(address, data.address.port)
                         val remote = remoteSockets[destination] ?: createRemote(destination) ?: continue
                         lastActivity.set(System.nanoTime())
                         remote.send(DatagramPacket(data.payload, data.payload.size))

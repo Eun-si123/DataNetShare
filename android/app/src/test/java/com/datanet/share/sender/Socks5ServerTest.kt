@@ -121,9 +121,19 @@ class Socks5ServerTest {
                 } catch (_: java.net.SocketTimeoutException) { }
                 send(pinned, byteArrayOf(3))
                 assertArrayEquals(byteArrayOf(3), response(pinned))
-                val usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
-                assertEquals(before.rxBytes + 2L, usage.rxBytes)
-                assertEquals(before.txBytes + 2L, usage.txBytes)
+                // The UDP echo can arrive before the relay/upstream workers publish
+                // their usage counters. Wait for accounting, not for an arbitrary delay.
+                val expectedRx = before.rxBytes + 2L
+                val expectedTx = before.txBytes + 2L
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                var usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
+                while ((usage.rxBytes < expectedRx || usage.txBytes < expectedTx) &&
+                    System.nanoTime() < deadline) {
+                    Thread.sleep(10)
+                    usage = fixture.proxy.peerSnapshots().single { it.ip == "127.0.0.1" }
+                }
+                assertEquals(expectedRx, usage.rxBytes)
+                assertEquals(expectedTx, usage.txBytes)
             } }
         }
     }

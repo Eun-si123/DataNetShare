@@ -9,7 +9,10 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.security.MessageDigest
 
-/** RFC 1928/1929 framing shared by the sender, receiver and loopback tests. */
+/**
+ * RFC 1928/1929 framing shared by the sender, receiver and loopback tests.
+ * Hostnames use printable ASCII; international names require caller-provided IDNA ASCII.
+ */
 object Socks5 {
     const val USERNAME = "datanet"
     data class Address(val host: String, val port: Int)

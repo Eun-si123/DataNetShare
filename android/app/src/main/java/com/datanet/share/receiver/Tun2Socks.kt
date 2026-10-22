@@ -156,18 +156,25 @@ class Tun2Socks(
                     return
                 }
             }
-            lateinit var flow: TcpFlow
-            flow = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
-                { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, flow) },
-                onError = onTcpError,
-                onConnected = {
-                    tcpConnected.incrementAndGet()
-                    if (packet.offeredWindowScale() != null) windowScaledFlows.incrementAndGet()
+            val flow = admitFlow(
+                isRunning = { running },
+                create = {
+                    lateinit var created: TcpFlow
+                    created = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
+                        { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, created) },
+                        onError = onTcpError,
+                        onConnected = {
+                            tcpConnected.incrementAndGet()
+                            if (packet.offeredWindowScale() != null) windowScaledFlows.incrementAndGet()
+                        },
+                        onRetransmit = { tcpRetransmits.incrementAndGet() },
+                        peerMss = packet.offeredMss() ?: 536,
+                        peerWindowScale = packet.offeredWindowScale())
+                    created
                 },
-                onRetransmit = { tcpRetransmits.incrementAndGet() },
-                peerMss = packet.offeredMss() ?: 536,
-                peerWindowScale = packet.offeredWindowScale())
-            tcp[key] = flow
+                register = { tcp[key] = it },
+                close = { it.close() }
+            ) ?: return
             tcpAttempts.incrementAndGet()
             flow.start()
             Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
@@ -190,16 +197,24 @@ class Tun2Socks(
                 return
             }
         }
-        lateinit var flow: UdpFlow
-        flow = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
-            { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, flow) },
-            onError = { message ->
-                if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
-                onUdpError(message)
+        val flow = admitFlow(
+            isRunning = { running },
+            create = {
+                lateinit var created: UdpFlow
+                created = UdpFlow(key, socksHost, socksPort, password, protect, protectDatagram, ::writePacket,
+                    { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, created) },
+                    onError = { message ->
+                        if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
+                        onUdpError(message)
+                    },
+                    onConnected = { udpConnected.incrementAndGet() },
+                    onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
+                created
             },
-            onConnected = { udpConnected.incrementAndGet() },
-            onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
-        udp[key] = flow; udpAttempts.incrementAndGet(); flow.send(packet.payload)
+            register = { udp[key] = it },
+            close = { it.close() }
+        ) ?: return
+        udpAttempts.incrementAndGet(); flow.send(packet.payload)
         Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
     }
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {
