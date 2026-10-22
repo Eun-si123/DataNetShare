@@ -49,7 +49,7 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Submit resolved dependencies to GitHub
-        uses: gradle/actions/dependency-submission@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # pinned v4
+        uses: gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a # pinned v4
         with:
           gradle-version: '8.5'
           build-root-directory: ${{ matrix.project }}
