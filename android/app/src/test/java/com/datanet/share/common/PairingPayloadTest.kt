@@ -2,6 +2,7 @@ package com.datanet.share.common
 
 import org.junit.Assert.*
 import org.junit.Test
+import java.net.URLEncoder
 
 class PairingPayloadTest {
     private val password = "0123456789abcdef0123456789abcdef"
@@ -55,4 +56,55 @@ class PairingPayloadTest {
             PairingPayload("192.168.49.1", 8282, password, "DIRECT-FOO", "").encode()
         }
     }
+
+    @Test fun wifiSsidLimitUsesUtf8BytesForEncodingAndParsing() {
+        for (ssid in listOf("a", "a".repeat(32), "한".repeat(10) + "ab", "\ud83d\ude00".repeat(8))) {
+            assertWifiAccepted(ssid, "password")
+        }
+        for (ssid in listOf("a".repeat(33), "한".repeat(11), "\ud83d\ude00".repeat(8) + "a")) {
+            assertWifiRejected(ssid, "password")
+        }
+    }
+
+    @Test fun wifiPassphraseBoundsMatchTheConnectorForEncodingAndParsing() {
+        for (wifiPassword in listOf("a".repeat(8), "a".repeat(63), " ".repeat(8), "~".repeat(8))) {
+            assertWifiAccepted("DIRECT-AB", wifiPassword)
+        }
+        for (wifiPassword in listOf("a".repeat(7), "a".repeat(64), "é".repeat(8), "\ud83d\ude00".repeat(4),
+            "pass\u0000word", "pass\nword", "pass\u007fword")) {
+            assertWifiRejected("DIRECT-AB", wifiPassword)
+        }
+    }
+
+    @Test fun wifiDetailsRemainAnOptionalCompletePairWithoutControls() {
+        val local = PairingPayload("192.168.49.1", 8282, password)
+        assertEquals(local, PairingPayload.parse(local.encode()))
+        assertFalse(local.encode().contains("&s="))
+        assertFalse(local.encode().contains("&w="))
+        assertWifiAccepted("", "")
+        assertWifiRejected("", "password")
+        assertWifiRejected("DIRECT-AB", "")
+        assertWifiRejected("DIRECT-\nAB", "password")
+        assertWifiRejected("DIRECT-\u0000AB", "password")
+    }
+
+    private fun assertWifiAccepted(ssid: String, wifiPassword: String) {
+        val expected = direct.copy(ssid = ssid, wifiPassword = wifiPassword)
+        assertEquals(expected, PairingPayload.parse(expected.encode()))
+        assertEquals(expected, PairingPayload.parse(rawWifiPairing(ssid, wifiPassword)))
+    }
+
+    private fun assertWifiRejected(ssid: String, wifiPassword: String) {
+        assertThrows(IllegalArgumentException::class.java) {
+            direct.copy(ssid = ssid, wifiPassword = wifiPassword).encode()
+        }
+        // Build a scanned payload independently: an invalid encoder must not
+        // prevent this test from reaching the parser's validation boundary.
+        assertNull(PairingPayload.parse(rawWifiPairing(ssid, wifiPassword)))
+    }
+
+    private fun rawWifiPairing(ssid: String, wifiPassword: String): String =
+        "datanetshare://pair/v1?h=192.168.49.1&p=8282&pw=$password" +
+            "&s=" + URLEncoder.encode(ssid, "UTF-8") +
+            "&w=" + URLEncoder.encode(wifiPassword, "UTF-8")
 }
