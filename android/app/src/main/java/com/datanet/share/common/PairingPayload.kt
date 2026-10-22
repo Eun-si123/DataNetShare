@@ -33,12 +33,14 @@ data class PairingPayload(
         }
     }
 
+    // QR must not accept Wi-Fi values that PeerWifiConnector.request will reject.
     private fun isValid(): Boolean =
         Endpoint.isIpv4(host) && port in 1..65535 &&
             ProxyPasswordPolicy.valid(password) &&
             ((ssid.isEmpty() && wifiPassword.isEmpty()) ||
-                (ssid.length in 1..64 && wifiPassword.length in 8..63 &&
-                    ssid.none { Character.isISOControl(it) } && wifiPassword.none { Character.isISOControl(it) }))
+                (ssid.toByteArray(Charsets.UTF_8).size in 1..32 &&
+                    ssid.none { Character.isISOControl(it) } &&
+                    wifiPassword.length in 8..63 && wifiPassword.all { it.code in 32..126 }))
 
     companion object {
         private const val PREFIX = "datanetshare://pair/v1?"
