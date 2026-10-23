@@ -124,12 +124,18 @@ class TcpFlow(
                     if (segment.flags and 2 != 0) established = true
                     if (segment.flags and 1 != 0) finAcknowledged = true
                 }
+                if (previousWireWindow == 0 && peerWindow > 0) {
+                    // Resume data RTOs from the window update, not the stale
+                    // pre-persist send time. Keep the already spent retry budget.
+                    val resumedAt = System.nanoTime()
+                    pending.forEach { if (it.payload.isNotEmpty()) it.sent = resumedAt }
+                }
                 // Fast-retransmit only once on the third true duplicate ACK
                 // for the oldest outstanding data segment. This avoids waiting
                 // for the 500ms RTO when Android has received later packets.
-                // Window updates, SYN/FIN ACKs and payload packets do not count.
+                // Window updates, persist replies, SYN/FIN ACKs and payload packets do not count.
                 val oldest = pending.firstOrNull()
-                val isDuplicate = established && ack == previousAck &&
+                val isDuplicate = established && peerWindow > 0 && ack == previousAck &&
                     packet.window == previousWireWindow && packet.payload.isEmpty() &&
                     packet.flags and 3 == 0 &&
                     oldest != null && oldest.payload.isNotEmpty()
@@ -256,7 +262,10 @@ class TcpFlow(
             return@synchronized
         }
         val oldest = pending.firstOrNull()
-        if (oldest != null && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
+        // A closed receive window is backpressure, not evidence of packet loss.
+        // Keep probing below without spending data retries; SYN/FIN still use RTOs.
+        val persistingData = established && peerWindow == 0 && oldest?.payload?.isNotEmpty() == true
+        if (oldest != null && !persistingData && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
             if (++oldest.attempts > 8) { onError("TCP peer did not acknowledge retransmissions"); abort(); return@synchronized }
             oldest.sent = now; onRetransmit(); emit(oldest)
         }
