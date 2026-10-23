@@ -59,6 +59,46 @@ class Socks5CallbackFailureIsolationTest {
         }
     }
 
+    @Test fun throwingUpstreamFailureReporterStillReturnsSocksError() {
+        // An optional UI callback must not replace the RFC 1928 failure reply
+        // with an unexpected EOF or break later authenticated requests.
+        val failures = AtomicInteger()
+        val upstream = object : Socks5Server.Upstream {
+            override fun connect(host: String, port: Int): Socket =
+                throw IOException("simulated upstream connection failure")
+            override fun resolve(host: String): Array<InetAddress> = throw IOException("unused")
+            override fun datagram(): DatagramSocket = throw IOException("unused")
+        }
+        val proxy = Socks5Server(
+            "127.0.0.1", 0, "test-pass", upstream,
+            onUpstreamFailure = {
+                failures.incrementAndGet()
+                throw IllegalStateException("simulated upstream UI failure")
+            }
+        )
+        proxy.start()
+        try {
+            repeat(2) {
+                Socket("127.0.0.1", proxy.boundPort).use { client ->
+                    client.soTimeout = 3000
+                    val input = DataInputStream(client.getInputStream())
+                    val output = client.getOutputStream()
+                    Socks5.authenticateClient(input, output, "test-pass")
+                    try {
+                        Socks5.request(input, output, 1, Socks5.Address("example.test", 443))
+                        fail("failed upstream must not report success")
+                    } catch (e: IOException) {
+                        assertTrue("client must receive SOCKS error 5, not EOF",
+                            e.message.orEmpty().contains("SOCKS error 5"))
+                    }
+                }
+            }
+            assertEquals("each failed request must report once", 2, failures.get())
+        } finally {
+            proxy.stop()
+        }
+    }
+
     private fun verifyCallbackFailure(failure: Exception) {
         // Reporting a rejected client is optional telemetry. It must not
         // strand the rejected socket or disable the authenticated listener.
