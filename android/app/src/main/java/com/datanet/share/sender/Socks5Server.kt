@@ -91,7 +91,16 @@ class Socks5Server(
                 while (running && listener === server) {
                     val client = server.accept()
                     if (!running || listener !== server) { client.close(); continue }
-                    if (!permits.tryAcquire()) { onClientLimit(); client.close(); continue }
+                    if (!permits.tryAcquire()) {
+                        try {
+                            onClientLimit()
+                        } catch (_: RuntimeException) {
+                            // A nonessential reporting failure must not kill the accept loop.
+                        } finally {
+                            try { client.close() } catch (_: IOException) {}
+                        }
+                        continue
+                    }
                     clients.add(client); sockets.add(client)
                     Thread({
                         var peer: PeerUsageLedger.Entry? = null
