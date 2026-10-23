@@ -2,11 +2,9 @@ name: Publish Android preview APK
 
 # A one-time, source-bound prerelease. Future previews require a deliberate dispatch
 # or a new workflow revision. Never treat a debug APK as a stable signed release.
+# Only explicit maintainer dispatch can attempt an immutable release. A workflow
+# edit alone must not publish or waste Android build minutes on an existing tag.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/publish-preview.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,9 +16,22 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
+    environment: android-preview
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
+      - name: Refuse duplicate immutable preview before expensive builds
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v5.1-dev.21"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Prepare a new version, then explicitly dispatch a new preview."
+            exit 1
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
