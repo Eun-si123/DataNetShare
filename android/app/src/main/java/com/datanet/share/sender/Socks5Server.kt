@@ -127,7 +127,16 @@ class Socks5Server(
             if (input.readUnsignedByte() != 5) throw IOException("Invalid SOCKS request")
             val command = input.readUnsignedByte()
             if (input.readUnsignedByte() != 0) throw IOException("Invalid SOCKS reserved byte")
-            val address = Socks5.readAddress(input)
+            val addressType = input.readUnsignedByte()
+            if (addressType != 1 && addressType != 3 && addressType != 4) {
+                Socks5.reply(output, 8) // RFC 1928: address type not supported
+                return
+            }
+            val address = try { Socks5.readAddress(input, addressType) }
+            catch (_: IOException) {
+                Socks5.reply(output, 1) // Malformed address: general SOCKS failure
+                return
+            }
             when (command) {
                 1 -> {
                     val remote = try { upstream.connect(address.host, address.port) }
