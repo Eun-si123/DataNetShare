@@ -1,0 +1,47 @@
+name: JVM protocol portability (free hosted runners)
+
+# Cross-platform loopback checks for shared Kotlin protocol code.
+# Public-repo STANDARD hosted runners only: no self-hosted execution, secrets,
+# paid larger runners, APK publishing, or retained artifacts.
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly baseline away from the top-of-hour GitHub Actions queue spike.
+    - cron: '17 3 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'proxy-tests/**'
+      - 'android/app/src/main/java/**'
+      - '.github/workflows/jvm-portability.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jvm-portability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol:
+    name: Kotlin loopback (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # pinned
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # pinned
+        with:
+          gradle-version: '8.5'
+          # Main Android CI owns the shared Gradle cache; don't grow storage
+          # for periodic OS portability testing.
+          cache-read-only: true
+      - name: Run real loopback protocol tests
+        run: gradle -p proxy-tests test --no-daemon --stacktrace
