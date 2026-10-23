@@ -281,7 +281,16 @@ class Socks5Server(
                         val target = data.address
                         val remote = remoteSockets[target] ?: createRemote(target) ?: continue
                         lastActivity.set(System.nanoTime())
-                        remote.send(DatagramPacket(data.payload, data.payload.size))
+                        try {
+                            remote.send(DatagramPacket(data.payload, data.payload.size))
+                        } catch (_: IOException) {
+                            // A failed send may mean the bound network disappeared. Retire
+                            // this socket so a *later* packet can select a usable network.
+                            // Never replay this datagram: the remote may have received it.
+                            remoteSockets.remove(target, remote)
+                            remote.close() // also wakes the receive worker to release its permit
+                            continue
+                        }
                         rx.addAndGet(data.payload.size.toLong())
                         peer?.received(data.payload.size)
                     } catch (_: SocketTimeoutException) { continue }
