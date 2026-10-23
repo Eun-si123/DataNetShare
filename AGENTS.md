@@ -8,6 +8,9 @@
 
 **Agent discovery, overlap preflight, independent PR checklist and inspection receipts:** see `docs/AGENT_OPERATIONS.md` (supplementary to this file; no autonomous coding service).
 
+**Optional independent cold-start recovery test:** `docs/SESSION_RECOVERY_DRILL.md` (manual assessment; not a required step for ordinary coding or a background agent).
+
+
 
 This is a **public, actively maintained Android networking fork**, not the archived upstream project. The maintained implementation is under `android/`; `datnet-share-v5-final.zip` is historical provenance and **must not** be used as a build source or a source of current claims.
 
