@@ -88,4 +88,75 @@ class UdpNetworkAffinityTest {
             } finally { proxy.stop() }
         }
     }
+
+    @Test fun repeatedPreSendFailuresReleaseGlobalUdpCapacity() {
+        // The sender has 128 global upstream UDP permits. A failed setup must
+        // release its permit even if the same authenticated association retries.
+        DatagramSocket(InetSocketAddress("127.0.0.1", 0)).use { echo ->
+            Thread({
+                try {
+                    while (!echo.isClosed) {
+                        val packet = DatagramPacket(ByteArray(256), 256)
+                        echo.receive(packet)
+                        echo.send(packet)
+                    }
+                } catch (_: IOException) { }
+            }, "test-udp-permit-echo").apply { isDaemon = true; start() }
+
+            val attempts = AtomicInteger()
+            val upstream = object : Socks5Server.Upstream {
+                override fun connect(host: String, port: Int): Socket = throw IOException("unused")
+                override fun resolve(host: String): Array<InetAddress> =
+                    throw AssertionError("UDP must not resolve separately")
+                override fun datagram(): DatagramSocket =
+                    throw AssertionError("UDP must not bind separately")
+                override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
+                    assertEquals("echo.test", host)
+                    assertEquals(echo.localPort, port)
+                    if (attempts.incrementAndGet() <= 130) {
+                        throw IOException("simulated DNS/bind setup failure before send")
+                    }
+                    val destination = InetSocketAddress("127.0.0.1", port)
+                    val socket = DatagramSocket()
+                    socket.connect(destination)
+                    return Socks5Server.UdpConnection(socket, destination)
+                }
+            }
+            val proxy = Socks5Server("127.0.0.1", 0, "test-pass", upstream)
+            proxy.start()
+            try {
+                Socket("127.0.0.1", proxy.boundPort).use { control ->
+                    control.soTimeout = 3000
+                    val input = DataInputStream(control.getInputStream())
+                    Socks5.authenticateClient(input, control.getOutputStream(), "test-pass")
+                    val relay = Socks5.request(input, control.getOutputStream(), 3,
+                        Socks5.Address("0.0.0.0", 0))
+                    DatagramSocket().use { client ->
+                        client.soTimeout = 3000
+                        fun send(value: Byte) {
+                            val frame = Socks5.encodeDatagram(
+                                Socks5.Address("echo.test", echo.localPort), byteArrayOf(value))
+                            client.send(DatagramPacket(frame, frame.size,
+                                InetSocketAddress(relay.host, relay.port)))
+                        }
+                        repeat(130) { index ->
+                            send(1)
+                            val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3)
+                            while (attempts.get() < index + 1 && System.nanoTime() < deadline) {
+                                Thread.sleep(2)
+                            }
+                            assertEquals("pre-send failure must remain retryable", index + 1, attempts.get())
+                        }
+                        send(42)
+                        val reply = DatagramPacket(ByteArray(256), 256)
+                        client.receive(reply)
+                        assertArrayEquals(byteArrayOf(42),
+                            Socks5.decodeDatagram(reply.data.copyOf(reply.length))!!.payload)
+                        assertEquals("130 failed setups must not exhaust 128 permits", 131, attempts.get())
+                    }
+                }
+            } finally { proxy.stop() }
+        }
+    }
+
 }
