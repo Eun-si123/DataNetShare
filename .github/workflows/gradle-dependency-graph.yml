@@ -52,6 +52,8 @@ jobs:
         uses: gradle/actions/dependency-submission@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # pinned v4
         with:
           gradle-version: '8.5'
+          # Reuse main CI's Gradle cache; analysis must not crowd out hot entries.
+          cache-read-only: true
           build-root-directory: ${{ matrix.project }}
           dependency-graph: generate-and-submit
           dependency-graph-continue-on-failure: false
