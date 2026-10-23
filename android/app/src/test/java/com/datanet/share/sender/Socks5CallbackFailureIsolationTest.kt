@@ -12,7 +12,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class Socks5CallbackFailureIsolationTest {
-    @Test fun throwingClientLimitReporterCannotDisableAcceptLoop() {
+    @Test fun throwingRuntimeClientLimitReporterCannotDisableAcceptLoop() =
+        verifyCallbackFailure(IllegalStateException("simulated runtime metrics failure"))
+
+    @Test fun throwingIoClientLimitReporterCannotDisableAcceptLoop() =
+        verifyCallbackFailure(IOException("simulated IO metrics failure"))
+
+    private fun verifyCallbackFailure(failure: Exception) {
         // Reporting a rejected client is optional telemetry. It must not
         // strand the rejected socket or disable the authenticated listener.
         val reports = AtomicInteger()
@@ -25,7 +31,7 @@ class Socks5CallbackFailureIsolationTest {
             "127.0.0.1", 0, "test-pass", upstream,
             onClientLimit = {
                 reports.incrementAndGet()
-                throw IllegalStateException("simulated metrics callback failure")
+                throw failure
             },
             maxClients = 1
         )
