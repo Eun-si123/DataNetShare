@@ -138,13 +138,21 @@ class Socks5Server(
     }
 
     private fun publishStats() {
-        onStats(clients.size, rx.get(), tx.get())
+        // Reporting is optional: a UI/telemetry callback failure must not
+        // terminate the periodic stats worker or an active client worker.
+        try {
+            onStats(clients.size, rx.get(), tx.get())
+        } catch (_: Exception) {}
         // Socket closes can arrive in huge bursts during speed tests.
         // UI peer snapshots are no more frequent than once per second.
         val now = System.nanoTime()
         val previous = lastPeersSent.get()
         if (now - previous > 1_000_000_000L &&
-            lastPeersSent.compareAndSet(previous, now)) onPeers(usage.snapshot())
+            lastPeersSent.compareAndSet(previous, now)) {
+            try {
+                onPeers(usage.snapshot())
+            } catch (_: Exception) {}
+        }
     }
 
     @Synchronized fun stop() {
