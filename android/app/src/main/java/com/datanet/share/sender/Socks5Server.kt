@@ -197,11 +197,15 @@ class Socks5Server(
                             else -> 5 // connection refused/unavailable
                         }
                         // Do not expose destination names, IPs or session secrets in UI state.
-                        onUpstreamFailure(when (replyCode) {
-                            3 -> "Mobile data unavailable; enable data or select Android default route"
-                            4 -> "DNS/remote host unreachable on selected upstream network"
-                            else -> "Remote TCP connect failed (${e.javaClass.simpleName})"
-                        })
+                        try {
+                            onUpstreamFailure(when (replyCode) {
+                                3 -> "Mobile data unavailable; enable data or select Android default route"
+                                4 -> "DNS/remote host unreachable on selected upstream network"
+                                else -> "Remote TCP connect failed (${e.javaClass.simpleName})"
+                            })
+                        } catch (_: Exception) {
+                            // Optional reporting must not suppress the SOCKS error reply.
+                        }
                         Socks5.reply(output, replyCode)
                         return
                     }
