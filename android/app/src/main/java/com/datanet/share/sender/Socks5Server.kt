@@ -37,10 +37,30 @@ class Socks5Server(
         require(socketPollMillis in 100..10_000) { "Invalid socket polling interval" }
     }
 
+    data class UdpConnection(val socket: DatagramSocket, val destination: InetSocketAddress)
+
     interface Upstream {
         fun connect(host: String, port: Int): Socket
         fun resolve(host: String): Array<InetAddress>
         fun datagram(): DatagramSocket
+
+        /** Resolve and prepare the UDP socket as one operation.
+         * Android overrides this to keep DNS and socket binding on the same Network.
+         * This only retries before the first payload is sent.
+         */
+        fun openUdp(host: String, port: Int): UdpConnection {
+            if (port !in 1..65535) throw IOException("Invalid UDP destination port")
+            val address = resolve(host).firstOrNull() ?: throw IOException("No UDP destination address")
+            val destination = InetSocketAddress(address, port)
+            val socket = datagram()
+            try {
+                socket.connect(destination)
+                return UdpConnection(socket, destination)
+            } catch (e: Exception) {
+                socket.close()
+                throw e
+            }
+        }
     }
     private val permits = Semaphore(maxClients)
     private val datagramPermits = Semaphore(128)
@@ -234,7 +254,7 @@ class Socks5Server(
     private inner class UdpAssociate(private val client: Socket,
                                      private val peer: PeerUsageLedger.Entry?) {
         private val relay = DatagramSocket(InetSocketAddress(client.localAddress, 0))
-        private val remoteSockets = ConcurrentHashMap<InetSocketAddress, DatagramSocket>()
+        private val remoteSockets = ConcurrentHashMap<Socks5.Address, DatagramSocket>()
         @Volatile var closed = false
         @Volatile private var clientEndpoint: InetSocketAddress? = null
         val port: Int get() = relay.localPort
@@ -256,10 +276,10 @@ class Socks5Server(
                         val data = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                         if (data.address.port == 0 || data.payload.size > 65_507) continue
                         if (pinned == null) clientEndpoint = source
-                        // An empty DNS answer must not terminate the UDP relay worker.
-                        val address = upstream.resolve(data.address.host).firstOrNull() ?: continue
-                        val destination = InetSocketAddress(address, data.address.port)
-                        val remote = remoteSockets[destination] ?: createRemote(destination) ?: continue
+                        // Keep the original host/port as the association key; resolution and
+                        // socket binding happen together when a destination is first opened.
+                        val target = data.address
+                        val remote = remoteSockets[target] ?: createRemote(target) ?: continue
                         lastActivity.set(System.nanoTime())
                         remote.send(DatagramPacket(data.payload, data.payload.size))
                         rx.addAndGet(data.payload.size.toLong())
@@ -270,16 +290,18 @@ class Socks5Server(
             }, "socks-udp-relay").apply { isDaemon = true; start() }
         }
 
-        private fun createRemote(destination: InetSocketAddress): DatagramSocket? {
+        private fun createRemote(target: Socks5.Address): DatagramSocket? {
             // One endpoint per socket prevents unsolicited remote responses; per-association cap bounds FDs.
             if (remoteSockets.size >= 32 || closed || !running || !datagramPermits.tryAcquire()) return null
             var allocated: DatagramSocket? = null
             try {
-                val socket = upstream.datagram(); allocated = socket
-                socket.connect(destination); socket.soTimeout = 1000
+                val connection = upstream.openUdp(target.host, target.port)
+                val socket = connection.socket; allocated = socket
+                val destination = connection.destination
+                socket.soTimeout = 1000
                 synchronized(this) {
                     if (closed || !running) { socket.close(); datagramPermits.release(); return null }
-                    remoteSockets[destination] = socket
+                    remoteSockets[target] = socket
                 }
                 Thread({
                     val buffer = ByteArray(65535)
@@ -297,7 +319,7 @@ class Socks5Server(
                             lastActivity.set(System.nanoTime())
                         }
                     } catch (_: IOException) { /* close() unblocks receive */ }
-                    finally { remoteSockets.remove(destination, socket); socket.close(); datagramPermits.release() }
+                    finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
                 }, "socks-udp-upstream").apply { isDaemon = true; start() }
                 return socket
             } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
