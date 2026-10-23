@@ -27,6 +27,7 @@ class UdpNetworkAffinityTest {
                 } catch (_: IOException) { }
             }, "test-udp-affinity-echo").apply { isDaemon = true; start() }
             val opened = AtomicInteger()
+            val echoAttempts = AtomicInteger()
             val upstream = object : Socks5Server.Upstream {
                 override fun connect(host: String, port: Int): Socket = throw IOException("unused")
                 override fun resolve(host: String): Array<InetAddress> =
@@ -37,6 +38,8 @@ class UdpNetworkAffinityTest {
                     opened.incrementAndGet()
                     if (host == "setup-fails.test") throw IOException("simulated pre-send binding failure")
                     assertEquals("echo.test", host)
+                    // A failed setup for the *same* destination must not be cached.
+                    if (echoAttempts.incrementAndGet() == 1) throw IOException("simulated first echo setup failure")
                     assertEquals(echo.localPort, port)
                     val destination = InetSocketAddress("127.0.0.1", port)
                     return DatagramSocket().let { socket ->
@@ -63,7 +66,9 @@ class UdpNetworkAffinityTest {
                                 InetSocketAddress(relay.host, relay.port)))
                         }
                         send("setup-fails.test", 99)
-                        // The failed pre-send setup must not poison this UDP association.
+                        // Both a different destination and the same destination must be
+                        // retryable after a pre-send failure, without duplicating payloads.
+                        send("echo.test", 98) // first setup fails; this payload is never sent
                         send("echo.test", 1)
                         fun receive(expected: Int) {
                             val packet = DatagramPacket(ByteArray(256), 256)
@@ -78,7 +83,7 @@ class UdpNetworkAffinityTest {
                         receive(2)
                     }
                 }
-                assertEquals("one failed setup, one successful socket", 2, opened.get())
+                assertEquals("two failed setups, one successful socket", 3, opened.get())
                 assertEquals("each payload is sent exactly once", 2, received.get())
             } finally { proxy.stop() }
         }
