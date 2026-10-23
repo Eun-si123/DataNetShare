@@ -15,4 +15,18 @@ internal object MaintenanceCallbackGuard {
             // Best-effort reporting only; keep the maintenance loop alive.
         }
     }
+
+    /**
+     * A broken TCP maintenance tick is not optional telemetry. Report it once
+     * and stop the maintenance loop rather than leaving a live but stalled VPN.
+     * The caller owns service teardown; no exception details are exposed.
+     */
+    inline fun runCriticalTick(tick: () -> Unit, onFailure: () -> Unit): Boolean =
+        try {
+            tick()
+            true
+        } catch (_: Exception) {
+            onFailure()
+            false
+        }
 }
