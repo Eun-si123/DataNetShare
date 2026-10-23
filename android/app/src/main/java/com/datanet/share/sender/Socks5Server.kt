@@ -94,7 +94,7 @@ class Socks5Server(
                     if (!permits.tryAcquire()) {
                         try {
                             onClientLimit()
-                        } catch (_: RuntimeException) {
+                        } catch (_: Exception) {
                             // A nonessential reporting failure must not kill the accept loop.
                         } finally {
                             try { client.close() } catch (_: IOException) {}
