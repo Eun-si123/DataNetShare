@@ -1,0 +1,22 @@
+{
+  "name": "DataNetShare — JVM protocol development (GitHub Free)",
+  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installGradle": true,
+      "gradleVersion": "8.5"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "fwcd.kotlin"
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "java -version && gradle --version",
+  "waitFor": "postCreateCommand"
+}
