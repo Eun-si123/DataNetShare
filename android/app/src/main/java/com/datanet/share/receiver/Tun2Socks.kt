@@ -75,7 +75,15 @@ class Tun2Socks(
         Thread({
             while (running) {
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
-                tcp.values.forEach { it.tick() }
+                if (!MaintenanceCallbackGuard.runCriticalTick(
+                        tick = { tcp.values.forEach { it.tick() } },
+                        onFailure = {
+                            if (running) {
+                                running = false
+                                onFailure("VPN TCP maintenance stopped unexpectedly. Reconnect to resume.")
+                            }
+                        }
+                    )) break
                 if (running) {
                     MaintenanceCallbackGuard.run {
                         onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
