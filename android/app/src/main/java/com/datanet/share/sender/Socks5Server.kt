@@ -72,7 +72,7 @@ class Socks5Server(
     private val usage = PeerUsageLedger()
     private val lastPeersSent = AtomicLong(0)
     @Volatile private var running = false
-    private var listener: ServerSocket? = null
+    @Volatile private var listener: ServerSocket? = null
     val boundPort: Int get() = listener?.localPort ?: 0
     val clientCount: Int get() = clients.size
     /** Read-only session snapshot; client IPs are local UI data, not diagnostics. */
@@ -88,15 +88,15 @@ class Socks5Server(
         listener = server; running = true
         Thread({
             try {
-                while (running) {
+                while (running && listener === server) {
                     val client = server.accept()
-                    if (!running) { client.close(); continue }
+                    if (!running || listener !== server) { client.close(); continue }
                     if (!permits.tryAcquire()) { onClientLimit(); client.close(); continue }
                     clients.add(client); sockets.add(client)
                     Thread({
                         var peer: PeerUsageLedger.Entry? = null
                         try {
-                            if (running) handleClient(client) {
+                            if (running && listener === server) handleClient(client) {
                                 usage.open(client.inetAddress.hostAddress).also { peer = it }
                             }
                         } finally {
@@ -106,12 +106,24 @@ class Socks5Server(
                         }
                     }, "socks-client").apply { isDaemon = true; start() }
                 }
-            } catch (e: IOException) { if (running) { stop(); onFailure("Proxy listener stopped: ${e.message}") } }
+            } catch (e: IOException) {
+                // A previous accept thread can outlive Stop and a quick restart.
+                // Check listener identity *under the same lock* as Stop/Start so
+                // an old closed ServerSocket cannot tear down the new session.
+                var failedCurrentSession = false
+                synchronized(this@Socks5Server) {
+                    if (running && listener === server) {
+                        stop()
+                        failedCurrentSession = true
+                    }
+                }
+                if (failedCurrentSession) onFailure("Proxy listener stopped: ${e.message}")
+            }
         }, "socks-accept").apply { isDaemon = true; start() }
         Thread({
-            while (running) {
+            while (running && listener === server) {
                 try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                if (running) publishStats()
+                if (running && listener === server) publishStats()
             }
         }, "socks-stats").apply { isDaemon = true; start() }
     }
