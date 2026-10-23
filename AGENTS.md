@@ -20,7 +20,8 @@ This is a **public, actively maintained Android networking fork**, not the archi
 
 | Task | Canonical place to inspect |
 | --- | --- |
-| Project purpose, current user-facing preview, setup | `README.md`; Korean guide `docs/README.ko.md` |
+| Current user-facing preview and setup | `README.md`; Korean guide `docs/README.ko.md` |
+| Product purpose and open-ended design/feature exploration | `docs/PRODUCT_DIRECTION.md` (only when choosing or rethinking direction) |
 | Code navigation / test ownership | `docs/CODEMAP.md`; then actual Kotlin source and tests |
 | Architecture / trust boundaries | `docs/ARCHITECTURE.md` and **current implementation** |
 | Security, credentials, privacy | `docs/SECURITY-REVIEW.md`, manifest, current source |
