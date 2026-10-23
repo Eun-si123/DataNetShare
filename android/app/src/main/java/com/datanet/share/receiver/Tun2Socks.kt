@@ -77,18 +77,22 @@ class Tun2Socks(
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
                 tcp.values.forEach { it.tick() }
                 if (running) {
-                    onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
-                        tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
-                        udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
-                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
-                        idleTcpReclaimed.get(), udpQueueOverflows.get(),
-                        windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get(),
-                        oversizedUdpReplies.get()))
+                    MaintenanceCallbackGuard.run {
+                        onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
+                            tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
+                            udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
+                            tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
+                            idleTcpReclaimed.get(), udpQueueOverflows.get(),
+                            windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get(),
+                            oversizedUdpReplies.get()))
+                    }
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
                     if ((dropped == 1L || batch > 0) && batch != reportedDropBatch.getAndSet(batch)) {
-                        onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                        MaintenanceCallbackGuard.run {
+                            onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                        }
                     }
                 }
             }
@@ -162,7 +166,7 @@ class Tun2Socks(
                     lateinit var created: TcpFlow
                     created = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                         { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, created) },
-                        onError = onTcpError,
+                        onError = { message -> MaintenanceCallbackGuard.run { onTcpError(message) } },
                         onConnected = {
                             tcpConnected.incrementAndGet()
                             if (packet.offeredWindowScale() != null) windowScaledFlows.incrementAndGet()
