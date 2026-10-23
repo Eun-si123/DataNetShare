@@ -27,19 +27,44 @@ object Socks5 {
                 if (size == 0) throw IOException("Empty SOCKS hostname")
                 val bytes = ByteArray(size).also(input::readFully)
                 if (bytes.any { (it.toInt() and 255) !in 33..126 }) throw IOException("Invalid SOCKS hostname")
-                String(bytes, Charsets.US_ASCII)
+                String(bytes, Charsets.US_ASCII).also { host ->
+                    if (ambiguousNumericHost(host)) throw IOException("Ambiguous numeric SOCKS hostname")
+                }
             }
             else -> throw IOException("Unsupported SOCKS address type: $type")
         }
         return Address(host, input.readUnsignedShort())
     }
 
+    /** Parse only canonical dotted-decimal IPv4; never use platform DNS for numeric-looking names. */
+    private fun canonicalIpv4Literal(host: String): ByteArray? {
+        val parts = host.split('.')
+        if (parts.size != 4) return null
+        val octets = ByteArray(4)
+        for (i in parts.indices) {
+            val part = parts[i]
+            if (part.isEmpty() || part.length > 3 || (part.length > 1 && part[0] == '0') ||
+                !part.all { it in '0'..'9' }) return null
+            val value = part.toIntOrNull() ?: return null
+            if (value !in 0..255) return null
+            octets[i] = value.toByte()
+        }
+        return octets
+    }
+
+    /** Reject ambiguous all-digit/dot destinations before the sender's resolver can reinterpret them. */
+    private fun ambiguousNumericHost(host: String): Boolean =
+        host.isNotEmpty() && host.all { it in '0'..'9' || it == '.' } &&
+            canonicalIpv4Literal(host) == null
+
     fun writeAddress(output: OutputStream, address: Address) {
         require(address.port in 0..65535)
-        // Only numeric addresses are resolved here; names must be resolved by the selected network.
-        val literal = if (address.host.contains(':') || address.host.matches(Regex("[0-9.]+"))) {
+        require(!ambiguousNumericHost(address.host)) { "Ambiguous numeric SOCKS hostname" }
+        // Resolve IPv6 literals locally; canonical IPv4 needs no DNS.
+        // Domain names are resolved by the sender's selected upstream network.
+        val literal = if (address.host.contains(':')) {
             try { InetAddress.getByName(address.host).address } catch (_: Exception) { null }
-        } else null
+        } else canonicalIpv4Literal(address.host)
         if (literal != null) {
             output.write(if (literal.size == 4) 1 else 4)
             output.write(literal)
