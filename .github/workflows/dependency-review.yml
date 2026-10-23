@@ -1,0 +1,34 @@
+name: Dependency regression gate
+
+# Public repository: GitHub Dependency Review is available without a paid
+# Advanced Security license. It checks the PR's dependency changes, not all
+# pre-existing vulnerable libraries.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: datanetshare-dependency-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Block new high/critical dependency risks
+    # workflow_dispatch is a dry security-policy smoke check on main; the
+    # dependency-review API needs a PR comparison and must not run without one.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout proposed changes
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Compare added dependencies against GitHub advisories
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
