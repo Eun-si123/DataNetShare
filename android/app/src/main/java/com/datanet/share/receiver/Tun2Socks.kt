@@ -164,7 +164,7 @@ class Tun2Socks(
                     }
                 }
                 if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
-                    onTcpError("Receiver TCP capacity reached (active ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
+                    MaintenanceCallbackGuard.run { onTcpError("Receiver TCP capacity reached (active ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})") }
                     return
                 }
             }
@@ -205,7 +205,7 @@ class Tun2Socks(
                     flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS)) flow.close()
             }
             if (!TcpCapacityPolicy.allowUdp(tcp.size, udp.size)) {
-                onUdpError("Receiver UDP capacity reached (TCP ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
+                MaintenanceCallbackGuard.run { onUdpError("Receiver UDP capacity reached (TCP ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})") }
                 return
             }
         }
@@ -217,7 +217,7 @@ class Tun2Socks(
                     { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, created) },
                     onError = { message ->
                         if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
-                        onUdpError(message)
+                        MaintenanceCallbackGuard.run { onUdpError(message) }
                     },
                     onConnected = { udpConnected.incrementAndGet() },
                     onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
