@@ -1,4 +1,11 @@
 # DataNet Share agent instructions
+
+## Owner-authorized PR merges (verified GitHub rules, 2026-10-23)
+
+- The repository owner `Eun-si123` (GitHub user ID `267835237`) is a configured `User` bypass actor, mode `pull_request`, on the **Protect main - verified agent PRs** ruleset (ID `25495103`). When the owner explicitly asks to merge an existing PR, do not repeatedly demand another approval or refuse solely because a generic `BLOCKED` / `REVIEW_REQUIRED` indicator is shown. Inspect the live rules and attempt the authorized normal GitHub merge when checks are satisfied.
+- Preserve the required `inspect` CI check and all relevant Android, CodeQL and dependency-review checks: bypass capability is **not** a reason to skip validation, silently dismiss security alerts, rewrite protected history, bypass product safety boundaries or force-push. Confirm the exact PR head SHA and its real mergeability; let the GitHub API enforce any non-bypass restrictions and report actual errors.
+- Owner-directed merging does **not** authorize new GitHub Pages websites, external APK publishing, releases, private-data publication or unrelated side effects. Record the outcome; do not re-ask questions the owner has already answered. Rulesets can change, so verify their current state before relying on this note.
+
 **Agent discovery, overlap preflight, independent PR checklist and inspection receipts:** see `docs/AGENT_OPERATIONS.md` (supplementary to this file; no autonomous coding service).
 
 
@@ -13,7 +20,8 @@ This is a **public, actively maintained Android networking fork**, not the archi
 
 | Task | Canonical place to inspect |
 | --- | --- |
-| Project purpose, current user-facing preview, setup | `README.md`; Korean guide `docs/README.ko.md` |
+| Current user-facing preview and setup | `README.md`; Korean guide `docs/README.ko.md` |
+| Product purpose and open-ended design/feature exploration | `docs/PRODUCT_DIRECTION.md` (only when choosing or rethinking direction) |
 | Code navigation / test ownership | `docs/CODEMAP.md`; then actual Kotlin source and tests |
 | Architecture / trust boundaries | `docs/ARCHITECTURE.md` and **current implementation** |
 | Security, credentials, privacy | `docs/SECURITY-REVIEW.md`, manifest, current source |

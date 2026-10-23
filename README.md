@@ -1,6 +1,6 @@
 # DataNet Share · maintained fork
 
-[한국어 사용 안내](docs/README.ko.md) · [Build](android/README.md) · [Tests and device checklist](docs/TESTING.md) · [Security and privacy](docs/SECURITY-REVIEW.md)
+[한국어 사용 안내](docs/README.ko.md) · [Project direction](docs/PRODUCT_DIRECTION.md) · [Build](android/README.md) · [Tests and device checklist](docs/TESTING.md) · [Security and privacy](docs/SECURITY-REVIEW.md)
 
 Share an Android phone’s connection through an **authenticated SOCKS5 proxy**, over Wi-Fi Direct, USB tethering, or a private Wi-Fi network. The same app also includes an **experimental Android IPv4 VPN receiver**.
 

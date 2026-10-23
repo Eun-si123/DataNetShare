@@ -55,4 +55,48 @@ class Socks5HostnameTest {
             }
         }
     }
+
+    @Test fun canonicalIpv4UsesBinaryTypeWithoutNameResolution() {
+        for (host in listOf("0.0.0.0", "192.0.2.1", "255.255.255.255")) {
+            val output = ByteArrayOutputStream()
+            Socks5.writeAddress(output, Socks5.Address(host, 443))
+            assertEquals(1, output.toByteArray()[0].toInt() and 255)
+            val decoded = Socks5.readAddress(DataInputStream(ByteArrayInputStream(output.toByteArray())))
+            assertEquals(host, decoded.host)
+            assertEquals(443, decoded.port)
+        }
+    }
+
+    @Test fun ambiguousNumericHostsFailBeforeWritingAnyBytes() {
+        for (host in listOf("1.2.3", "127.1", "2130706433", "01.2.3.4", "1.2.3.999",
+            "...", "1.2.3.4.", "1.2.3.04", "999.0.0.0", "123", ".", "0", "001.2.3.4")) {
+            val output = ByteArrayOutputStream()
+            assertThrows(IllegalArgumentException::class.java) {
+                Socks5.writeAddress(output, Socks5.Address(host, 443))
+            }
+            assertEquals(0, output.size())
+        }
+    }
+
+    @Test fun senderRejectsAmbiguousNumericDomainFromOtherSocksClients() {
+        for (host in listOf("1.2.3", "127.1", "2130706433", "01.2.3.4", "1.2.3.999",
+            "0", "001.2.3.4")) {
+            val addressFrame = byteArrayOf(3, host.length.toByte()) +
+                host.toByteArray(Charsets.US_ASCII) + byteArrayOf(1, 0xbb.toByte())
+            assertThrows(IOException::class.java) {
+                Socks5.readAddress(DataInputStream(ByteArrayInputStream(addressFrame)))
+            }
+            assertNull(Socks5.decodeDatagram(byteArrayOf(0, 0, 0) + addressFrame))
+        }
+    }
+
+    @Test fun numericDnsLabelsWithAlphabeticSuffixStillRoundTrip() {
+        for (host in listOf("123.example", "1.2.3.example")) {
+            val output = ByteArrayOutputStream()
+            Socks5.writeAddress(output, Socks5.Address(host, 443))
+            assertEquals(3, output.toByteArray()[0].toInt() and 255)
+            assertEquals(host, Socks5.readAddress(
+                DataInputStream(ByteArrayInputStream(output.toByteArray()))).host)
+        }
+    }
 }
