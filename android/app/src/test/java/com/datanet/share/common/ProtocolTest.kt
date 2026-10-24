@@ -33,6 +33,28 @@ class ProtocolTest {
         tcp[32] = 0x10; assertNull(Ipv4Packet.parse(tcp))
         ByteBuffer.wrap(bytes).putShort(24, 7); assertNull(Ipv4Packet.parse(bytes))
     }
+    @Test fun ipv4ParserRejectsEveryTruncatedFrameAndFragmentOffset() {
+        val key = FlowKey(0x0a000001, 1234, 0x01010101, 53)
+        val frames = listOf(
+            IpPackets.udp(key, byteArrayOf(7, 8, 9)),
+            IpPackets.tcp(key, 1, 2, 0x18, 1024, byteArrayOf(7, 8, 9))
+        )
+        for (frame in frames) {
+            assertNotNull(Ipv4Packet.parse(frame))
+            for (count in 0 until frame.size) {
+                assertNull("truncated protocol=${frame[9]} count=$count", Ipv4Packet.parse(frame, count))
+            }
+            assertNull(Ipv4Packet.parse(frame, frame.size + 1))
+            // MF, nonzero offset without MF, and the largest fragment offset
+            // must never be interpreted as a complete TCP/UDP datagram.
+            for (fragmentBits in listOf(0x2000, 0x0001, 0x1fff, 0x3fff)) {
+                val fragment = frame.copyOf()
+                ByteBuffer.wrap(fragment).putShort(6, fragmentBits.toShort())
+                assertNull("fragment flags/offset=$fragmentBits", Ipv4Packet.parse(fragment))
+            }
+        }
+    }
+
     @Test fun receiverEndpointIsExplicitIpv4() {
         listOf("192.168.49.1", "10.0.0.2", "127.0.0.1").forEach { assertTrue(Endpoint.isIpv4(it)) }
         listOf("0.0.0.0", "256.1.1.1", "1.2.3", "1.2.3.4.5", "01.2.3.4", "localhost", "255.255.255.255").forEach { assertFalse(Endpoint.isIpv4(it)) }
