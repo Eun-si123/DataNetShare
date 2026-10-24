@@ -65,4 +65,23 @@ class QrNetworkLossPolicyTest {
         }
     }
 
+    @Test fun lateUnavailableCannotOverwriteConnectedOrTerminalRequest() {
+        for (status in listOf(
+            CallbackStatus.CONNECTED, CallbackStatus.LOST, CallbackStatus.UNAVAILABLE
+        )) {
+            assertFalse(QrNetworkLossPolicy.acceptsUnavailable(
+                status, CallbackStatus.LOST, CallbackStatus.UNAVAILABLE, CallbackStatus.CONNECTED))
+        }
+    }
+
+    @Test fun unavailableStillTerminatesPendingAndRetryableRequest() {
+        for (status in listOf(
+            CallbackStatus.REQUESTING, CallbackStatus.CHECKING_SENDER,
+            CallbackStatus.SENDER_UNREACHABLE
+        )) {
+            assertTrue(QrNetworkLossPolicy.acceptsUnavailable(
+                status, CallbackStatus.LOST, CallbackStatus.UNAVAILABLE, CallbackStatus.CONNECTED))
+        }
+    }
+
 }
