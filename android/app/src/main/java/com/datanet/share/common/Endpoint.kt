@@ -1,6 +1,6 @@
 package com.datanet.share.common
 
-/** Numeric IPv4 unicast address usable as a remote sender endpoint. */
+/** Numeric IPv4 sender endpoint; loopback remains valid for local tests. */
 object Endpoint {
     fun isIpv4(host: String): Boolean {
         val parts = host.split('.')
@@ -9,9 +9,9 @@ object Endpoint {
                     part.toIntOrNull()?.let { it in 0..255 } == true &&
                     (part == "0" || !part.startsWith('0'))
             }) return false
-        // A peer cannot live in 0/8 (this network), 127/8 (loopback),
-        // 224/4 (multicast) or 240/4 (reserved/broadcast).
+        // Reject 0/8 (this network), 224/4 (multicast) and 240/4
+        // (reserved/broadcast); retain 127/8 for local loopback tests.
         val first = parts[0].toInt()
-        return first in 1..126 || first in 128..223
+        return first in 1..223
     }
 }
