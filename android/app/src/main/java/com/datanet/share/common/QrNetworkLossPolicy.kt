@@ -7,6 +7,14 @@ package com.datanet.share.common
  * Android Network equality identifies a network ID even if callbacks use different objects.
  */
 internal object QrNetworkLossPolicy {
+
+    /**
+     * LOST and UNAVAILABLE finish this QR request. Late Android callbacks must
+     * not restart readiness checks for a request that already failed.
+     */
+    fun <T : Any> acceptsNetworkUpdate(status: T, lost: T, unavailable: T): Boolean =
+        status != lost && status != unavailable
+
     fun <T : Any> shouldMarkLost(
         lost: T,
         observed: T?,
