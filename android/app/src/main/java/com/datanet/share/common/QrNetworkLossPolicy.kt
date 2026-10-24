@@ -15,6 +15,13 @@ internal object QrNetworkLossPolicy {
     fun <T : Any> acceptsNetworkUpdate(status: T, lost: T, unavailable: T): Boolean =
         status != lost && status != unavailable
 
+    /**
+     * A delayed request timeout must not replace a confirmed connection or
+     * an already terminal loss/unavailable result with a different status.
+     */
+    fun <T : Any> acceptsUnavailable(status: T, lost: T, unavailable: T, connected: T): Boolean =
+        status != connected && acceptsNetworkUpdate(status, lost, unavailable)
+
     fun <T : Any> shouldMarkLost(
         lost: T,
         observed: T?,
