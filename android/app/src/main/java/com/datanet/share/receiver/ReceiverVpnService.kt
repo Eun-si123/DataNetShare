@@ -104,13 +104,13 @@ class ReceiverVpnService : VpnService() {
                         if (generation == token) {
                             val message = if (SenderProbeRetryPolicy.routeError(e))
                                 getString(R.string.sender_peer_route_failed)
-                            else "Sender check failed: ${e.message}"
+                            else ReceiverStartupFailureMessages.senderCheck(e)
                             fail(message)
                         }
                     }
                 }
             }, "receiver-check").apply { isDaemon = true; start() }
-        } catch (e: Exception) { fail(e.message ?: "Receiver could not start") }
+        } catch (e: Exception) { fail(ReceiverStartupFailureMessages.receiverStart(e)) }
         return START_NOT_STICKY
     }
 
@@ -194,7 +194,7 @@ class ReceiverVpnService : VpnService() {
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
             startPeerWatchdog(token, host, port, password)
-        } catch (e: Exception) { fail("VPN could not start: ${e.message}") }
+        } catch (e: Exception) { fail(ReceiverStartupFailureMessages.tunnelStart(e)) }
     }
 
     /**
