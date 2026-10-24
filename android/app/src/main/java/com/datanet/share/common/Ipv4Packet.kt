@@ -62,9 +62,10 @@ data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, va
             val header = bytes[0].toInt() and 255
             val ihl = (header and 15) * 4
             val total = buffer.getShort(2).toInt() and 65535
-            // No IP reassembly: never interpret later fragments as independent transport headers.
+            // No IP reassembly: reject reserved flag, MF, and fragment offsets; DF is allowed.
+            // Never interpret later fragments as independent transport headers.
             if (header ushr 4 != 4 || ihl < 20 || total !in ihl..count ||
-                buffer.getShort(6).toInt() and 0x3fff != 0) return null
+                (buffer.getShort(6).toInt() and 0xbfff) != 0) return null
             val protocol = bytes[9].toInt() and 255
             if (protocol != 6 && protocol != 17) return null
             if (total < ihl + if (protocol == 6) 20 else 8) return null
