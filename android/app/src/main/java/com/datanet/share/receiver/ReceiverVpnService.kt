@@ -51,13 +51,15 @@ class ReceiverVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); com.datanet.share.common.PeerWifiConnector.release(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
-        recentTcpError = null
-        recentUdpError = null
-        releasePeerOnLoss = intent?.getBooleanExtra(EXTRA_RELEASE_PEER_ON_LOSS, false) ?: false
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
         }
+        // Duplicate START commands must not reset active diagnostics or change
+        // the current session's peer-release policy.
+        recentTcpError = null
+        recentUdpError = null
+        releasePeerOnLoss = intent.getBooleanExtra(EXTRA_RELEASE_PEER_ON_LOSS, false)
         try {
             check(prepare(this) == null) { "Allow the VPN connection before starting" }
             val host = intent.getStringExtra(EXTRA_SOCKS_HOST) ?: ""
