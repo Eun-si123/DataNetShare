@@ -145,7 +145,7 @@ class Tun2Socks(
                     if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
                 }
             }
-        } catch (e: Exception) { if (running) { stop(); onFailure("VPN packet loop stopped: ${e.message}") } }
+        } catch (e: Exception) { if (running) { stop(); onFailure(TunFailureMessages.read(e)) } }
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
@@ -262,7 +262,7 @@ class Tun2Socks(
             // retransmission can recover; never block the single TUN reader forever.
             if (!delivered) tunWriteDrops.incrementAndGet()
         } catch (e: Exception) {
-            if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") }
+            if (running) { running = false; onFailure(TunFailureMessages.write(e)) }
         }
     }
 }
