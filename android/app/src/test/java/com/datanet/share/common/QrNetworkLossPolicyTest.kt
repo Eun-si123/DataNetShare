@@ -23,6 +23,17 @@ class QrNetworkLossPolicyTest {
         assertTrue(QrNetworkLossPolicy.shouldMarkLost(connected, null, null, connected))
     }
 
+    private data class NetworkId(val id: Int)
+
+    @Test fun equalNetworkIdsFromDifferentCallbackObjectsAreRecognized() {
+        val observed = NetworkId(42)
+        val callbackValue = NetworkId(42)
+        assertTrue(observed !== callbackValue)
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(callbackValue, observed, null, null))
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(callbackValue, null, observed, null))
+        assertFalse(QrNetworkLossPolicy.shouldMarkLost(NetworkId(43), observed, null, null))
+    }
+
     @Test fun staleOrUnrelatedCandidateLossCannotDropActivePeer() {
         val active = Any()
         val candidate = Any()
