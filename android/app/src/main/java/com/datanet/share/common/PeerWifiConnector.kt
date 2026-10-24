@@ -75,14 +75,17 @@ object PeerWifiConnector {
             override fun onAvailable(value: Network) {
                 // A network can disappear before IPv4 provisioning; remember it for onLost.
                 synchronized(this@PeerWifiConnector) {
-                    if (callback === this) observedNetwork = value
+                    if (callback === this && QrNetworkLossPolicy.acceptsNetworkUpdate(
+                        status, Status.LOST, Status.UNAVAILABLE)) observedNetwork = value
                 }
             }
             override fun onLinkPropertiesChanged(value: Network, properties: LinkProperties) {
                 if (properties.linkAddresses.none { it.address is Inet4Address }) return
                 val token: Int
                 synchronized(this@PeerWifiConnector) {
-                    if (callback !== this || status == Status.CONNECTED || verifyingNetwork == value ||
+                    if (callback !== this || !QrNetworkLossPolicy.acceptsNetworkUpdate(
+                        status, Status.LOST, Status.UNAVAILABLE) ||
+                        status == Status.CONNECTED || verifyingNetwork == value ||
                         (observedNetwork != null && observedNetwork != value)) return
                     verifier?.interrupt()
                     verifyingNetwork = value
