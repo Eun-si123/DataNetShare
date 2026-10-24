@@ -43,4 +43,26 @@ class QrNetworkLossPolicyTest {
         assertFalse(QrNetworkLossPolicy.shouldMarkLost(stale, candidate, null, null))
         assertFalse(QrNetworkLossPolicy.shouldMarkLost(stale, null, null, active))
     }
+
+    private enum class CallbackStatus {
+        REQUESTING, CHECKING_SENDER, CONNECTED, SENDER_UNREACHABLE, LOST, UNAVAILABLE
+    }
+
+    @Test fun lateCallbacksCannotReviveTerminalRequest() {
+        for (terminal in listOf(CallbackStatus.LOST, CallbackStatus.UNAVAILABLE)) {
+            assertFalse(QrNetworkLossPolicy.acceptsNetworkUpdate(
+                terminal, CallbackStatus.LOST, CallbackStatus.UNAVAILABLE))
+        }
+    }
+
+    @Test fun activeAndRetryableRequestsStillAcceptNetworkUpdates() {
+        for (active in listOf(
+            CallbackStatus.REQUESTING, CallbackStatus.CHECKING_SENDER,
+            CallbackStatus.CONNECTED, CallbackStatus.SENDER_UNREACHABLE
+        )) {
+            assertTrue(QrNetworkLossPolicy.acceptsNetworkUpdate(
+                active, CallbackStatus.LOST, CallbackStatus.UNAVAILABLE))
+        }
+    }
+
 }
