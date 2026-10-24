@@ -39,6 +39,23 @@ class UdpTestResponseTest {
         }
     }
 
+    @Test fun acceptsUnknownAttributesWithNonzeroPadding() {
+        // Unknown attributes are permitted; padding bytes need not be zero.
+        val unknown = byteArrayOf(0, 0x24, 0, 1, 0x7f, 0x55, 0x66, 0x77)
+        assertTrue(UdpTest.isValidBindingResponse(response(unknown), transaction))
+    }
+
+    @Test fun rejectsMalformedAttributeLengthsAndNestedHeaders() {
+        val valid = response(byteArrayOf(0, 0x20, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0))
+        for (bad in listOf(
+            valid.copyOf().apply { this[23] = 12 }, // value length exceeds remaining bytes
+            response(byteArrayOf(0, 0x20, 0, 5, 0, 1, 0, 0)), // padding exceeds packet
+            response(byteArrayOf(0, 0x20, 0, 0, 1, 2, 3, 4)) // second attribute is truncated
+        )) {
+            assertFalse(UdpTest.isValidBindingResponse(bad, transaction))
+        }
+    }
+
     @Test fun rejectsWrongTypeCookieOrTransaction() {
         val valid = response()
         for (bad in listOf(

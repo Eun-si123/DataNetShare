@@ -14,7 +14,19 @@ object UdpTest {
         if (length % 4 != 0 || length != bytes.size - 20) return false
         if (bytes[4] != 0x21.toByte() || bytes[5] != 0x12.toByte() ||
             bytes[6] != 0xa4.toByte() || bytes[7] != 0x42.toByte()) return false
-        return (0 until 12).all { bytes[8 + it] == transaction[it] }
+        if (!(0 until 12).all { bytes[8 + it] == transaction[it] }) return false
+        // RFC 8489 attributes contain a 4-byte header and a 32-bit-padded value.
+        // Do not report reachability for a response with truncated attributes.
+        var offset = 20
+        while (offset < bytes.size) {
+            if (bytes.size - offset < 4) return false
+            val valueLength = ((bytes[offset + 2].toInt() and 255) shl 8) or
+                (bytes[offset + 3].toInt() and 255)
+            val paddedLength = (valueLength + 3) and -4
+            if (paddedLength > bytes.size - offset - 4) return false
+            offset += 4 + paddedLength
+        }
+        return true
     }
 
     fun runTest(onResult: (String) -> Unit, onError: (String) -> Unit, onFinished: () -> Unit) {
