@@ -5,18 +5,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EndpointTest {
-    @Test fun acceptsUnicastSenderAddressesOnPrivateAndLocalLinks() {
+    @Test fun acceptsUnicastAndLoopbackSenderAddresses() {
         for (host in listOf(
             "1.0.0.1", "10.0.0.1", "100.64.0.1", "126.255.255.254",
-            "128.0.0.1", "169.254.42.1", "172.16.0.1", "192.168.49.1", "223.0.0.1"
-        )) assertTrue("Valid unicast address rejected: $host", Endpoint.isIpv4(host))
+            "127.0.0.1", "127.255.255.254", "128.0.0.1", "169.254.42.1",
+            "172.16.0.1", "192.168.49.1", "223.0.0.1"
+        )) assertTrue("Valid endpoint rejected: $host", Endpoint.isIpv4(host))
     }
 
-    @Test fun rejectsThisNetworkLoopbackMulticastAndReservedEndpoints() {
+    @Test fun rejectsThisNetworkMulticastAndReservedEndpoints() {
         for (host in listOf(
-            "0.0.0.0", "0.0.0.1", "127.0.0.1", "127.255.255.254",
-            "224.0.0.1", "239.255.255.255", "240.0.0.1",
-            "255.255.255.254", "255.255.255.255"
+            "0.0.0.0", "0.0.0.1", "224.0.0.1", "239.255.255.255",
+            "240.0.0.1", "255.255.255.254", "255.255.255.255"
         )) assertFalse("Non-unicast endpoint accepted: $host", Endpoint.isIpv4(host))
     }
 
