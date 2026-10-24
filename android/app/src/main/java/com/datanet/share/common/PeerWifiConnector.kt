@@ -33,6 +33,8 @@ object PeerWifiConnector {
         private set
     private var manager: ConnectivityManager? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
+    // Remember onAvailable even before IPv4 arrives: onLost may precede link properties.
+    private var observedNetwork: Network? = null
     private var verifyingNetwork: Network? = null
     private var verifier: Thread? = null
     private var generation = 0
@@ -71,13 +73,17 @@ object PeerWifiConnector {
 
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(value: Network) {
-                // Wait for link properties (IPv4 DHCP), not onAvailable alone.
+                // A network can disappear before IPv4 provisioning; remember it for onLost.
+                synchronized(this@PeerWifiConnector) {
+                    if (callback === this) observedNetwork = value
+                }
             }
             override fun onLinkPropertiesChanged(value: Network, properties: LinkProperties) {
                 if (properties.linkAddresses.none { it.address is Inet4Address }) return
                 val token: Int
                 synchronized(this@PeerWifiConnector) {
-                    if (callback !== this || status == Status.CONNECTED || verifyingNetwork == value) return
+                    if (callback !== this || status == Status.CONNECTED || verifyingNetwork == value ||
+                        (observedNetwork != null && observedNetwork != value)) return
                     verifier?.interrupt()
                     verifyingNetwork = value
                     network = null
@@ -125,6 +131,7 @@ object PeerWifiConnector {
                     if (callback !== this) return
                     verifier?.interrupt()
                     verifier = null
+                    observedNetwork = null
                     verifyingNetwork = null
                     network = null
                     ++generation
@@ -134,7 +141,11 @@ object PeerWifiConnector {
             }
             override fun onLost(value: Network) {
                 synchronized(this@PeerWifiConnector) {
-                    if (callback !== this || (network != value && verifyingNetwork != value)) return
+                    if (callback !== this) return
+                    val shouldMarkLost = QrNetworkLossPolicy.shouldMarkLost(
+                        value, observedNetwork, verifyingNetwork, network)
+                    if (observedNetwork == value) observedNetwork = null
+                    if (!shouldMarkLost) return
                     verifier?.interrupt()
                     verifier = null
                     verifyingNetwork = null
@@ -156,6 +167,7 @@ object PeerWifiConnector {
         ++generation
         verifier?.interrupt()
         verifier = null
+        observedNetwork = null
         verifyingNetwork = null
         val cb = callback
         callback = null
