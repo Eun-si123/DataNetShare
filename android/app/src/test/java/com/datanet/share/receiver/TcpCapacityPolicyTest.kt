@@ -25,25 +25,18 @@ class TcpCapacityPolicyTest {
     }
 
     @Test fun admissionMatrixPreservesEightControlSlots() {
-        // Exhaust the feasible TCP/UDP count matrix, including saturated and
-        // over-capacity states, without requiring hundreds of real sockets.
+        // Verify both rejection at capacity and admission while room remains.
+        // A policy that rejects every new flow must fail this matrix too.
         assertEquals(120, TcpCapacityPolicy.TOTAL_BUDGET)
         for (tcp in 0..TcpCapacityPolicy.TOTAL_BUDGET) {
             for (udp in 0..TcpCapacityPolicy.TOTAL_BUDGET) {
-                val tcpAllowed = TcpCapacityPolicy.allowTcp(tcp, udp)
-                val udpAllowed = TcpCapacityPolicy.allowUdp(tcp, udp)
-                if (tcpAllowed) {
-                    assertTrue(tcp < TcpCapacityPolicy.MAX_TCP)
-                    assertTrue(tcp + udp + 1 <= TcpCapacityPolicy.TOTAL_BUDGET)
-                }
-                if (udpAllowed) {
-                    assertTrue(udp < TcpCapacityPolicy.MAX_UDP)
-                    assertTrue(tcp + udp + 1 <= TcpCapacityPolicy.TOTAL_BUDGET)
-                }
-                if (tcp + udp >= TcpCapacityPolicy.TOTAL_BUDGET) {
-                    assertFalse(tcpAllowed)
-                    assertFalse(udpAllowed)
-                }
+                val room = tcp + udp < TcpCapacityPolicy.TOTAL_BUDGET
+                assertEquals("TCP: tcp=$tcp udp=$udp",
+                    tcp < TcpCapacityPolicy.MAX_TCP && room,
+                    TcpCapacityPolicy.allowTcp(tcp, udp))
+                assertEquals("UDP: tcp=$tcp udp=$udp",
+                    udp < TcpCapacityPolicy.MAX_UDP && room,
+                    TcpCapacityPolicy.allowUdp(tcp, udp))
             }
         }
     }
