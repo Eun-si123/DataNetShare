@@ -131,7 +131,8 @@ object PeerWifiConnector {
             }
             override fun onUnavailable() {
                 synchronized(this@PeerWifiConnector) {
-                    if (callback !== this) return
+                    if (callback !== this || !QrNetworkLossPolicy.acceptsUnavailable(
+                        status, Status.LOST, Status.UNAVAILABLE, Status.CONNECTED)) return
                     verifier?.interrupt()
                     verifier = null
                     observedNetwork = null
