@@ -45,9 +45,9 @@ class ProtocolTest {
                 assertNull("truncated protocol=${frame[9]} count=$count", Ipv4Packet.parse(frame, count))
             }
             assertNull(Ipv4Packet.parse(frame, frame.size + 1))
-            // MF, nonzero offset without MF, and the largest fragment offset
+            // MF, nonzero offsets, and the reserved IPv4 flag (with or without DF)
             // must never be interpreted as a complete TCP/UDP datagram.
-            for (fragmentBits in listOf(0x2000, 0x0001, 0x1fff, 0x3fff)) {
+            for (fragmentBits in listOf(0x2000, 0x0001, 0x1fff, 0x3fff, 0x8000, 0xc000)) {
                 val fragment = frame.copyOf()
                 ByteBuffer.wrap(fragment).putShort(6, fragmentBits.toShort())
                 assertNull("fragment flags/offset=$fragmentBits", Ipv4Packet.parse(fragment))
