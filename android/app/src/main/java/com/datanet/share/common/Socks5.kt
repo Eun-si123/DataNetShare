@@ -98,20 +98,18 @@ object Socks5 {
     }
 
     fun authenticateClient(input: DataInputStream, output: OutputStream, password: String) {
-        val useAuth = password.isNotEmpty()
-        output.write(byteArrayOf(5, 1, if (useAuth) 2 else 0)); output.flush()
-        val expected = if (useAuth) 2 else 0
-        if (input.readUnsignedByte() != 5 || input.readUnsignedByte() != expected) {
+        // The sender always requires RFC 1929 credentials. Never offer NO AUTH,
+        // even if a caller accidentally supplies an empty password.
+        val pass = password.toByteArray(Charsets.UTF_8)
+        require(pass.size in 1..255) { "Proxy password must be 1–255 UTF-8 bytes" }
+        output.write(byteArrayOf(5, 1, 2)); output.flush()
+        if (input.readUnsignedByte() != 5 || input.readUnsignedByte() != 2) {
             throw IOException("Sender rejected authentication method; check proxy password")
         }
-        if (useAuth) {
-            val user = USERNAME.toByteArray(Charsets.UTF_8)
-            val pass = password.toByteArray(Charsets.UTF_8)
-            if (pass.size !in 1..255) throw IOException("Proxy password must be 1–255 UTF-8 bytes")
-            output.write(byteArrayOf(1, user.size.toByte())); output.write(user)
-            output.write(pass.size); output.write(pass); output.flush()
-            if (input.readUnsignedByte() != 1 || input.readUnsignedByte() != 0) throw IOException("Proxy password rejected")
-        }
+        val user = USERNAME.toByteArray(Charsets.UTF_8)
+        output.write(byteArrayOf(1, user.size.toByte())); output.write(user)
+        output.write(pass.size); output.write(pass); output.flush()
+        if (input.readUnsignedByte() != 1 || input.readUnsignedByte() != 0) throw IOException("Proxy password rejected")
     }
 
     fun request(input: DataInputStream, output: OutputStream, command: Int, address: Address): Address {
