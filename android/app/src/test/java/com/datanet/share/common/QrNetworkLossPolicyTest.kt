@@ -1,0 +1,35 @@
+package com.datanet.share.common
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class QrNetworkLossPolicyTest {
+    @Test fun lossBeforeIpv4ProvisioningIsReported() {
+        val pending = Any()
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(pending, pending, null, null))
+    }
+
+    @Test fun lossAfterUnreachableProbeIsStillReported() {
+        val observed = Any()
+        // The verifier has finished unsuccessfully: no connected or verifying network.
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(observed, observed, null, null))
+    }
+
+    @Test fun verifyingOrConnectedPeerLossIsReported() {
+        val verifying = Any()
+        val connected = Any()
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(verifying, null, verifying, null))
+        assertTrue(QrNetworkLossPolicy.shouldMarkLost(connected, null, null, connected))
+    }
+
+    @Test fun staleOrUnrelatedCandidateLossCannotDropActivePeer() {
+        val active = Any()
+        val candidate = Any()
+        val stale = Any()
+        assertFalse(QrNetworkLossPolicy.shouldMarkLost(candidate, candidate, null, active))
+        assertFalse(QrNetworkLossPolicy.shouldMarkLost(candidate, candidate, active, null))
+        assertFalse(QrNetworkLossPolicy.shouldMarkLost(stale, candidate, null, null))
+        assertFalse(QrNetworkLossPolicy.shouldMarkLost(stale, null, null, active))
+    }
+}
