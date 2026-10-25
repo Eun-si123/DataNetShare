@@ -24,8 +24,14 @@ object CellularNetworkTracker {
             } == true
         }
         val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { if (callback === this) cellular = network }
-            override fun onLost(network: Network) { if (callback === this && cellular == network) cellular = null }
+            // Use the same monitor as start()/stop(): an in-flight callback must not
+            // publish a stale network after Stop clears the active session.
+            override fun onAvailable(network: Network) = synchronized(this@CellularNetworkTracker) {
+                if (callback === this) cellular = network
+            }
+            override fun onLost(network: Network) = synchronized(this@CellularNetworkTracker) {
+                if (callback === this && cellular == network) cellular = null
+            }
         }
         callback = cb
         try {
