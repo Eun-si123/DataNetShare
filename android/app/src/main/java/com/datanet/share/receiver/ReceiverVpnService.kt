@@ -52,6 +52,8 @@ class ReceiverVpnService : VpnService() {
         if (intent?.action == ACTION_STOP) { cleanup(); com.datanet.share.common.PeerWifiConnector.release(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
+            // A duplicate START belongs to the existing receiver session.
+            // Never start a second probe/tunnel or replace its generation.
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
         }
