@@ -75,20 +75,32 @@ class Tun2Socks(
         Thread({
             while (running) {
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
-                tcp.values.forEach { it.tick() }
+                if (!MaintenanceCallbackGuard.runCriticalTick(
+                        tick = { tcp.values.forEach { it.tick() } },
+                        onFailure = {
+                            if (running) {
+                                running = false
+                                onFailure("VPN TCP maintenance stopped unexpectedly. Reconnect to resume.")
+                            }
+                        }
+                    )) break
                 if (running) {
-                    onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
-                        tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
-                        udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
-                        tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
-                        idleTcpReclaimed.get(), udpQueueOverflows.get(),
-                        windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get(),
-                        oversizedUdpReplies.get()))
+                    MaintenanceCallbackGuard.run {
+                        onStats(BridgeStats(tcp.size, rx.get(), tx.get(),
+                            tcpAttempts.get(), tcpConnected.get(), udpAttempts.get(),
+                            udpConnected.get(), tunWriteDrops.get(), tcpRetransmits.get(),
+                            tunWriteWaits.get(), tunWriteWaitNanos.get() / 1_000_000L, udp.size,
+                            idleTcpReclaimed.get(), udpQueueOverflows.get(),
+                            windowScaledFlows.get(), ipv4IcmpIgnored.get(), ipv6Ignored.get(),
+                            oversizedUdpReplies.get()))
+                    }
                     // Non-sensitive congestion telemetry; avoid printing destination addresses.
                     val dropped = tunWriteDrops.get()
                     val batch = dropped / 50L
                     if ((dropped == 1L || batch > 0) && batch != reportedDropBatch.getAndSet(batch)) {
-                        onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                        MaintenanceCallbackGuard.run {
+                            onTcpError("VPN write congestion: $dropped dropped TUN packets")
+                        }
                     }
                 }
             }
@@ -133,7 +145,7 @@ class Tun2Socks(
                     if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
                 }
             }
-        } catch (e: Exception) { if (running) { stop(); onFailure("VPN packet loop stopped: ${e.message}") } }
+        } catch (e: Exception) { if (running) { stop(); onFailure(TunFailureMessages.read(e)) } }
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
@@ -152,7 +164,7 @@ class Tun2Socks(
                     }
                 }
                 if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
-                    onTcpError("Receiver TCP capacity reached (active ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
+                    MaintenanceCallbackGuard.run { onTcpError("Receiver TCP capacity reached (active ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})") }
                     return
                 }
             }
@@ -162,7 +174,7 @@ class Tun2Socks(
                     lateinit var created: TcpFlow
                     created = TcpFlow(key, packet.sequence, socksHost, socksPort, password, protect, ::writePacket,
                         { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { tcp.remove(key, created) },
-                        onError = onTcpError,
+                        onError = { message -> MaintenanceCallbackGuard.run { onTcpError(message) } },
                         onConnected = {
                             tcpConnected.incrementAndGet()
                             if (packet.offeredWindowScale() != null) windowScaledFlows.incrementAndGet()
@@ -193,7 +205,7 @@ class Tun2Socks(
                     flow.idleForAtLeast(now, UdpFlowPolicy.EVICT_IDLE_NANOS)) flow.close()
             }
             if (!TcpCapacityPolicy.allowUdp(tcp.size, udp.size)) {
-                onUdpError("Receiver UDP capacity reached (TCP ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})")
+                MaintenanceCallbackGuard.run { onUdpError("Receiver UDP capacity reached (TCP ${tcp.size}, UDP ${udp.size}, total budget ${TcpCapacityPolicy.TOTAL_BUDGET})") }
                 return
             }
         }
@@ -205,7 +217,7 @@ class Tun2Socks(
                     { rx.addAndGet(it.toLong()) }, { tx.addAndGet(it.toLong()) }, { udp.remove(key, created) },
                     onError = { message ->
                         if (message.contains("queue full")) udpQueueOverflows.incrementAndGet()
-                        onUdpError(message)
+                        MaintenanceCallbackGuard.run { onUdpError(message) }
                     },
                     onConnected = { udpConnected.incrementAndGet() },
                     onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
@@ -250,7 +262,7 @@ class Tun2Socks(
             // retransmission can recover; never block the single TUN reader forever.
             if (!delivered) tunWriteDrops.incrementAndGet()
         } catch (e: Exception) {
-            if (running) { running = false; onFailure("VPN packet write failed: ${e.message}") }
+            if (running) { running = false; onFailure(TunFailureMessages.write(e)) }
         }
     }
 }
