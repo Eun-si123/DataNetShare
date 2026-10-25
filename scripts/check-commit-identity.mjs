@@ -6,7 +6,8 @@ const noReply = email => /@users\.noreply\.github\.com$/i.test(email) || /^(?:no
 const normalized = value => String(value || '').trim().toLowerCase();
 
 export function inspectCommit(item, owner, ownerId = null, publicName = null) {
-  const approvedOwnerNames = new Set([normalized(owner), normalized(publicName)].filter(Boolean));
+  // Profile display names can be personal data; only the public account handle is approved.
+  const approvedOwnerNames = new Set([normalized(owner)].filter(Boolean));
   const isOwnerEmail = email => normalized(email) === normalized(`${ownerId}+${owner}@users.noreply.github.com`) || normalized(email) === normalized(`${owner}@users.noreply.github.com`);
   const problems = [];
   const commit = item?.commit || {};
@@ -49,6 +50,7 @@ function selfTest() {
   const masked='123+owner@users.noreply.github.com';
   assert.deepEqual(inspectCommit(item(masked,'owner'),'owner',123,'Owner Public'),[]);
   assert.ok(inspectCommit({...item(masked,'owner'),commit:{...item(masked,'owner').commit,author:{email:masked,name:'Private Name'}}},'owner',123,'Owner Public').length);
+  assert.equal(inspectCommit({...item(masked,'owner'),commit:{author:{email:masked,name:'Private Profile Name'},committer:{email:masked,name:'Private Profile Name'},message:'fix: test'}},'owner',123,'Private Profile Name').length,2);
   assert.deepEqual(inspectCommit(item('public@company.example','other'),'owner'),[]);
   assert.ok(inspectCommit(item('private@example.com',null),'owner').length);
   assert.ok(inspectCommit(item('private@example.com','owner'),'owner').length);
