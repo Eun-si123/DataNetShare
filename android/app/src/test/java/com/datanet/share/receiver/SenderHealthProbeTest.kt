@@ -55,4 +55,37 @@ class SenderHealthProbeTest {
             fail("one missed heartbeat should never disconnect a VPN")
         } catch (_: IllegalArgumentException) {}
     }
+
+    @Test fun rejectedSocketPreparationClosesProbeBeforeConnect() {
+        lateinit var candidate: Socket
+        assertFalse(SenderHealthProbe.check("127.0.0.1", 9,
+            "synthetic-password", timeoutMs = 500) {
+            candidate = it
+            false
+        })
+        assertFalse(candidate.isConnected)
+        assertTrue(candidate.isClosed)
+    }
+
+    @Test fun throwingSocketPreparationClosesProbeBeforeConnect() {
+        lateinit var candidate: Socket
+        assertFalse(SenderHealthProbe.check("127.0.0.1", 9,
+            "synthetic-password", timeoutMs = 500) {
+            candidate = it
+            throw java.io.IOException("synthetic link unavailable")
+        })
+        assertFalse(candidate.isConnected)
+        assertTrue(candidate.isClosed)
+    }
+
+    @Test fun policyClearsLatchedMissesWhenSenderRecovers() {
+        val policy = SenderHealthPolicy(missLimit = 3)
+        assertFalse(policy.observe(false))
+        assertFalse(policy.observe(false))
+        assertTrue(policy.observe(false))
+        assertFalse(policy.observe(true))
+        assertFalse(policy.observe(false))
+        assertFalse(policy.observe(false))
+        assertTrue(policy.observe(false))
+    }
 }
