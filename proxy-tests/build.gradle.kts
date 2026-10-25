@@ -15,6 +15,7 @@ sourceSets {
             "com/datanet/share/common/P2pPasswordCipher.kt",
             "com/datanet/share/sender/WifiDirectProfile.kt",
             "com/datanet/share/sender/Socks5Server.kt",
+            "com/datanet/share/sender/SenderFailureMessages.kt",
             "com/datanet/share/sender/PeerUsageLedger.kt", "com/datanet/share/receiver/TcpFlow.kt",
             "com/datanet/share/receiver/UdpFlow.kt", "com/datanet/share/receiver/ReceiverSocketSetup.kt",
             "com/datanet/share/receiver/TunWriteRetry.kt",
