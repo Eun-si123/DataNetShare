@@ -238,9 +238,28 @@ class Socks5ServerTest {
                     assertEquals("idle TCP client was never reclaimed", 0, fixture.proxy.clientCount)
                     assertEquals("both read directions must report only one cleanup", 1,
                         fixture.idleClosures.get())
-                    fixture.client().use { second ->
-                        Socks5.request(DataInputStream(second.getInputStream()), second.getOutputStream(), 1,
-                            Socks5.Address("127.0.0.1", destination.localPort))
+                    // clientCount is decremented just before the worker releases its
+                    // semaphore permit. A new client in that narrow window may be
+                    // refused; verify eventual slot reuse rather than instantaneous reuse.
+                    val reuseDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                    var reused = false
+                    while (!reused) {
+                        try {
+                            Socket("127.0.0.1", fixture.proxy.boundPort).use { second ->
+                                second.soTimeout = 1000
+                                Socks5.authenticateClient(DataInputStream(second.getInputStream()),
+                                    second.getOutputStream(), fixture.password)
+                                Socks5.request(DataInputStream(second.getInputStream()),
+                                    second.getOutputStream(), 1,
+                                    Socks5.Address("127.0.0.1", destination.localPort))
+                            }
+                            reused = true
+                        } catch (e: java.io.IOException) {
+                            if (System.nanoTime() >= reuseDeadline) {
+                                throw AssertionError("reclaimed TCP slot never accepted another client", e)
+                            }
+                            Thread.sleep(20)
+                        }
                     }
                 }
             }
