@@ -36,6 +36,35 @@ class PeerUsageLedgerTest {
         assertTrue(ledger.snapshot().isEmpty())
     }
 
+    @Test fun newPeerReusesOldestInactiveSlotWithoutLosingActivePeers() {
+        val ledger = PeerUsageLedger()
+        val oldest = ledger.open("10.0.0.0")!!
+        ledger.close(oldest)
+        val active = (1..31).map { ledger.open("10.0.0.$it")!! }
+        assertEquals(32, ledger.snapshot().size)
+        val newcomer = ledger.open("10.0.1.1")
+        assertNotNull("inactive history must not block new peer accounting", newcomer)
+        val peers = ledger.snapshot()
+        assertEquals(32, peers.size)
+        assertFalse(peers.any { it.ip == "10.0.0.0" })
+        assertEquals(32, peers.count { it.activeConnections == 1 })
+        active.forEach(ledger::close)
+        ledger.close(newcomer)
+    }
+
+    @Test fun recentlyReopenedIdlePeerIsNotEvictedBeforeOlderIdlePeer() {
+        val ledger = PeerUsageLedger()
+        val recent = ledger.open("10.0.0.1")!!
+        ledger.close(recent)
+        val old = ledger.open("10.0.0.2")!!
+        ledger.close(old)
+        repeat(30) { ledger.open("10.0.1.$it") }
+        ledger.close(ledger.open("10.0.0.1"))
+        assertNotNull(ledger.open("10.0.2.1"))
+        assertTrue(ledger.snapshot().any { it.ip == "10.0.0.1" })
+        assertFalse(ledger.snapshot().any { it.ip == "10.0.0.2" })
+    }
+
     @Test fun concurrentTrafficCountersRemainAccurate() {
         val usage = PeerUsageLedger()
         val ref = usage.open("192.168.49.81")!!
