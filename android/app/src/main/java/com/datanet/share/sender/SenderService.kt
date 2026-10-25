@@ -94,7 +94,7 @@ class SenderService : Service() {
                     band = band
                 ))
             }
-        } catch (e: Exception) { fail(e.message ?: "Sharing could not start") }
+        } catch (e: Exception) { fail(SenderFailureMessages.startup(e)) }
         return START_NOT_STICKY
     }
 
@@ -113,7 +113,7 @@ class SenderService : Service() {
                         (if (idleCount == 0L) "" else "\nIdle TCP connections cleaned up: $idleCount") +
                         (if (recent.isNullOrEmpty()) "" else "\nLast upstream error: $recent"))
                 }
-            }, onFailure = { error -> main.post { if (token == session) fail(error) } },
+            }, onFailure = { _ -> main.post { if (token == session) fail(SenderFailureMessages.LISTENER_STOPPED) } },
             onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
             onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) },
             onIdleClose = { if (token == session) idleReclaimed.incrementAndGet() },
@@ -124,7 +124,7 @@ class SenderService : Service() {
             SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "active",
                 "SOCKS5: $host:${Constants.SOCKS5_PORT}\nUsername: datanet\n${if (defaultRoute) "Upstream: Android default route" else if (wifiFallback) "Upstream: cellular, fallback to validated Wi-Fi" else "Upstream: mobile data only"}", host, password, ssid, wifiPassword))
             getSystemService(NotificationManager::class.java).notify(Constants.SENDER_NOTIFICATION_ID, notification("SOCKS5 at $host:${Constants.SOCKS5_PORT} · tap for credentials"))
-        } catch (e: Exception) { fail("Proxy could not start: ${e.message}") }
+        } catch (e: Exception) { fail(SenderFailureMessages.proxyStart(e)) }
     }
 
     private fun describeDefaultRoute(): String {
