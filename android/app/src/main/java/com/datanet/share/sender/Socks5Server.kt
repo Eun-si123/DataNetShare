@@ -126,7 +126,7 @@ class Socks5Server(
                         failedCurrentSession = true
                     }
                 }
-                if (failedCurrentSession) onFailure("Proxy listener stopped: ${e.message}")
+                if (failedCurrentSession) onFailure(SenderFailureMessages.LISTENER_STOPPED)
             }
         }, "socks-accept").apply { isDaemon = true; start() }
         Thread({
