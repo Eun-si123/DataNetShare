@@ -288,8 +288,12 @@ class TcpFlow(
     }
     private fun sendAck() { if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x10, advertisedWindow(), ByteArray(0))) }
     fun abort() = synchronized(lock) {
-        if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x14, 0, ByteArray(0)))
-        close()
+        try {
+            if (!closed) writePacket(IpPackets.tcp(key, next.toInt(), expected.toInt(), 0x14, 0, ByteArray(0)))
+        } finally {
+            // A closed TUN may reject the RST; the flow must still release its socket and queues.
+            close()
+        }
     }
     fun close() = synchronized(lock) {
         if (closed) return@synchronized
