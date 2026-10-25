@@ -21,7 +21,8 @@ sourceSets {
             "com/datanet/share/receiver/TcpCapacityPolicy.kt",
             "com/datanet/share/receiver/FlowAdmission.kt",
             "com/datanet/share/receiver/SenderProbeRetryPolicy.kt",
-            "com/datanet/share/receiver/SenderHealthProbe.kt")
+            "com/datanet/share/receiver/SenderHealthProbe.kt",
+            "com/datanet/share/receiver/ReceiverLinkFallbackPolicy.kt")
     }
     test { kotlin.srcDir("../android/app/src/test/java") }
 }

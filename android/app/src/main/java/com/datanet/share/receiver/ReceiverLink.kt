@@ -33,6 +33,9 @@ class ReceiverLink(context: Context, host: String) {
     }
     private fun localAddress(): InetAddress {
         for (candidate in InterfaceEnumerator.localCandidates()) {
+            // A private address on tun/wg/etc. is not evidence of a physical
+            // sender link; binding to it can route SOCKS traffic into a VPN.
+            if (!ReceiverLinkFallbackPolicy.allows(candidate.name)) continue
             val iface = NetworkInterface.getByName(candidate.name) ?: continue
             iface.interfaceAddresses.firstOrNull { matches(it.address, it.networkPrefixLength.toInt()) }?.let { return it.address }
         }
