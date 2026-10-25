@@ -1,5 +1,11 @@
 # DataNet Share agent instructions
 
+## Commit author privacy (all agents and GitHub tools)
+
+- Never put the repository owner's real name, personal email, or other private contact details in Git commit author/committer fields, `Co-authored-by`/`Signed-off-by` trailers, PR titles/descriptions, logs, or public checkpoints. Use the owner's public GitHub handle `Eun-si123` and GitHub-provided no-reply identity `267835237+Eun-si123@users.noreply.github.com` for owner-attributed commits, unless the owner explicitly provides a different **nonpersonal** public identity.
+- Before writing commits in a Git checkout, set/check **repository-local** `git config user.name` and `git config user.email` (not global), inspect `git var GIT_AUTHOR_IDENT`, `git var GIT_COMMITTER_IDENT`, and any `GIT_AUTHOR_*`/`GIT_COMMITTER_*` overrides. Validate author, committer, and message trailers before pushing; tools that commit through an API must inspect returned commit metadata instead of assuming local configuration applies.
+- If a private identity is present, stop publication and fix the source configuration or reconstruct the unpublished commit safely. Do not use history rewriting or force pushes on shared/protected branches as an automatic cleanup. GitHub email privacy settings alone do **not** scrub existing commits.
+
 ## Owner-authorized PR merges (verified GitHub rules, 2026-10-23)
 
 - The repository owner `Eun-si123` (GitHub user ID `267835237`) is a configured `User` bypass actor, mode `pull_request`, on the **Protect main - verified agent PRs** ruleset (ID `25495103`). When the owner explicitly asks to merge an existing PR, do not repeatedly demand another approval or refuse solely because a generic `BLOCKED` / `REVIEW_REQUIRED` indicator is shown. Inspect the live rules and attempt the authorized normal GitHub merge when checks are satisfied.
