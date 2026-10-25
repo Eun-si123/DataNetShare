@@ -48,6 +48,23 @@ class PairingPayloadTest {
         assertNull(PairingPayload.parse("x".repeat(1200)))
     }
 
+    @Test fun rejectMalformedUtf8InsteadOfSilentlyReplacingSsidBytes() {
+        val prefix = "datanetshare://pair/v1?h=192.168.49.1&p=8282&pw=$password&s="
+        val suffix = "&w=password"
+        for (invalid in listOf("%C3%28", "%E2%82", "%ED%A0%80", "%C0%AF")) {
+            assertNull("Malformed UTF-8 must not become a different Wi-Fi SSID: $invalid",
+                PairingPayload.parse(prefix + invalid + suffix))
+        }
+    }
+
+    @Test fun validUtf8AndLiteralReplacementCharacterRemainAccepted() {
+        val prefix = "datanetshare://pair/v1?h=192.168.49.1&p=8282&pw=$password&s="
+        val suffix = "&w=password"
+        assertEquals("한 €", PairingPayload.parse(prefix + "%ED%95%9C+%E2%82%AC" + suffix)?.ssid)
+        // U+FFFD is valid when actually encoded as EF BF BD, not as a decoder fallback.
+        assertEquals("\uFFFD", PairingPayload.parse(prefix + "%EF%BF%BD" + suffix)?.ssid)
+    }
+
     @Test fun passwordsAndWifiInformationAreValidatedWhenEncoding() {
         assertThrows(IllegalArgumentException::class.java) {
             PairingPayload("192.168.49.1", 8282, "123").encode()
