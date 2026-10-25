@@ -10,6 +10,7 @@ sourceSets {
             "com/datanet/share/common/ProxyPasswordPolicy.kt",
             "com/datanet/share/common/UpstreamRoutePolicy.kt",
             "com/datanet/share/common/DiagnosticJournal.kt",
+            "com/datanet/share/common/UdpTest.kt",
             "com/datanet/share/common/P2pPasswordCipher.kt",
             "com/datanet/share/sender/WifiDirectProfile.kt",
             "com/datanet/share/sender/Socks5Server.kt",
