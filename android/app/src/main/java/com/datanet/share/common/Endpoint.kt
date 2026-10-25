@@ -1,11 +1,17 @@
 package com.datanet.share.common
 
+/** Numeric IPv4 sender endpoint; loopback remains valid for local tests. */
 object Endpoint {
     fun isIpv4(host: String): Boolean {
         val parts = host.split('.')
-        return parts.size == 4 && parts.all { part ->
-            part.isNotEmpty() && part.all { it in '0'..'9' } &&
-                part.toIntOrNull()?.let { it in 0..255 } == true && (part == "0" || !part.startsWith('0'))
-        } && host != "0.0.0.0" && host != "255.255.255.255"
+        if (parts.size != 4 || !parts.all { part ->
+                part.isNotEmpty() && part.all { it in '0'..'9' } &&
+                    part.toIntOrNull()?.let { it in 0..255 } == true &&
+                    (part == "0" || !part.startsWith('0'))
+            }) return false
+        // Reject 0/8 (this network), 224/4 (multicast) and 240/4
+        // (reserved/broadcast); retain 127/8 for local loopback tests.
+        val first = parts[0].toInt()
+        return first in 1..223
     }
 }
