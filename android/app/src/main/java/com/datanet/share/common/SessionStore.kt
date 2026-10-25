@@ -35,7 +35,8 @@ object SessionStore {
         resetDiagnostics(); telemetry.postValue(""); peerUsage.postValue(emptyList())
         publish(State(mode, "starting", "Starting…")); stats.postValue(""); return true
     }
-    fun stopped(mode: Mode) {
+    // Keep the mode check and reset atomic with claim()/publish().
+    @Synchronized fun stopped(mode: Mode) {
         if (current.mode == mode) {
             publish(State()); stats.postValue(""); telemetry.postValue(""); peerUsage.postValue(emptyList())
         }
