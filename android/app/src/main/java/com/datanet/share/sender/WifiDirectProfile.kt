@@ -15,6 +15,9 @@ data class WifiDirectProfile(
     val passphrase: String = "",
     val band: Band = Band.AUTO
 ) {
+    // Never include a custom Wi-Fi passphrase in a data-class debug string.
+    override fun toString(): String = "WifiDirectProfile(<redacted>)"
+
     enum class Band { AUTO, GHZ_2_4, GHZ_5 }
 
     fun isCustomized(): Boolean =
