@@ -3,6 +3,8 @@ package com.datanet.share.common
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 
 /**
  * Private in-person handoff format, not an Android deep link or a long-lived invite.
@@ -47,6 +49,21 @@ data class PairingPayload(
         private const val MAX_QR_LENGTH = 1024
         private val FIELDS = setOf("h", "p", "pw", "s", "w")
         private fun escape(value: String) = URLEncoder.encode(value, "UTF-8")
+        private val percentRun = Regex("(?:%[0-9A-Fa-f]{2})+")
+
+        /** URLDecoder silently replaces malformed UTF-8 with U+FFFD; reject corrupt QR bytes. */
+        private fun decodeStrict(raw: String): String {
+            percentRun.findAll(raw).forEach { run ->
+                val bytes = ByteArray(run.value.length / 3) { index ->
+                    run.value.substring(index * 3 + 1, index * 3 + 3).toInt(16).toByte()
+                }
+                Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+            }
+            return URLDecoder.decode(raw, "UTF-8")
+        }
 
         /**
          * Reject other QR schemes, duplicate keys, unknown fields and malformed
@@ -64,7 +81,7 @@ data class PairingPayload(
                 require(sep > 0)
                 val key = part.substring(0, sep)
                 require(key in FIELDS && !values.containsKey(key))
-                val value = URLDecoder.decode(part.substring(sep + 1), "UTF-8")
+                val value = decodeStrict(part.substring(sep + 1))
                 require(value.none { it == '\u0000' })
                 values[key] = value
             }
