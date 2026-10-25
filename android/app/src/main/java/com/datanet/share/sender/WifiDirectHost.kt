@@ -153,7 +153,8 @@ class WifiDirectHost(private val context: Context) {
     private fun query(token: Int) {
         if (!running || generation != token) return
         try { manager?.requestConnectionInfo(channel) { info -> onInfo(token, info) } }
-        catch (e: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct connection", e.message ?: "") }
+        catch (_: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct connection",
+            "Check Nearby devices/Location permission and retry.") }
     }
     private fun onInfo(token: Int, info: WifiP2pInfo?) {
         if (!running || generation != token) return
@@ -181,7 +182,8 @@ class WifiDirectHost(private val context: Context) {
                 }
                 ready = true; mutableState.value = State.GroupReady(ip, actualSsid, actualPassword)
             }
-        } catch (e: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct group", e.message ?: "") }
+        } catch (_: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct group",
+            "Check Nearby devices/Location permission and retry.") }
     }
     fun stop() {
         running = false; ++generation; handler.removeCallbacksAndMessages(null)
