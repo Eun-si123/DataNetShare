@@ -8,7 +8,8 @@ class ReceiverLinkFallbackPolicyTest {
     @Test fun rejectsVirtualAndVpnInterfacesEvenIfTheyHavePrivateIpv4() {
         listOf(
             "tun0", "tap0", "wg0", "ipsec0", "ppp0", "veth1234",
-            "dummy0", "tailscale0", "TUN12", "WG1"
+            "dummy0", "tailscale0", "TUN12", "WG1",
+            "v4-wlan0", "v4-rmnet_data0", "V4-ETH0"
         ).forEach { name ->
             assertFalse("Virtual interface must not carry SOCKS transport: $name",
                 ReceiverLinkFallbackPolicy.allows(name))

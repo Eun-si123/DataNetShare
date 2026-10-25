@@ -13,7 +13,8 @@ import java.util.Locale
  */
 internal object ReceiverLinkFallbackPolicy {
     private val virtualPrefixes = listOf(
-        "tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale"
+        "tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale",
+        "v4-" // Android 464XLAT stacked interface (AOSP Nat464Xlat.CLAT_PREFIX).
     )
 
     fun allows(name: String): Boolean {
