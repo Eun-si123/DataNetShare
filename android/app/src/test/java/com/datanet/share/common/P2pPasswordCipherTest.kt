@@ -49,4 +49,34 @@ class P2pPasswordCipherTest {
             fail("Too short encrypted record accepted")
         } catch (_: IllegalArgumentException) {}
     }
+
+    @Test fun passphraseBoundaryLengthsRoundTrip() {
+        val k = key()
+        for (secret in listOf("a".repeat(8), "z".repeat(63))) {
+            assertEquals(secret, P2pPasswordCipher.decrypt(P2pPasswordCipher.encrypt(secret, k), k))
+        }
+        try {
+            P2pPasswordCipher.encrypt("x".repeat(7), k)
+            fail("Seven-character passphrase must be rejected")
+        } catch (_: IllegalArgumentException) {}
+    }
+
+    @Test fun tamperedIvAndRecordLengthCannotBypassAuthentication() {
+        val k = key()
+        val original = P2pPasswordCipher.encrypt("ValidP2pPassword!", k)
+        val tamperedIv = original.copyOf().apply { this[0] = (this[0].toInt() xor 1).toByte() }
+        for (corrupted in listOf(tamperedIv, original.copyOf(original.size - 1),
+                original + byteArrayOf(0))) {
+            try {
+                P2pPasswordCipher.decrypt(corrupted, k)
+                fail("Modified GCM envelope must be rejected")
+            } catch (_: AEADBadTagException) {}
+        }
+        for (invalidLength in listOf(27, 92)) {
+            try {
+                P2pPasswordCipher.decrypt(ByteArray(invalidLength), k)
+                fail("Invalid encrypted record length must be rejected")
+            } catch (_: IllegalArgumentException) {}
+        }
+    }
 }
