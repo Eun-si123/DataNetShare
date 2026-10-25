@@ -91,6 +91,36 @@ class AndroidUpstream(
         throw last ?: IOException("No address for destination")
     }
 
+    /** Fail over only during DNS/socket setup, before sending any UDP payload.
+     * The resolved destination and bound socket must belong to the same Network.
+     */
+    override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
+        if (port !in 1..65535) throw IOException("Invalid UDP destination port")
+        val candidates: List<Network?> = if (useDefaultRoute) listOf(null) else networks()
+        var last: IOException? = null
+        for (network in candidates) {
+            val addresses = try {
+                network?.getAllByName(host) ?: InetAddress.getAllByName(host)
+            } catch (e: IOException) {
+                last = e
+                continue
+            }
+            for (address in addresses) {
+                val socket = DatagramSocket()
+                try {
+                    if (network != null) network.bindSocket(socket)
+                    val destination = InetSocketAddress(address, port)
+                    socket.connect(destination)
+                    return Socks5Server.UdpConnection(socket, destination)
+                } catch (e: Exception) {
+                    socket.close()
+                    last = IOException("UDP upstream setup failed", e)
+                }
+            }
+        }
+        throw last ?: IOException("No usable UDP upstream network")
+    }
+
     override fun datagram(): DatagramSocket = DatagramSocket().also { socket ->
         try {
             if (!useDefaultRoute) networks().first().bindSocket(socket)

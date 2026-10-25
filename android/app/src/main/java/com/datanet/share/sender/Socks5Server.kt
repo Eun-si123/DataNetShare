@@ -37,10 +37,30 @@ class Socks5Server(
         require(socketPollMillis in 100..10_000) { "Invalid socket polling interval" }
     }
 
+    data class UdpConnection(val socket: DatagramSocket, val destination: InetSocketAddress)
+
     interface Upstream {
         fun connect(host: String, port: Int): Socket
         fun resolve(host: String): Array<InetAddress>
         fun datagram(): DatagramSocket
+
+        /** Resolve and prepare the UDP socket as one operation.
+         * Android overrides this to keep DNS and socket binding on the same Network.
+         * This only retries before the first payload is sent.
+         */
+        fun openUdp(host: String, port: Int): UdpConnection {
+            if (port !in 1..65535) throw IOException("Invalid UDP destination port")
+            val address = resolve(host).firstOrNull() ?: throw IOException("No UDP destination address")
+            val destination = InetSocketAddress(address, port)
+            val socket = datagram()
+            try {
+                socket.connect(destination)
+                return UdpConnection(socket, destination)
+            } catch (e: Exception) {
+                socket.close()
+                throw e
+            }
+        }
     }
     private val permits = Semaphore(maxClients)
     private val datagramPermits = Semaphore(128)
@@ -52,7 +72,7 @@ class Socks5Server(
     private val usage = PeerUsageLedger()
     private val lastPeersSent = AtomicLong(0)
     @Volatile private var running = false
-    private var listener: ServerSocket? = null
+    @Volatile private var listener: ServerSocket? = null
     val boundPort: Int get() = listener?.localPort ?: 0
     val clientCount: Int get() = clients.size
     /** Read-only session snapshot; client IPs are local UI data, not diagnostics. */
@@ -68,15 +88,24 @@ class Socks5Server(
         listener = server; running = true
         Thread({
             try {
-                while (running) {
+                while (running && listener === server) {
                     val client = server.accept()
-                    if (!running) { client.close(); continue }
-                    if (!permits.tryAcquire()) { onClientLimit(); client.close(); continue }
+                    if (!running || listener !== server) { client.close(); continue }
+                    if (!permits.tryAcquire()) {
+                        try {
+                            onClientLimit()
+                        } catch (_: Exception) {
+                            // A nonessential reporting failure must not kill the accept loop.
+                        } finally {
+                            try { client.close() } catch (_: IOException) {}
+                        }
+                        continue
+                    }
                     clients.add(client); sockets.add(client)
                     Thread({
                         var peer: PeerUsageLedger.Entry? = null
                         try {
-                            if (running) handleClient(client) {
+                            if (running && listener === server) handleClient(client) {
                                 usage.open(client.inetAddress.hostAddress).also { peer = it }
                             }
                         } finally {
@@ -86,24 +115,44 @@ class Socks5Server(
                         }
                     }, "socks-client").apply { isDaemon = true; start() }
                 }
-            } catch (e: IOException) { if (running) { stop(); onFailure("Proxy listener stopped: ${e.message}") } }
+            } catch (e: IOException) {
+                // A previous accept thread can outlive Stop and a quick restart.
+                // Check listener identity *under the same lock* as Stop/Start so
+                // an old closed ServerSocket cannot tear down the new session.
+                var failedCurrentSession = false
+                synchronized(this@Socks5Server) {
+                    if (running && listener === server) {
+                        stop()
+                        failedCurrentSession = true
+                    }
+                }
+                if (failedCurrentSession) onFailure("Proxy listener stopped: ${e.message}")
+            }
         }, "socks-accept").apply { isDaemon = true; start() }
         Thread({
-            while (running) {
+            while (running && listener === server) {
                 try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                if (running) publishStats()
+                if (running && listener === server) publishStats()
             }
         }, "socks-stats").apply { isDaemon = true; start() }
     }
 
     private fun publishStats() {
-        onStats(clients.size, rx.get(), tx.get())
+        // Reporting is optional: a UI/telemetry callback failure must not
+        // terminate the periodic stats worker or an active client worker.
+        try {
+            onStats(clients.size, rx.get(), tx.get())
+        } catch (_: Exception) {}
         // Socket closes can arrive in huge bursts during speed tests.
         // UI peer snapshots are no more frequent than once per second.
         val now = System.nanoTime()
         val previous = lastPeersSent.get()
         if (now - previous > 1_000_000_000L &&
-            lastPeersSent.compareAndSet(previous, now)) onPeers(usage.snapshot())
+            lastPeersSent.compareAndSet(previous, now)) {
+            try {
+                onPeers(usage.snapshot())
+            } catch (_: Exception) {}
+        }
     }
 
     @Synchronized fun stop() {
@@ -148,11 +197,15 @@ class Socks5Server(
                             else -> 5 // connection refused/unavailable
                         }
                         // Do not expose destination names, IPs or session secrets in UI state.
-                        onUpstreamFailure(when (replyCode) {
-                            3 -> "Mobile data unavailable; enable data or select Android default route"
-                            4 -> "DNS/remote host unreachable on selected upstream network"
-                            else -> "Remote TCP connect failed (${e.javaClass.simpleName})"
-                        })
+                        try {
+                            onUpstreamFailure(when (replyCode) {
+                                3 -> "Mobile data unavailable; enable data or select Android default route"
+                                4 -> "DNS/remote host unreachable on selected upstream network"
+                                else -> "Remote TCP connect failed (${e.javaClass.simpleName})"
+                            })
+                        } catch (_: Exception) {
+                            // Optional reporting must not suppress the SOCKS error reply.
+                        }
                         Socks5.reply(output, replyCode)
                         return
                     }
@@ -234,7 +287,7 @@ class Socks5Server(
     private inner class UdpAssociate(private val client: Socket,
                                      private val peer: PeerUsageLedger.Entry?) {
         private val relay = DatagramSocket(InetSocketAddress(client.localAddress, 0))
-        private val remoteSockets = ConcurrentHashMap<InetSocketAddress, DatagramSocket>()
+        private val remoteSockets = ConcurrentHashMap<Socks5.Address, DatagramSocket>()
         @Volatile var closed = false
         @Volatile private var clientEndpoint: InetSocketAddress? = null
         val port: Int get() = relay.localPort
@@ -256,12 +309,21 @@ class Socks5Server(
                         val data = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                         if (data.address.port == 0 || data.payload.size > 65_507) continue
                         if (pinned == null) clientEndpoint = source
-                        // An empty DNS answer must not terminate the UDP relay worker.
-                        val address = upstream.resolve(data.address.host).firstOrNull() ?: continue
-                        val destination = InetSocketAddress(address, data.address.port)
-                        val remote = remoteSockets[destination] ?: createRemote(destination) ?: continue
+                        // Keep the original host/port as the association key; resolution and
+                        // socket binding happen together when a destination is first opened.
+                        val target = data.address
+                        val remote = remoteSockets[target] ?: createRemote(target) ?: continue
                         lastActivity.set(System.nanoTime())
-                        remote.send(DatagramPacket(data.payload, data.payload.size))
+                        try {
+                            remote.send(DatagramPacket(data.payload, data.payload.size))
+                        } catch (_: IOException) {
+                            // A failed send may mean the bound network disappeared. Retire
+                            // this socket so a *later* packet can select a usable network.
+                            // Never replay this datagram: the remote may have received it.
+                            remoteSockets.remove(target, remote)
+                            remote.close() // also wakes the receive worker to release its permit
+                            continue
+                        }
                         rx.addAndGet(data.payload.size.toLong())
                         peer?.received(data.payload.size)
                     } catch (_: SocketTimeoutException) { continue }
@@ -270,16 +332,18 @@ class Socks5Server(
             }, "socks-udp-relay").apply { isDaemon = true; start() }
         }
 
-        private fun createRemote(destination: InetSocketAddress): DatagramSocket? {
+        private fun createRemote(target: Socks5.Address): DatagramSocket? {
             // One endpoint per socket prevents unsolicited remote responses; per-association cap bounds FDs.
             if (remoteSockets.size >= 32 || closed || !running || !datagramPermits.tryAcquire()) return null
             var allocated: DatagramSocket? = null
             try {
-                val socket = upstream.datagram(); allocated = socket
-                socket.connect(destination); socket.soTimeout = 1000
+                val connection = upstream.openUdp(target.host, target.port)
+                val socket = connection.socket; allocated = socket
+                val destination = connection.destination
+                socket.soTimeout = 1000
                 synchronized(this) {
                     if (closed || !running) { socket.close(); datagramPermits.release(); return null }
-                    remoteSockets[destination] = socket
+                    remoteSockets[target] = socket
                 }
                 Thread({
                     val buffer = ByteArray(65535)
@@ -297,7 +361,7 @@ class Socks5Server(
                             lastActivity.set(System.nanoTime())
                         }
                     } catch (_: IOException) { /* close() unblocks receive */ }
-                    finally { remoteSockets.remove(destination, socket); socket.close(); datagramPermits.release() }
+                    finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
                 }, "socks-udp-upstream").apply { isDaemon = true; start() }
                 return socket
             } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
