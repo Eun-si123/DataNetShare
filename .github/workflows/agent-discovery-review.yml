@@ -24,6 +24,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+      - name: Check safe PR commit identities
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node scripts/check-commit-identity.mjs --self-test
+          node scripts/check-commit-identity.mjs
+
       - name: Exercise discovery, receipt, and conflict checks
         run: python3 -m unittest discover -s scripts -p 'test_agent_ops.py' -v
       - name: Discover candidates and live overlapping PRs (read-only)
