@@ -242,24 +242,30 @@ class Socks5ServerTest {
                     // semaphore permit. A new client in that narrow window may be
                     // refused; verify eventual slot reuse rather than instantaneous reuse.
                     val reuseDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
-                    var reused = false
-                    while (!reused) {
+                    var second: Socket? = null
+                    while (second == null) {
+                        val candidate = Socket()
                         try {
-                            Socket("127.0.0.1", fixture.proxy.boundPort).use { second ->
-                                second.soTimeout = 1000
-                                Socks5.authenticateClient(DataInputStream(second.getInputStream()),
-                                    second.getOutputStream(), fixture.password)
-                                Socks5.request(DataInputStream(second.getInputStream()),
-                                    second.getOutputStream(), 1,
-                                    Socks5.Address("127.0.0.1", destination.localPort))
-                            }
-                            reused = true
+                            candidate.soTimeout = 1000
+                            candidate.connect(InetSocketAddress("127.0.0.1", fixture.proxy.boundPort), 1000)
+                            Socks5.authenticateClient(DataInputStream(candidate.getInputStream()),
+                                candidate.getOutputStream(), fixture.password)
+                            second = candidate
                         } catch (e: java.io.IOException) {
+                            candidate.close()
                             if (System.nanoTime() >= reuseDeadline) {
-                                throw AssertionError("reclaimed TCP slot never accepted another client", e)
+                                throw AssertionError("reclaimed TCP slot never authenticated another client", e)
                             }
                             Thread.sleep(20)
                         }
+                    }
+                    // Retry only the capacity/authentication race. A subsequent
+                    // upstream CONNECT failure is a real regression, not retriable here.
+                    requireNotNull(second).use { connected ->
+                        connected.soTimeout = 3000
+                        Socks5.request(DataInputStream(connected.getInputStream()),
+                            connected.getOutputStream(), 1,
+                            Socks5.Address("127.0.0.1", destination.localPort))
                     }
                 }
             }
