@@ -26,4 +26,22 @@ class UpstreamRoutePolicyTest {
         assertEquals(listOf(CELL), UpstreamRoutePolicy.order(true, false, false, true))
         assertEquals(emptyList<UpstreamRoutePolicy.Route>(), UpstreamRoutePolicy.order(false, false, false, true))
     }
+    @Test fun allRouteStatesRespectExplicitValidatedWifiOptInAndCellularPriority() {
+        val states = listOf(false, true)
+        for (cellularAvailable in states) for (cellularValidated in states)
+            for (validatedWifiAvailable in states) for (wifiFallbackEnabled in states) {
+                val routes = UpstreamRoutePolicy.order(
+                    cellularAvailable, cellularValidated, validatedWifiAvailable, wifiFallbackEnabled
+                )
+                val scenario = "cell=$cellularAvailable validated=$cellularValidated " +
+                    "wifi=$validatedWifiAvailable fallback=$wifiFallbackEnabled"
+                assertEquals(scenario, cellularAvailable, CELL in routes)
+                assertEquals(scenario, validatedWifiAvailable && wifiFallbackEnabled, WIFI in routes)
+                assertEquals(scenario, routes.size, routes.distinct().size)
+                if (cellularAvailable && validatedWifiAvailable && wifiFallbackEnabled) {
+                    assertEquals(scenario, if (cellularValidated) CELL else WIFI, routes.first())
+                }
+            }
+    }
+
 }
