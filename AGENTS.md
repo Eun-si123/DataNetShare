@@ -1,5 +1,7 @@
 # DataNet Share agent instructions
 
+**Cross-agent and external contributor identity:** Never impersonate the repository owner. A different, GitHub-linked human contributor may intentionally use their own public Git author identity; no-reply is recommended. Unlinked agent identities and owner-attributed commits must use GitHub no-reply. Co-author and signature identity trailers must use no-reply rather than private email. The read-only `Commit identity privacy` workflow audits every commit in a proposed PR using trusted base code and produces no private emails in logs. Fix any flagged unmerged PR branch before merging; do not rewrite protected/shared `main`.
+
 ## Commit author privacy (all agents and GitHub tools)
 
 - Never put the repository owner's real name, personal email, or other private contact details in Git commit author/committer fields, `Co-authored-by`/`Signed-off-by` trailers, PR titles/descriptions, logs, or public checkpoints. Use the owner's public GitHub handle `Eun-si123` and GitHub-provided no-reply identity `267835237+Eun-si123@users.noreply.github.com` for owner-attributed commits, unless the owner explicitly provides a different **nonpersonal** public identity.
