@@ -336,6 +336,12 @@ class ReceiverVpnService : VpnService() {
         super.onDestroy()
     }
     override fun onRevoke() {
+        // Revocation can arrive after an explicit Stop. Tear down this service,
+        // but do not overwrite a newer sender session with a receiver failure.
+        if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
+            cleanup()
+            return
+        }
         SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
         fail("Android revoked this VPN connection")
     }
