@@ -188,6 +188,12 @@ class Socks5Server(
             }
             when (command) {
                 1 -> {
+                    // TCP CONNECT requires a usable destination port. Never hand
+                    // port zero to the upstream (which may throw unchecked errors).
+                    if (address.port == 0) {
+                        Socks5.reply(output, 1)
+                        return
+                    }
                     val remote = try { upstream.connect(address.host, address.port) }
                     catch (e: IOException) {
                         val missingCellular = e.message?.contains("Mobile data is unavailable", true) == true
