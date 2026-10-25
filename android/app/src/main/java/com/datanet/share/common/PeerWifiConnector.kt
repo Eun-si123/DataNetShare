@@ -125,9 +125,12 @@ object PeerWifiConnector {
                 }, "qr-peer-readiness").apply { isDaemon = true }
                 synchronized(this@PeerWifiConnector) {
                     if (callback !== source || token != generation) return
+                    // Start under the same monitor as release(): otherwise Stop
+                    // can interrupt a not-yet-started Thread (not guaranteed to
+                    // take effect) and a stale readiness probe can run afterward.
                     verifier = worker
+                    worker.start()
                 }
-                worker.start()
             }
             override fun onUnavailable() {
                 synchronized(this@PeerWifiConnector) {
