@@ -33,6 +33,56 @@ class FlowAdmissionTest {
         stopDuringAdmission(pauseDuringCreation = false)
     }
 
+    @Test fun failedRegistrationClosesTheCreatedFlow() {
+        val created = TestFlow()
+        val failure = IllegalStateException("register failed")
+        var closes = 0
+        try {
+            admitFlow({ true }, { created }, { throw failure }, {
+                closes++
+                it.close()
+            })
+            fail("registration failure must propagate")
+        } catch (caught: IllegalStateException) {
+            assertSame(failure, caught)
+        }
+        assertEquals(1, closes)
+        assertTrue(created.closed.get())
+    }
+
+    @Test fun failedPostRegistrationCheckClosesThePublishedFlow() {
+        val created = TestFlow()
+        val active = ConcurrentHashMap<Int, TestFlow>()
+        val failure = IllegalStateException("running check failed")
+        var checks = 0
+        try {
+            admitFlow(
+                isRunning = { if (++checks == 2) throw failure else true },
+                create = { created },
+                register = { active[1] = it },
+                close = { it.close(); active.remove(1, it) }
+            )
+            fail("status check failure must propagate")
+        } catch (caught: IllegalStateException) {
+            assertSame(failure, caught)
+        }
+        assertTrue(created.closed.get())
+        assertTrue(active.isEmpty())
+    }
+
+    @Test fun cleanupFailureDoesNotHideRegistrationFailure() {
+        val registrationFailure = IllegalStateException("register failed")
+        val cleanupFailure = IllegalArgumentException("cleanup failed")
+        try {
+            admitFlow({ true }, { TestFlow() }, { throw registrationFailure }, { throw cleanupFailure })
+            fail("registration failure must propagate")
+        } catch (caught: IllegalStateException) {
+            assertSame(registrationFailure, caught)
+            assertEquals(1, caught.suppressed.size)
+            assertSame(cleanupFailure, caught.suppressed[0])
+        }
+    }
+
     private fun stopDuringAdmission(pauseDuringCreation: Boolean) {
         val running = AtomicBoolean(true)
         val reached = CountDownLatch(1)
