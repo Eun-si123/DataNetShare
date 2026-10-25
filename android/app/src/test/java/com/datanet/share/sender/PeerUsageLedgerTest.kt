@@ -3,6 +3,8 @@ package com.datanet.share.sender
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class PeerUsageLedgerTest {
     @Test fun aggregatesConnectionsByIpAndBothDirections() {
@@ -44,5 +46,25 @@ class PeerUsageLedgerTest {
         val stats = usage.snapshot().single()
         assertEquals(6L * 2000 * 17, stats.rxBytes)
         assertEquals(6L * 2000 * 13, stats.txBytes)
+    }
+
+    @Test fun concurrentUniquePeersNeverBypassTrackingLimit() {
+        val usage = PeerUsageLedger()
+        val pool = Executors.newFixedThreadPool(12)
+        val start = CountDownLatch(1)
+        try {
+            val attempts = (0 until 96).map { index ->
+                pool.submit<Boolean> {
+                    start.await()
+                    usage.open("10.0.${index / 256}.${index % 256}") != null
+                }
+            }
+            start.countDown()
+            assertEquals(32, attempts.count { it.get(10, TimeUnit.SECONDS) })
+            assertEquals(32, usage.snapshot().size)
+        } finally {
+            start.countDown()
+            pool.shutdownNow()
+        }
     }
 }
