@@ -32,6 +32,11 @@ export function inspectCommit(item, owner, ownerId = null, publicName = null) {
     const match = /<([^<>\s]+@[^<>\s]+)>\s*$/.exec(line);
     if (!match || !noReply(normalized(match[1]))) {
       problems.push('identity trailer contains a non-no-reply address');
+    } else if (normalized(match[1]) === 'ai-assisted@users.noreply.github.com') {
+      const agentName = line.trim().replace(/^(?:co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by):\s*/i, '').replace(/\s*<[^<>]+>\s*$/, '').trim();
+      if (!/(?:^|\s)Agent$/.test(agentName)) {
+        problems.push('unlinked AI attribution name must end with Agent');
+      }
     } else if (isOwnerEmail(match[1])) {
       const displayed = line.trim().replace(/^(?:co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by):\s*/i, '').replace(/\s*<[^<>]+>\s*$/, '');
       if (!approvedOwnerNames.has(normalized(displayed))) {
@@ -57,6 +62,10 @@ function selfTest() {
   assert.ok(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Person <private@example.com>'),'owner').length);
   assert.deepEqual(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Person <456+other@users.noreply.github.com>'),'owner',123,'Owner Public'),[]);
   assert.ok(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Private Name <123+owner@users.noreply.github.com>'),'owner',123,'Owner Public').length);
+  const agentTrailer = (label) => item(masked,'owner', 'fix: test\n\nCo-authored-by: '+label+' <ai-assisted@users.noreply.github.com>');
+  assert.deepEqual(inspectCommit(agentTrailer('Privacy Guard Agent'),'owner',123),[]);
+  assert.ok(inspectCommit(agentTrailer('Privacy Guard'),'owner',123).some(reason => reason.includes('Agent')));
+  assert.deepEqual(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Other Human <456+other@users.noreply.github.com>'),'owner',123),[]);
   console.log('Commit identity privacy: synthetic cases passed');
 }
 
