@@ -23,7 +23,7 @@ object InterfaceEnumerator {
                     }
                 }
             }
-        } catch (e: Exception) { Log.w(TAG, "Failed to enumerate interfaces: ${e.message}") }
+        } catch (_: Exception) { Log.w(TAG, "Failed to enumerate interfaces") }
         return result.sortedBy { it.type.ordinal }
     }
 
