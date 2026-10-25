@@ -51,13 +51,15 @@ class ReceiverVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { cleanup(); com.datanet.share.common.PeerWifiConnector.release(); SessionStore.stopped(SessionStore.Mode.RECEIVER); stopSelf(); return START_NOT_STICKY }
         if (intent?.action != ACTION_START) { stopSelf(); return START_NOT_STICKY }
-        recentTcpError = null
-        recentUdpError = null
-        releasePeerOnLoss = intent?.getBooleanExtra(EXTRA_RELEASE_PEER_ON_LOSS, false) ?: false
         if (!SessionStore.claim(SessionStore.Mode.RECEIVER)) {
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) stopSelf()
             return START_NOT_STICKY
         }
+        // Duplicate START commands must not reset active diagnostics or change
+        // the current session's peer-release policy.
+        recentTcpError = null
+        recentUdpError = null
+        releasePeerOnLoss = intent.getBooleanExtra(EXTRA_RELEASE_PEER_ON_LOSS, false)
         try {
             check(prepare(this) == null) { "Allow the VPN connection before starting" }
             val host = intent.getStringExtra(EXTRA_SOCKS_HOST) ?: ""
@@ -104,13 +106,13 @@ class ReceiverVpnService : VpnService() {
                         if (generation == token) {
                             val message = if (SenderProbeRetryPolicy.routeError(e))
                                 getString(R.string.sender_peer_route_failed)
-                            else "Sender check failed: ${e.message}"
+                            else ReceiverStartupFailureMessages.senderCheck(e)
                             fail(message)
                         }
                     }
                 }
             }, "receiver-check").apply { isDaemon = true; start() }
-        } catch (e: Exception) { fail(e.message ?: "Receiver could not start") }
+        } catch (e: Exception) { fail(ReceiverStartupFailureMessages.receiverStart(e)) }
         return START_NOT_STICKY
     }
 
@@ -194,7 +196,7 @@ class ReceiverVpnService : VpnService() {
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
             startPeerWatchdog(token, host, port, password)
-        } catch (e: Exception) { fail("VPN could not start: ${e.message}") }
+        } catch (e: Exception) { fail(ReceiverStartupFailureMessages.tunnelStart(e)) }
     }
 
     /**
