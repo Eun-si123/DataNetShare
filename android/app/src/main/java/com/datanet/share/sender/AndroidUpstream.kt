@@ -85,8 +85,8 @@ class AndroidUpstream(
         var last: IOException? = null
         for (address in addresses) {
             val socket = network?.socketFactory?.createSocket() ?: Socket()
-            try { socket.connect(InetSocketAddress(address, port), 15_000); return socket }
-            catch (e: IOException) { socket.close(); last = e }
+            try { return connectSocketOrClose(socket, InetSocketAddress(address, port), 15_000) }
+            catch (e: IOException) { last = e }
         }
         throw last ?: IOException("No address for destination")
     }
@@ -125,5 +125,21 @@ class AndroidUpstream(
         try {
             if (!useDefaultRoute) networks().first().bindSocket(socket)
         } catch (e: Exception) { socket.close(); throw IOException("UDP upstream binding failed", e) }
+    }
+}
+
+/**
+ * Close a freshly allocated TCP socket on any connection failure, including
+ * permission/runtime failures. Those failures must propagate unchanged; only
+ * I/O failures are eligible for another upstream address/network.
+ */
+internal fun connectSocketOrClose(socket: Socket, destination: InetSocketAddress, timeoutMs: Int): Socket {
+    try {
+        socket.connect(destination, timeoutMs)
+        return socket
+    } catch (failure: Exception) {
+        try { socket.close() }
+        catch (cleanup: Exception) { if (cleanup !== failure) failure.addSuppressed(cleanup) }
+        throw failure
     }
 }
