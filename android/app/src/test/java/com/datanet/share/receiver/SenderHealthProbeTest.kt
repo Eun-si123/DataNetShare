@@ -93,7 +93,8 @@ class SenderHealthProbeTest {
         // A health check must not send CONNECT/UDP ASSOCIATE: it is not a
         // destination reachability test and must not consume upstream data.
         val password = "synthetic-probe-password"
-        java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { listener ->
+        // Match the IPv4-only probe destination even when the JVM prefers IPv6 loopback.
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
             val observed = java.util.concurrent.LinkedBlockingQueue<Any>()
             val worker = Thread({
                 try {
