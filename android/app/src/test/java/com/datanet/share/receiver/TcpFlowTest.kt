@@ -12,11 +12,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TcpFlowTest {
+    // FlowKey destinations are IPv4; keep the local fixture IPv4 on IPv6-first JVMs.
+    private val ipv4Loopback = java.net.InetAddress.getByName("127.0.0.1")
+
     private fun incoming(key: FlowKey, seq: Int, ack: Int, flags: Int = 0x10, window: Int = 4096, bytes: ByteArray = ByteArray(0)) =
         Ipv4Packet(key, 6, seq, ack, flags, window, bytes)
 
     @Test fun unfinishedTcpHandshakeNeverOccupiesSenderProxySlot() = ProxyFixture().use { fixture ->
-        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { destination ->
+        ServerSocket(0, 1, ipv4Loopback).use { destination ->
             Thread({
                 destination.accept().use { socket ->
                     try { while (socket.getInputStream().read() >= 0) {} }
@@ -129,7 +132,7 @@ class TcpFlowTest {
     }
 
     @Test fun halfCloseDuplicateUploadAndLostResponseRemainCorrect() = ProxyFixture().use { fixture ->
-        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { remote ->
+        ServerSocket(0, 1, ipv4Loopback).use { remote ->
             val request = LinkedBlockingQueue<ByteArray>()
             val response = ByteArray(8000) { (it * 17).toByte() }
             Thread({
@@ -196,7 +199,7 @@ class TcpFlowTest {
      * checking every byte and confirming a clean remote FIN without RST.
      */
     @Test fun sustainedMultiMegabyteDownloadDoesNotResetOrCorrupt() = ProxyFixture().use { fixture ->
-        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+        ServerSocket(0, 1, ipv4Loopback).use { server ->
             val payload = ByteArray(2_097_177) { ((it * 31 + it / 257) and 255).toByte() }
             val senderFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
             Thread({
@@ -249,7 +252,7 @@ class TcpFlowTest {
     }
 
     @Test fun tripleDuplicateAckTriggersFastRetransmitBeforeRto() = ProxyFixture().use { fixture ->
-        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+        ServerSocket(0, 1, ipv4Loopback).use { server ->
             Thread({
                 server.accept().use { socket ->
                     socket.getOutputStream().write(ByteArray(5000) { (it and 255).toByte() })
@@ -290,7 +293,7 @@ class TcpFlowTest {
 
     @Test fun peerWithSmallAdvertisedMssNeverReceivesOversizedTcpSegments() =
         ProxyFixture().use { fixture ->
-            ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+            ServerSocket(0, 1, ipv4Loopback).use { server ->
                 val bytes = ByteArray(2500) { (it % 251).toByte() }
                 Thread({ server.accept().use { it.getOutputStream().write(bytes) } },
                     "test-limited-mss-server").apply { isDaemon = true; start() }
