@@ -88,4 +88,34 @@ class SenderHealthProbeTest {
         assertFalse(policy.observe(false))
         assertTrue(policy.observe(false))
     }
+
+    @Test fun probeEndsAfterAuthenticationWithoutSendingAnySocksRequest() {
+        // A health check must not send CONNECT/UDP ASSOCIATE: it is not a
+        // destination reachability test and must not consume upstream data.
+        val password = "synthetic-probe-password"
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { listener ->
+            val observed = java.util.concurrent.LinkedBlockingQueue<Any>()
+            val worker = Thread({
+                try {
+                    listener.accept().use { peer ->
+                        peer.soTimeout = 2_000
+                        val input = java.io.DataInputStream(peer.getInputStream())
+                        com.datanet.share.common.Socks5.authenticateServer(
+                            input, peer.getOutputStream(), password)
+                        // EOF is -1. A SOCKS request would start with version 5.
+                        observed.offer(input.read())
+                    }
+                } catch (failure: Exception) {
+                    observed.offer(failure)
+                }
+            }, "test-health-probe-auth-only").apply { isDaemon = true; start() }
+
+            assertTrue(SenderHealthProbe.check("127.0.0.1", listener.localPort,
+                password, timeoutMs = 1_500, setup = { true }))
+            assertEquals("health probe must close immediately after auth, without a SOCKS request",
+                -1, observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            worker.join(2_000)
+            assertFalse("fake sender worker must finish", worker.isAlive)
+        }
+    }
 }
