@@ -18,7 +18,8 @@ internal object SenderProbeRetryPolicy {
         // These are OS transport errors, not SOCKS authentication errors.
         val message = error.message.orEmpty()
         return listOf("EHOSTUNREACH", "ENETUNREACH", "No route to host",
-            "Network is unreachable", "EHOSTDOWN").any {
+            "Network is unreachable", "EHOSTDOWN", "Host is down",
+            "Host is unreachable").any {
             message.contains(it, ignoreCase = true)
         }
     }

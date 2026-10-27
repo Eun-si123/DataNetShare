@@ -16,6 +16,19 @@ class SenderProbeRetryPolicyTest {
         assertFalse(SenderProbeRetryPolicy.shouldRetry(host, 1, false))
     }
 
+    @Test fun plainHostDownAndUnreachableMessagesRemainBoundedQrRouteRetries() {
+        // Some socket implementations report a human-readable route failure
+        // without a symbolic EHOSTDOWN/EHOSTUNREACH errno prefix.
+        for (message in listOf("Host is down", "Host is unreachable")) {
+            val failure = SocketException(message)
+            assertTrue(message, SenderProbeRetryPolicy.routeError(failure))
+            assertTrue(message, SenderProbeRetryPolicy.shouldRetry(failure, 1, true))
+            assertTrue(message, SenderProbeRetryPolicy.shouldRetry(failure, 2, true))
+            assertFalse(message, SenderProbeRetryPolicy.shouldRetry(failure, 3, true))
+            assertFalse(message, SenderProbeRetryPolicy.shouldRetry(failure, 1, false))
+        }
+    }
+
     @Test fun neverRetryBadAuthenticationOrPermissionOrGenericTimeout() {
         for (cause in listOf(
             IOException("SOCKS authentication failed"),
