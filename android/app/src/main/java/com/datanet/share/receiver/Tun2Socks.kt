@@ -149,7 +149,12 @@ class Tun2Socks(
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
-        if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
+        if (packet.flags and 4 != 0) {
+            // Delegate RST validation to the flow. Unconditional removal here
+            // would let stale or out-of-window resets kill a newer connection.
+            tcp[key]?.receive(packet)
+            return
+        }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
             if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
