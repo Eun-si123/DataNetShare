@@ -83,6 +83,40 @@ class FlowAdmissionTest {
         }
     }
 
+    @Test fun postRegistrationFailureKeepsOriginalWhenCleanupAlsoFails() {
+        val stateFailure = IllegalStateException("post-registration state check failed")
+        val cleanupFailure = IllegalArgumentException("cleanup failed")
+        var checks = 0
+        var cleanupCalls = 0
+        try {
+            admitFlow(
+                isRunning = { if (++checks == 2) throw stateFailure else true },
+                create = { TestFlow() },
+                register = { },
+                close = { cleanupCalls++; throw cleanupFailure }
+            )
+            fail("Post-registration failure must propagate")
+        } catch (caught: IllegalStateException) {
+            assertSame(stateFailure, caught)
+            assertEquals(1, caught.suppressed.size)
+            assertSame(cleanupFailure, caught.suppressed[0])
+        }
+        assertEquals(2, checks)
+        assertEquals(1, cleanupCalls)
+    }
+
+    @Test fun registrationErrorStillClosesFlowBeforePropagating() {
+        val flow = TestFlow()
+        val failure = AssertionError("registration error")
+        try {
+            admitFlow({ true }, { flow }, { throw failure }, { it.close() })
+            fail("Registration Error must propagate")
+        } catch (caught: AssertionError) {
+            assertSame(failure, caught)
+        }
+        assertTrue(flow.closed.get())
+    }
+
     private fun stopDuringAdmission(pauseDuringCreation: Boolean) {
         val running = AtomicBoolean(true)
         val reached = CountDownLatch(1)
