@@ -67,3 +67,9 @@ For workflow, validation, memory and stopping rules, see [docs/AGENT_WORKFLOW.md
 
 
 **Owner-directed Agent pre-push gate:** Before publishing local Agent commits to any branch, run `node scripts/preflight-push-identity.mjs --base origin/main` on the reviewed checkout, or use the exact trusted ancestor ref for that task. This validates the unpublished commit author, committer and Agent co-author without printing sensitive values. Do not publish when it fails; do not retry by substituting an unrelated base. It is a deliberately strict owner-directed Agent mode, **not** a rule that independently authored human contributors must impersonate the owner; those contributors use their own authorized identities and the PR CI policy. The checker is not an automatic Git hook, so each participating Agent must invoke it explicitly. For local non-Agent human-only commits, use the human contributor workflow instead.
+## Lean implementation and boundary validation
+
+- Prefer the smallest **coherent** change, not merely fewer lines. Inline one-use logic when clearer; add helpers or abstractions for genuine reuse, separate responsibilities, or testability—not hypothetical complexity.
+- Validate untrusted data at each trust boundary and carry validated values/types internally; avoid repeating equivalent null/format checks. Revalidate changed state, permissions, and new trust boundaries where needed.
+- Preserve concrete security, integrity, concurrency, network, lifecycle, recovery, and resource-limit safeguards. Use `try/catch` where handling, cleanup, translation, or diagnostics add value; never silently swallow failures.
+- Choose focused tests proportional to regression risk. Never remove meaningful guards, failure tests, or quality gates just to shorten code.
