@@ -53,3 +53,10 @@ This is a **public, actively maintained Android networking fork**, not the archi
 - For meaningful changes, compare at least one alternative including **no change**; identify a falsifiable test and significant regression risks. For performance, prefer comparable A/B measurements on the same devices/network/server rather than a single benchmark result.
 
 For workflow, validation, memory and stopping rules, see [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md).
+
+## Lean implementation and boundary validation
+
+- Prefer the smallest **coherent** change, not merely fewer lines. Inline one-use logic when clearer; add helpers or abstractions for genuine reuse, separate responsibilities, or testability—not hypothetical complexity.
+- Validate untrusted data at each trust boundary and carry validated values/types internally; avoid repeating equivalent null/format checks. Revalidate changed state, permissions, and new trust boundaries where needed.
+- Preserve concrete security, integrity, concurrency, network, lifecycle, recovery, and resource-limit safeguards. Use `try/catch` where handling, cleanup, translation, or diagnostics add value; never silently swallow failures.
+- Choose focused tests proportional to regression risk. Never remove meaningful guards, failure tests, or quality gates just to shorten code.
