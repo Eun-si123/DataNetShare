@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
     @Test fun oversizeReplyIsCountedAndNextReplyStillArrives() = ProxyFixture().use { fixture ->
-        DatagramSocket(InetSocketAddress(InetAddress.getLoopbackAddress(), 0)).use { server ->
+        // The flow targets 127.0.0.1; bind the fixture to IPv4 even on IPv6-first JVMs.
+        DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { server ->
             Thread({
                 try {
                     repeat(3) {
