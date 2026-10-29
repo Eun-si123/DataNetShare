@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "ko-KR"
+reviews:
+  profile: "chill"
+  poem: false
+  auto_approvals:
+    enabled: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+  path_instructions:
+    - path: "android/**"
+      instructions: |
+        Prioritize authenticated SOCKS5 boundaries, Android VPN and app lifecycle,
+        TCP/UDP forwarding, packet parsing, concurrency and cancellation, quotas,
+        credential/log redaction, cleanup and no unintended traffic capture.
+        Check realistic failure paths and regression tests; do not treat CI alone
+        as evidence of real-device network behavior.
