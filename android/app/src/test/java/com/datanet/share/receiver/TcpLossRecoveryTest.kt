@@ -156,7 +156,8 @@ class TcpLossRecoveryTest {
     private class Download(shift: Int?, initialWindow: Int, payloadSize: Int = 5600,
                            finishOutput: Boolean = false) : AutoCloseable {
         private val fixture = ProxyFixture()
-        private val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        // The FlowKey and SOCKS destination are IPv4, even on IPv6-first JVMs.
+        private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         private val key = FlowKey(0x0a000001, 47232, 0x7f000001, server.localPort)
         private val packets = LinkedBlockingQueue<Ipv4Packet>()
         val retransmits = AtomicInteger()
