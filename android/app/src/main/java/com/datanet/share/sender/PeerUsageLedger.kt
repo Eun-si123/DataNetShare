@@ -1,6 +1,7 @@
 package com.datanet.share.sender
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -13,37 +14,53 @@ import java.util.concurrent.atomic.AtomicLong
 class PeerUsageLedger {
     data class Snapshot(val ip: String, val activeConnections: Int,
                         val rxBytes: Long, val txBytes: Long)
-    class Entry internal constructor(val ip: String) {
+
+    /** One lease per authenticated connection, sharing counters for the same IP. */
+    class Entry internal constructor(private val totals: Totals) {
+        val ip: String get() = totals.ip
+        private val released = AtomicBoolean()
+        internal fun closed() {
+            if (released.compareAndSet(false, true)) totals.closed()
+        }
+        fun received(bytes: Int) { totals.received(bytes) }
+        fun sent(bytes: Int) { totals.sent(bytes) }
+    }
+
+    internal class Totals(val ip: String) {
         private val active = AtomicInteger()
         private val rx = AtomicLong()
         private val tx = AtomicLong()
 
         // Accessed only while the ledger's open() monitor is held.
-        internal var lastOpenedOrder = 0L
-        internal fun opened(order: Long) { lastOpenedOrder = order; active.incrementAndGet() }
-        internal fun isIdle() = active.get() == 0
-        internal fun closed() = active.updateAndGet { (it - 1).coerceAtLeast(0) }
+        var lastOpenedOrder = 0L
+        fun opened(order: Long) { lastOpenedOrder = order; active.incrementAndGet() }
+        fun isIdle() = active.get() == 0
+        fun closed() { active.decrementAndGet() }
         fun received(bytes: Int) { if (bytes > 0) rx.addAndGet(bytes.toLong()) }
         fun sent(bytes: Int) { if (bytes > 0) tx.addAndGet(bytes.toLong()) }
-        internal fun snapshot() = Snapshot(ip, active.get(), rx.get(), tx.get())
+        fun snapshot() = Snapshot(ip, active.get(), rx.get(), tx.get())
     }
-    private val peers = ConcurrentHashMap<String, Entry>()
+
+    private val peers = ConcurrentHashMap<String, Totals>()
     private var nextOpenOrder = 0L
 
     /** Keep active peers tracked, reusing an inactive slot after 32 distinct IPs. */
     @Synchronized fun open(ip: String): Entry? {
         val existing = peers[ip]
-        if (existing != null) { existing.opened(++nextOpenOrder); return existing }
+        if (existing != null) {
+            existing.opened(++nextOpenOrder)
+            return Entry(existing)
+        }
         if (peers.size >= 32) {
             // Never evict an active connection just to display a newer peer.
             val oldestIdle = peers.values.filter { it.isIdle() }
                 .minByOrNull { it.lastOpenedOrder } ?: return null
             peers.remove(oldestIdle.ip, oldestIdle)
         }
-        val created = Entry(ip)
+        val created = Totals(ip)
         peers[ip] = created
         created.opened(++nextOpenOrder)
-        return created
+        return Entry(created)
     }
     fun close(entry: Entry?) { entry?.closed() }
     fun snapshot(): List<Snapshot> =

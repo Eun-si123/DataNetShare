@@ -11,6 +11,7 @@ class PeerUsageLedgerTest {
         val usage = PeerUsageLedger()
         val a = usage.open("192.168.49.81")!!
         val b = usage.open("192.168.49.81")!!
+        assertNotSame("each connection needs an independent close lease", a, b)
         val other = usage.open("192.168.49.82")!!
         a.received(1024); b.received(10)
         a.sent(2048); b.sent(15)
@@ -26,11 +27,13 @@ class PeerUsageLedgerTest {
 
     @Test fun capsTrackedPeersAndDoesNotGoNegative() {
         val ledger = PeerUsageLedger()
-        repeat(32) { assertNotNull(ledger.open("10.0.0.$it")) }
+        val original = (0 until 32).map { ledger.open("10.0.0.$it")!! }
         assertNull(ledger.open("10.0.1.1"))
         assertEquals(32, ledger.snapshot().size)
         val entry = ledger.open("10.0.0.0")!!
         ledger.close(entry); ledger.close(entry); ledger.close(entry)
+        assertEquals(1, ledger.snapshot().first { it.ip == "10.0.0.0" }.activeConnections)
+        ledger.close(original.first())
         assertEquals(0, ledger.snapshot().first { it.ip == "10.0.0.0" }.activeConnections)
         ledger.clear()
         assertTrue(ledger.snapshot().isEmpty())
@@ -92,6 +95,36 @@ class PeerUsageLedgerTest {
         assertEquals(11L, afterClose.rxBytes)
         assertEquals(13L, afterClose.txBytes)
         ledger.close(second)
+    }
+
+    @Test fun duplicateCloseCannotReleaseAnotherConnectionForSameIp() {
+        val ledger = PeerUsageLedger()
+        val first = ledger.open("198.51.100.1")!!
+        val second = ledger.open("198.51.100.1")!!
+        assertEquals(2, ledger.snapshot().single().activeConnections)
+
+        // A second cleanup of the same connection must not release the
+        // other connection's accounting slot or make it eligible for eviction.
+        ledger.close(first)
+        ledger.close(first)
+        assertEquals(1, ledger.snapshot().single().activeConnections)
+        repeat(31) { assertNotNull(ledger.open("198.51.101.$it")) }
+        assertNull("an active peer must not be evicted", ledger.open("198.51.102.1"))
+        assertTrue(ledger.snapshot().any { it.ip == "198.51.100.1" })
+        ledger.close(second)
+    }
+
+    @Test fun concurrentDuplicateCloseReleasesOnlyItsOwnLease() {
+        val ledger = PeerUsageLedger()
+        val first = ledger.open("198.51.100.2")!!
+        val second = ledger.open("198.51.100.2")!!
+        val workers = (0 until 2).map {
+            Thread { repeat(100) { ledger.close(first) } }.apply { start() }
+        }
+        workers.forEach { it.join() }
+        assertEquals(1, ledger.snapshot().single().activeConnections)
+        ledger.close(second)
+        assertEquals(0, ledger.snapshot().single().activeConnections)
     }
 
     @Test fun concurrentTrafficCountersRemainAccurate() {
