@@ -24,6 +24,11 @@ internal object SenderHealthProbe {
                     socket.getOutputStream(), password)
                 true
             }
+        } catch (_: InterruptedException) {
+            // Stop interrupts the watchdog. Do not clear its cancellation signal
+            // if socket preparation was interrupted before the next loop check.
+            Thread.currentThread().interrupt()
+            false
         } catch (_: Exception) {
             // Never log host/password or the exception's potentially sensitive message.
             false
