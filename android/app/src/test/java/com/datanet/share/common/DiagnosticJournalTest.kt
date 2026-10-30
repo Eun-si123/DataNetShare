@@ -1,5 +1,6 @@
 package com.datanet.share.common
 
+import com.datanet.share.receiver.TcpCapacityPolicy
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -28,6 +29,20 @@ class DiagnosticJournalTest {
         journal.clear()
         assertTrue(journal.snapshot().contains("No internal"))
     }
+    @Test fun udpCapacityDiagnosticCoversSharedBudgetNotOnlyFortyUdpFlows() {
+        // UDP can be rejected with only eight UDP flows when 112 TCP flows
+        // consume the remainder of the 120-slot shared sender budget.
+        val tcpAtCap = TcpCapacityPolicy.MAX_TCP
+        val udpAtSharedCap = TcpCapacityPolicy.TOTAL_BUDGET - tcpAtCap
+        assertTrue(udpAtSharedCap < TcpCapacityPolicy.MAX_UDP)
+        assertFalse(TcpCapacityPolicy.allowUdp(tcpAtCap, udpAtSharedCap))
+        assertFalse(TcpCapacityPolicy.allowUdp(0, TcpCapacityPolicy.MAX_UDP))
+        val summary = DiagnosticJournal().record(NetworkEvent.UDP_FLOW_LIMIT)
+        assertTrue(summary.contains("shared TCP/UDP budget"))
+        assertFalse(summary.contains("40 concurrent flows"))
+        assertTrue(summary.endsWith("×1"))
+    }
+
     @Test fun concurrentEventsDoNotLoseCounts() {
         val journal = DiagnosticJournal()
         val latch = CountDownLatch(4)
