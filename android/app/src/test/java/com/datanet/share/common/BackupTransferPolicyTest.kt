@@ -50,8 +50,14 @@ class BackupTransferPolicyTest {
                     exclude.getAttribute("path"))
                 exclude.getAttribute("domain")
             }.toSet()
-            assertEquals(setOf("root", "external"), domains)
-            assertEquals("No duplicate exclusions", 2, excludes.length)
+            assertEquals(
+                setOf(
+                    "root", "file", "database", "sharedpref",
+                    "device_root", "device_file", "device_database", "device_sharedpref",
+                    "external"
+                ), domains
+            )
+            assertEquals("No duplicate exclusions", 9, excludes.length)
         }
         assertTrue("No root-level include rules",
             rules.getElementsByTagName("include").length == 0)
