@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import java.security.SecureRandom
 
 object UdpTest {
-    /** Verify STUN framing and the unpredictable transaction ID of our request. */
+    /** Verify STUN framing, mapped address and unpredictable transaction ID. */
     internal fun isValidBindingResponse(bytes: ByteArray, transaction: ByteArray): Boolean {
         if (transaction.size != 12 || bytes.size < 20) return false
         if (bytes[0] != 0x01.toByte() || bytes[1] != 0x01.toByte()) return false
@@ -15,18 +15,27 @@ object UdpTest {
         if (bytes[4] != 0x21.toByte() || bytes[5] != 0x12.toByte() ||
             bytes[6] != 0xa4.toByte() || bytes[7] != 0x42.toByte()) return false
         if (!(0 until 12).all { bytes[8 + it] == transaction[it] }) return false
-        // RFC 8489 attributes contain a 4-byte header and a 32-bit-padded value.
-        // Do not report reachability for a response with truncated attributes.
+        // RFC 8489 Binding success must include a well-formed XOR-MAPPED-ADDRESS.
+        // Other padded attributes are allowed; this is not a general STUN decoder.
+        var hasMappedAddress = false
         var offset = 20
         while (offset < bytes.size) {
             if (bytes.size - offset < 4) return false
+            val type = ((bytes[offset].toInt() and 255) shl 8) or
+                (bytes[offset + 1].toInt() and 255)
             val valueLength = ((bytes[offset + 2].toInt() and 255) shl 8) or
                 (bytes[offset + 3].toInt() and 255)
             val paddedLength = (valueLength + 3) and -4
             if (paddedLength > bytes.size - offset - 4) return false
+            if (type == 0x0020) {
+                val family = if (valueLength >= 2) bytes[offset + 5].toInt() and 255 else 0
+                if (!((family == 1 && valueLength == 8) ||
+                    (family == 2 && valueLength == 20))) return false
+                hasMappedAddress = true
+            }
             offset += 4 + paddedLength
         }
-        return true
+        return hasMappedAddress
     }
 
     fun runTest(onResult: (String) -> Unit, onError: (String) -> Unit, onFinished: () -> Unit) {
