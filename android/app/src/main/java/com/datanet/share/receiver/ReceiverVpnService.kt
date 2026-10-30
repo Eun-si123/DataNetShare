@@ -340,6 +340,9 @@ class ReceiverVpnService : VpnService() {
         // but do not overwrite a newer sender session with a receiver failure.
         if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
             cleanup()
+            // Overriding VpnService.onRevoke() skips its default stopSelf().
+            // This stale service must still terminate without changing the new mode.
+            stopSelf()
             return
         }
         SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
