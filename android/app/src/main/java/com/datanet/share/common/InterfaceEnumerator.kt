@@ -3,6 +3,7 @@ package com.datanet.share.common
 import android.util.Log
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.util.Locale
 
 object InterfaceEnumerator {
     private const val TAG = "InterfaceEnumerator"
@@ -38,10 +39,20 @@ object InterfaceEnumerator {
         }
     }
 
-    fun localCandidates(): List<InterfaceInfo> = getAllInterfaces().filter {
-        it.type in listOf(InterfaceType.WIFI, InterfaceType.WIFI_DIRECT, InterfaceType.USB_TETHERING) ||
-            (it.type == InterfaceType.OTHER && java.net.InetAddress.getByName(it.ip).isSiteLocalAddress)
+    /**
+     * A private IPv4 address alone does not make a virtual VPN/CLAT interface
+     * a safe local sharing link. Keep unfamiliar OEM physical-link names
+     * eligible, but do not offer known tunnel adapters as sender bind targets.
+     */
+    internal fun isLocalCandidate(info: InterfaceInfo): Boolean {
+        val name = info.name.lowercase(Locale.ROOT)
+        if (listOf("tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale", "v4-")
+                .any(name::startsWith)) return false
+        return info.type in listOf(InterfaceType.WIFI, InterfaceType.WIFI_DIRECT, InterfaceType.USB_TETHERING) ||
+            (info.type == InterfaceType.OTHER && java.net.InetAddress.getByName(info.ip).isSiteLocalAddress)
     }
+
+    fun localCandidates(): List<InterfaceInfo> = getAllInterfaces().filter(::isLocalCandidate)
 
     fun getSummary(): String {
         val ifaces = getAllInterfaces()
