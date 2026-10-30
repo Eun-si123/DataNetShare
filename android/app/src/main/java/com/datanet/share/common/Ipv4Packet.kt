@@ -69,8 +69,13 @@ data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, va
             val protocol = bytes[9].toInt() and 255
             if (protocol != 6 && protocol != 17) return null
             if (total < ihl + if (protocol == 6) 20 else 8) return null
-            val key = FlowKey(buffer.getInt(12), buffer.getShort(ihl).toInt() and 65535,
-                buffer.getInt(16), buffer.getShort(ihl + 2).toInt() and 65535)
+            val sourcePort = buffer.getShort(ihl).toInt() and 65535
+            val destinationPort = buffer.getShort(ihl + 2).toInt() and 65535
+            // Destination port zero is reserved for TCP and UDP. TCP source
+            // port zero is also invalid; UDP source zero means no reply port.
+            // Reject before admitting a flow or opening an upstream socket.
+            if (destinationPort == 0 || (protocol == 6 && sourcePort == 0)) return null
+            val key = FlowKey(buffer.getInt(12), sourcePort, buffer.getInt(16), destinationPort)
             if (protocol == 6) {
                 val tcpHeader = (bytes[ihl + 12].toInt() and 255) ushr 4 shl 2
                 if (tcpHeader < 20 || ihl + tcpHeader > total) return null
