@@ -38,6 +38,7 @@ import com.datanet.share.common.ProxyPasswordPolicy
 import com.datanet.share.common.SessionStore
 import com.datanet.share.common.UdpTest
 import com.datanet.share.common.WifiPasswordVault
+import com.datanet.share.common.WifiPasswordPersistence
 import com.datanet.share.receiver.ReceiverVpnService
 import com.datanet.share.sender.PeerUsageLedger
 import com.datanet.share.sender.SenderService
@@ -126,14 +127,11 @@ class MainActivity : AppCompatActivity() {
         p2pNameSuffix.setText(form.p2pSuffix.ifEmpty { preferences.getString("p2p_suffix", "").orEmpty() })
         p2pNameSuffix.doAfterTextChanged { form.p2pSuffix = it?.toString().orEmpty() }
         if (!form.customP2pPasswordInitialized) {
-            try {
-                form.customP2pPassword = p2pPasswordVault.load().orEmpty()
-            } catch (_: Exception) {
-                // Do not log ciphertext, recovered password or platform crypto details.
-                showMessage(getString(R.string.p2p_password_restore_failed))
-                try { p2pPasswordVault.clear() } catch (_: Exception) { /* user can retry */ }
-                form.customP2pPassword = ""
-            }
+            val restored = WifiPasswordPersistence.restore { p2pPasswordVault.load() }
+            form.customP2pPassword = restored.password.orEmpty()
+            form.customP2pPasswordRestoreFailed = restored.failed
+            // A transient Keystore failure must not destroy a recoverable ciphertext.
+            if (restored.failed) showMessage(getString(R.string.p2p_password_restore_failed))
             form.customP2pPasswordInitialized = true
         }
         p2pWifiPassword.setText(form.customP2pPassword)
@@ -412,8 +410,15 @@ class MainActivity : AppCompatActivity() {
             // Clearing the input switches back to generated passwords and
             // also forgets the previously saved password.
             try {
-                if (profile.passphrase.isEmpty()) p2pPasswordVault.clear()
-                else p2pPasswordVault.save(profile.passphrase)
+                // An empty field after failed restoration is not an explicit
+                // request to forget a password the UI could not display.
+                if (!WifiPasswordPersistence.persistOnStart(
+                        profile.passphrase, form.customP2pPasswordRestoreFailed,
+                        p2pPasswordVault::save, p2pPasswordVault::clear)) {
+                    showMessage(getString(R.string.p2p_password_restore_failed))
+                    return
+                }
+                form.customP2pPasswordRestoreFailed = false
             } catch (_: Exception) {
                 showMessage(getString(R.string.p2p_password_save_failed))
                 return
