@@ -11,6 +11,14 @@ class PairingPayloadTest {
         ssid = "DIRECT-A1 My Phone", wifiPassword = "wifi+password;\\$"
     )
 
+    @Test fun debugStringNeverExposesPairingSecretsOrPeerIdentifiers() {
+        // A Kotlin data class normally prints every constructor field, including credentials.
+        assertEquals("PairingPayload(<redacted>)", direct.toString())
+        assertEquals("PairingPayload(<redacted>)", PairingPayload("192.168.42.10", 8282, password).toString())
+        // Serialization remains intentional and separate from diagnostic formatting.
+        assertEquals(direct, PairingPayload.parse(direct.encode()))
+    }
+
     @Test fun wifiDirectRoundTripPreservesAllCredentials() {
         assertEquals(direct, PairingPayload.parse(direct.encode()))
         assertTrue(direct.encode().startsWith("datanetshare://pair/v1?"))
