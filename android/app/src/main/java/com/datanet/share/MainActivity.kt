@@ -520,12 +520,12 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             // Fallback if Android rejects the dispatch during a lifecycle race.
             stopService(Intent(intent).apply { action = null })
-            showMessage(e.message ?: "Could not send stop command")
+            showMessage(ServiceDispatchFailureMessages.stop(e))
         }
     }
 
     private fun launchService(intent: Intent) {
-        try { ContextCompat.startForegroundService(this, intent) } catch (e: Exception) { showMessage(e.message ?: "Could not start service") }
+        try { ContextCompat.startForegroundService(this, intent) } catch (e: Exception) { showMessage(ServiceDispatchFailureMessages.start(e)) }
     }
     private fun showMessage(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
     private fun log(message: String) = runOnUiThread {
