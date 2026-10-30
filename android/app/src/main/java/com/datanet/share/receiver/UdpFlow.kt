@@ -99,6 +99,11 @@ class UdpFlow(
                 val bytes = Socks5.encodeDatagram(destination, payload)
                 datagram.send(DatagramPacket(bytes, bytes.size)); onTx(payload.size)
             }
+        } catch (_: InterruptedException) {
+            // Cancellation of the blocking queue poll must not erase the worker's
+            // interrupt status or be reported as an upstream setup failure.
+            Thread.currentThread().interrupt()
+            if (!closed.get()) onError("UDP relay interrupted. Reconnect to resume.")
         } catch (e: Exception) {
             if (!closed.get()) {
                 // Do not expose destination, proxy credentials or exception messages.
