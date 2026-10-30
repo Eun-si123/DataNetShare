@@ -29,7 +29,9 @@ class Socks5Server(
     private val maxClients: Int = 128,
     private val tcpIdleMillis: Long = 45_000,
     private val socketPollMillis: Int = 2_000,
-    private val onPeers: (List<PeerUsageLedger.Snapshot>) -> Unit = {}
+    private val onPeers: (List<PeerUsageLedger.Snapshot>) -> Unit = {},
+    // Test seam: a rejecting launcher must throw BEFORE starting the thread.
+    private val workerLauncher: (Thread) -> Unit = { it.start() }
 ) {
     init {
         require(maxClients in 1..192) { "Sender client limit must be bounded" }
@@ -62,6 +64,29 @@ class Socks5Server(
             }
         }
     }
+    /** Only thread construction/start is translated; never hide arbitrary worker errors. */
+    private class WorkerLaunchFailure(cause: Throwable) :
+        IOException("SOCKS worker could not start", cause)
+
+    private fun launchWorker(name: String, body: () -> Unit): Thread {
+        try {
+            val worker = Thread(body, name).apply { isDaemon = true }
+            workerLauncher(worker)
+            return worker
+        } catch (failure: OutOfMemoryError) {
+            throw WorkerLaunchFailure(failure)
+        } catch (failure: SecurityException) {
+            throw WorkerLaunchFailure(failure)
+        }
+    }
+
+    /** A worker could not be created: never keep a half-running proxy listener. */
+    @Synchronized private fun failWorkerLaunch() {
+        if (!running) return
+        stop()
+        try { onFailure(SenderFailureMessages.LISTENER_STOPPED) } catch (_: Exception) {}
+    }
+
     private val permits = Semaphore(maxClients)
     private val datagramPermits = Semaphore(128)
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
@@ -86,55 +111,72 @@ class Socks5Server(
         catch (e: Exception) { server.close(); throw e }
         usage.clear()
         listener = server; running = true
-        Thread({
-            try {
-                while (running && listener === server) {
-                    val client = server.accept()
-                    if (!running || listener !== server) { client.close(); continue }
-                    if (!permits.tryAcquire()) {
-                        try {
-                            onClientLimit()
-                        } catch (_: Exception) {
-                            // A nonessential reporting failure must not kill the accept loop.
-                        } finally {
-                            try { client.close() } catch (_: IOException) {}
-                        }
-                        continue
-                    }
-                    clients.add(client); sockets.add(client)
-                    Thread({
-                        var peer: PeerUsageLedger.Entry? = null
-                        try {
-                            if (running && listener === server) handleClient(client) {
-                                usage.open(client.inetAddress.hostAddress).also { peer = it }
+        try {
+            launchWorker("socks-accept") {
+                try {
+                    while (running && listener === server) {
+                        val client = server.accept()
+                        if (!running || listener !== server) { client.close(); continue }
+                        if (!permits.tryAcquire()) {
+                            try {
+                                onClientLimit()
+                            } catch (_: Exception) {
+                                // A nonessential reporting failure must not kill the accept loop.
+                            } finally {
+                                try { client.close() } catch (_: IOException) {}
                             }
-                        } finally {
-                            usage.close(peer)
-                            clients.remove(client); sockets.remove(client); client.close(); permits.release()
-                            publishStats()
+                            continue
                         }
-                    }, "socks-client").apply { isDaemon = true; start() }
-                }
-            } catch (e: IOException) {
-                // A previous accept thread can outlive Stop and a quick restart.
-                // Check listener identity *under the same lock* as Stop/Start so
-                // an old closed ServerSocket cannot tear down the new session.
-                var failedCurrentSession = false
-                synchronized(this@Socks5Server) {
-                    if (running && listener === server) {
-                        stop()
-                        failedCurrentSession = true
+                        clients.add(client); sockets.add(client)
+                        try {
+                            launchWorker("socks-client") {
+                                var peer: PeerUsageLedger.Entry? = null
+                                try {
+                                    if (running && listener === server) handleClient(client) {
+                                        usage.open(client.inetAddress.hostAddress).also { peer = it }
+                                    }
+                                } finally {
+                                    usage.close(peer)
+                                    clients.remove(client); sockets.remove(client)
+                                    try { client.close() } catch (_: IOException) {}
+                                    permits.release()
+                                    publishStats()
+                                }
+                            }
+                        } catch (_: WorkerLaunchFailure) {
+                            // The worker never started, so its finally cannot own cleanup.
+                            clients.remove(client); sockets.remove(client)
+                            try { client.close() } catch (_: IOException) {}
+                            permits.release()
+                            failWorkerLaunch()
+                            break
+                        }
                     }
+                } catch (e: IOException) {
+                    // A previous accept thread can outlive Stop and a quick restart.
+                    // Check listener identity *under the same lock* as Stop/Start so
+                    // an old closed ServerSocket cannot tear down the new session.
+                    var failedCurrentSession = false
+                    synchronized(this@Socks5Server) {
+                        if (running && listener === server) {
+                            stop()
+                            failedCurrentSession = true
+                        }
+                    }
+                    if (failedCurrentSession) onFailure(SenderFailureMessages.LISTENER_STOPPED)
                 }
-                if (failedCurrentSession) onFailure(SenderFailureMessages.LISTENER_STOPPED)
             }
-        }, "socks-accept").apply { isDaemon = true; start() }
-        Thread({
-            while (running && listener === server) {
-                try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
-                if (running && listener === server) publishStats()
+            launchWorker("socks-stats") {
+                while (running && listener === server) {
+                    try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+                    if (running && listener === server) publishStats()
+                }
             }
-        }, "socks-stats").apply { isDaemon = true; start() }
+        } catch (failure: WorkerLaunchFailure) {
+            // If stats launch fails after accept starts, close that listener too.
+            stop()
+            throw failure
+        }
     }
 
     private fun publishStats() {
@@ -228,9 +270,9 @@ class Socks5Server(
                         val idleReported = AtomicBoolean()
                         // EOF only half-closes a stream. Do not join forever when the
                         // opposite side stops responding without sending its own FIN.
-                        val upload = Thread({
+                        val upload = launchWorker("socks-upload") {
                             relay(client, remote, rx, lastProgress, idleReported, peer, uploading = true)
-                        }, "socks-upload").apply { isDaemon = true; start() }
+                        }
                         relay(remote, client, tx, lastProgress, idleReported, peer, uploading = false)
                         upload.join()
                     } finally { sockets.remove(remote); remote.close() }
@@ -250,6 +292,8 @@ class Socks5Server(
                 }
                 else -> Socks5.reply(output, 7)
             }
+        } catch (_: WorkerLaunchFailure) {
+            failWorkerLaunch()
         } catch (_: IOException) { /* A bad handshake only terminates this client. */ }
     }
 
@@ -300,7 +344,7 @@ class Socks5Server(
         val lastActivity = AtomicLong(System.nanoTime())
 
         fun start() {
-            Thread({
+            launchWorker("socks-udp-relay") {
                 val buffer = ByteArray(65535)
                 while (running && !closed) {
                     try {
@@ -341,7 +385,7 @@ class Socks5Server(
                     } catch (_: SocketTimeoutException) { continue }
                     catch (_: IOException) { if (relay.isClosed) break }
                 }
-            }, "socks-udp-relay").apply { isDaemon = true; start() }
+            }
         }
 
         private fun createRemote(target: Socks5.Address): DatagramSocket? {
@@ -357,24 +401,29 @@ class Socks5Server(
                     if (closed || !running) { socket.close(); datagramPermits.release(); return null }
                     remoteSockets[target] = socket
                 }
-                Thread({
-                    val buffer = ByteArray(65535)
-                    try {
-                        while (running && !closed) {
-                            val packet = DatagramPacket(buffer, buffer.size)
-                            try { socket.receive(packet) } catch (_: SocketTimeoutException) { continue }
-                            val endpoint = clientEndpoint ?: continue
-                            val payload = packet.data.copyOfRange(packet.offset, packet.offset + packet.length)
-                            val response = Socks5.encodeDatagram(Socks5.Address(destination.address.hostAddress!!, destination.port), payload)
-                            if (response.size > 65_507) continue
-                            relay.send(DatagramPacket(response, response.size, endpoint))
-                            tx.addAndGet(payload.size.toLong())
-                            peer?.sent(payload.size)
-                            lastActivity.set(System.nanoTime())
-                        }
-                    } catch (_: IOException) { /* close() unblocks receive */ }
-                    finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
-                }, "socks-udp-upstream").apply { isDaemon = true; start() }
+                try {
+                    launchWorker("socks-udp-upstream") {
+                        val buffer = ByteArray(65535)
+                        try {
+                            while (running && !closed) {
+                                val packet = DatagramPacket(buffer, buffer.size)
+                                try { socket.receive(packet) } catch (_: SocketTimeoutException) { continue }
+                                val endpoint = clientEndpoint ?: continue
+                                val payload = packet.data.copyOfRange(packet.offset, packet.offset + packet.length)
+                                val response = Socks5.encodeDatagram(Socks5.Address(destination.address.hostAddress!!, destination.port), payload)
+                                if (response.size > 65_507) continue
+                                relay.send(DatagramPacket(response, response.size, endpoint))
+                                tx.addAndGet(payload.size.toLong())
+                                peer?.sent(payload.size)
+                                lastActivity.set(System.nanoTime())
+                            }
+                        } catch (_: IOException) { /* close() unblocks receive */ }
+                        finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
+                    }
+                } catch (failure: WorkerLaunchFailure) {
+                    failWorkerLaunch()
+                    throw failure
+                }
                 return socket
             } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
         }
