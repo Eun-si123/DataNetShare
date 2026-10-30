@@ -1,4 +1,4 @@
-plugins { kotlin("jvm") version "1.9.22" }
+plugins { kotlin("jvm") version "1.9.25" }
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { kotlinOptions.jvmTarget = "17" }
 sourceSets {
@@ -34,6 +34,6 @@ sourceSets {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     // Exercise the same QR bitstream codec used by the Android scanner/encoder.
-    testImplementation("com.google.zxing:core:3.4.1")
+    testImplementation("com.google.zxing:core:3.5.4")
 }
 tasks.test { testLogging { events("passed", "failed", "skipped"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL } }
