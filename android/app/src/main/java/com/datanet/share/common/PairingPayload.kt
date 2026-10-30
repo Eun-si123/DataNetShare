@@ -45,7 +45,9 @@ data class PairingPayload(
         Endpoint.isIpv4(host) && port in 1..65535 &&
             ProxyPasswordPolicy.valid(password) &&
             ((ssid.isEmpty() && wifiPassword.isEmpty()) ||
-                (ssid.toByteArray(Charsets.UTF_8).size in 1..32 &&
+                // URL encoding replaces malformed UTF-16 with '?', changing the SSID.
+                (Charsets.UTF_8.newEncoder().canEncode(ssid) &&
+                    ssid.toByteArray(Charsets.UTF_8).size in 1..32 &&
                     ssid.none { Character.isISOControl(it) } &&
                     wifiPassword.length in 8..63 && wifiPassword.all { it.code in 32..126 }))
 
