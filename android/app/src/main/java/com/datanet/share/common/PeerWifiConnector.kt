@@ -96,24 +96,14 @@ object PeerWifiConnector {
                 announce(this, Status.CHECKING_SENDER)
                 val source = this
                 val worker = Thread({
-                    var reachable = false
-                    for (attempt in 1..QrPeerProbePolicy.MAX_ATTEMPTS) {
-                        if (Thread.currentThread().isInterrupted) break
-                        try {
-                            // Network.socketFactory binds only this socket; leaving
-                            // cellular/default routes and Android VPN settings intact.
-                            value.socketFactory.createSocket().use { socket ->
-                                socket.connect(InetSocketAddress(senderHost, senderPort),
-                                    QrPeerProbePolicy.CONNECT_TIMEOUT_MS)
-                            }
-                            reachable = true
-                            break
-                        } catch (_: IOException) {
-                            if (attempt == QrPeerProbePolicy.MAX_ATTEMPTS) break
-                            try { Thread.sleep(QrPeerProbePolicy.DELAY_MS) }
-                            catch (_: InterruptedException) { break }
+                    val reachable = QrPeerProbePolicy.reachable(connect = {
+                        // Network.socketFactory binds only this socket; leaving
+                        // cellular/default routes and Android VPN settings intact.
+                        value.socketFactory.createSocket().use { socket ->
+                            socket.connect(InetSocketAddress(senderHost, senderPort),
+                                QrPeerProbePolicy.CONNECT_TIMEOUT_MS)
                         }
-                    }
+                    })
                     synchronized(this@PeerWifiConnector) {
                         if (callback !== source || verifyingNetwork != value || token != generation) return@Thread
                         verifyingNetwork = null
