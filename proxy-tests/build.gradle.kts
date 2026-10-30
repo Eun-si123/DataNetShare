@@ -9,6 +9,7 @@ sourceSets {
             "com/datanet/share/common/Ipv4Packet.kt", "com/datanet/share/common/PairingPayload.kt",
             "com/datanet/share/common/ProxyPasswordPolicy.kt",
             "com/datanet/share/common/QrNetworkLossPolicy.kt",
+            "com/datanet/share/common/QrPeerProbePolicy.kt",
             "com/datanet/share/common/UpstreamRoutePolicy.kt",
             "com/datanet/share/common/DiagnosticJournal.kt",
             "com/datanet/share/common/UdpTest.kt",
