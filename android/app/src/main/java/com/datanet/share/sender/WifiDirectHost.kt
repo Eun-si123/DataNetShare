@@ -36,7 +36,10 @@ class WifiDirectHost(private val context: Context) {
         data class Initializing(val attempt: Int, val maxAttempts: Int) : State()
         data class CreatingGroup(val attempt: Int, val maxAttempts: Int) : State()
         data class Retrying(val attempt: Int, val maxAttempts: Int, val nextDelayMs: Long, val reason: String) : State()
-        data class GroupReady(val groupOwnerIp: String, val ssid: String, val passphrase: String) : State()
+        data class GroupReady(val groupOwnerIp: String, val ssid: String, val passphrase: String) : State() {
+            // Group-ready state includes the QR link password and local peer address.
+            override fun toString(): String = "GroupReady(<redacted>)"
+        }
         data class Failed(val reason: String, val hint: String = "") : State()
     }
     private val receiver = object : BroadcastReceiver() {
