@@ -97,6 +97,29 @@ class PeerUsageLedgerTest {
         ledger.close(second)
     }
 
+    @Test fun lateUdpAccountingAfterLeaseCloseCannotPolluteReconnectedPeer() {
+        val ledger = PeerUsageLedger()
+        val oldConnection = ledger.open("198.51.100.9")!!
+        oldConnection.received(100)
+        ledger.close(oldConnection)
+
+        // An upstream UDP worker may finish after the owning SOCKS client
+        // has closed, while another connection from the same IP is active.
+        val newConnection = ledger.open("198.51.100.9")!!
+        oldConnection.received(400)
+        oldConnection.sent(600)
+        val snapshot = ledger.snapshot().single()
+        assertEquals(1, snapshot.activeConnections)
+        assertEquals(100L, snapshot.rxBytes)
+        assertEquals(0L, snapshot.txBytes)
+
+        newConnection.received(25)
+        newConnection.sent(50)
+        assertEquals(125L, ledger.snapshot().single().rxBytes)
+        assertEquals(50L, ledger.snapshot().single().txBytes)
+        ledger.close(newConnection)
+    }
+
     @Test fun duplicateCloseCannotReleaseAnotherConnectionForSameIp() {
         val ledger = PeerUsageLedger()
         val first = ledger.open("198.51.100.1")!!
