@@ -63,7 +63,11 @@ object Socks5 {
         // Resolve IPv6 literals locally; canonical IPv4 needs no DNS.
         // Domain names are resolved by the sender's selected upstream network.
         val literal = if (address.host.contains(':')) {
-            try { InetAddress.getByName(address.host).address } catch (_: Exception) { null }
+            // A colon is IPv6 literal syntax, never a valid DNS hostname.
+            // Do not silently encode a malformed literal as ATYP=DOMAIN.
+            val parsed = try { InetAddress.getByName(address.host).address } catch (_: Exception) { null }
+            require(parsed != null) { "Invalid IPv6 literal" }
+            parsed
         } else canonicalIpv4Literal(address.host)
         if (literal != null) {
             output.write(if (literal.size == 4) 1 else 4)
