@@ -39,7 +39,19 @@ object UdpTest {
     }
 
     fun runTest(onResult: (String) -> Unit, onError: (String) -> Unit, onFinished: () -> Unit) {
-        Thread({
+        runTest(onResult, onError, onFinished) { task ->
+            Thread(task, "udp-test").apply { isDaemon = true; start() }
+        }
+    }
+
+    // Inject only the worker launcher in JVM tests; no external STUN traffic is required.
+    internal fun runTest(
+        onResult: (String) -> Unit,
+        onError: (String) -> Unit,
+        onFinished: () -> Unit,
+        launchWorker: (Runnable) -> Unit
+    ) {
+        val task = Runnable {
             try {
                 onResult("Testing UDP through the active receiver VPN using external STUN…")
                 val request = ByteArray(20)
@@ -62,6 +74,23 @@ object UdpTest {
                 onError("UDP test failed. Check the receiver VPN and network, then retry.")
             }
             finally { onFinished() }
-        }, "udp-test").apply { isDaemon = true; start() }
+        }
+        try {
+            launchWorker(task)
+        } catch (_: RuntimeException) {
+            reportLaunchFailure(onError, onFinished)
+        } catch (_: OutOfMemoryError) {
+            // Thread creation can fail with "unable to create native thread".
+            reportLaunchFailure(onError, onFinished)
+        }
+    }
+
+    private fun reportLaunchFailure(onError: (String) -> Unit, onFinished: () -> Unit) {
+        try {
+            // Never expose exception messages that may contain device or network details.
+            onError("UDP test could not start. Please retry.")
+        } finally {
+            onFinished()
+        }
     }
 }
