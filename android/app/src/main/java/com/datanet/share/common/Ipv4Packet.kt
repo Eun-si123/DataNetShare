@@ -6,6 +6,8 @@ import java.nio.ByteOrder
 data class FlowKey(val source: Int, val sourcePort: Int, val destination: Int, val destinationPort: Int) {
     val sourceBytes: ByteArray get() = ByteBuffer.allocate(4).putInt(source).array()
     val destinationBytes: ByteArray get() = ByteBuffer.allocate(4).putInt(destination).array()
+    // Implicit debug strings must not expose sender/receiver IPs or ports.
+    override fun toString(): String = "FlowKey(<redacted>)"
 }
 
 data class Ipv4Packet(val key: FlowKey, val protocol: Int, val sequence: Int, val acknowledgement: Int,
