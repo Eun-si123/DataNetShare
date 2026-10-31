@@ -73,6 +73,18 @@ class ProtocolTest {
         }
     }
 
+    @Test fun implicitIpv4FlowStringsHidePeerEndpoints() {
+        val key = FlowKey(0x0a112233, 47001, 0x0b445566, 49002)
+        val flowDebug = key.toString()
+        assertEquals("FlowKey(<redacted>)", flowDebug)
+        val packet = Ipv4Packet.parse(IpPackets.tcp(key, 1, 2, 0x10, 1024, byteArrayOf(1)))!!
+        val packetDebug = packet.toString()
+        assertFalse(packetDebug.contains(key.source.toString()))
+        assertFalse(packetDebug.contains(key.destination.toString()))
+        assertFalse(packetDebug.contains("47001"))
+        assertFalse(packetDebug.contains("49002"))
+    }
+
     @Test fun receiverEndpointIsExplicitIpv4() {
         listOf("192.168.49.1", "10.0.0.2", "127.0.0.1").forEach { assertTrue(Endpoint.isIpv4(it)) }
         listOf("0.0.0.0", "256.1.1.1", "1.2.3", "1.2.3.4.5", "01.2.3.4", "localhost", "255.255.255.255").forEach { assertFalse(Endpoint.isIpv4(it)) }
