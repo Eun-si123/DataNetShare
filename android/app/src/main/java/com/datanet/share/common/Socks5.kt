@@ -15,7 +15,11 @@ import java.security.MessageDigest
  */
 object Socks5 {
     const val USERNAME = "datanet"
-    data class Address(val host: String, val port: Int)
+    data class Address(val host: String, val port: Int) {
+        // Destination hosts are private browsing metadata. Keep explicit fields
+        // and data-class equality for routing; redact accidental debug strings.
+        override fun toString(): String = "Address(<redacted>)"
+    }
     data class Datagram(val address: Address, val payload: ByteArray)
 
     fun readAddress(input: DataInputStream, type: Int = input.readUnsignedByte()): Address {
