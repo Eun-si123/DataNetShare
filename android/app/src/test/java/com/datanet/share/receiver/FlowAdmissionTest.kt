@@ -117,6 +117,81 @@ class FlowAdmissionTest {
         assertTrue(flow.closed.get())
     }
 
+    @Test fun admittedTcpWorkerLaunchFailureReclaimsRegisteredFlow() {
+        val flow = TestFlow()
+        val active = ConcurrentHashMap<Int, TestFlow>()
+        val admitted = admitFlow({ true }, { flow }, { active[1] = it },
+            { it.close(); active.remove(1, it) })!!
+        var failures = 0
+        val launched = launchAdmittedFlow(admitted,
+            launch = { throw OutOfMemoryError("synthetic thread limit") },
+            close = { it.close(); active.remove(1, it) },
+            onThreadExhausted = {
+                assertTrue("cleanup must precede the failure callback", flow.closed.get())
+                assertTrue("the published flow must be removed", active.isEmpty())
+                failures++
+            })
+        assertFalse(launched)
+        assertTrue(flow.closed.get())
+        assertTrue(active.isEmpty())
+        assertEquals(1, failures)
+    }
+
+    @Test fun admittedUdpWorkerSecurityFailureReclaimsAndRethrows() {
+        val flow = TestFlow()
+        val active = ConcurrentHashMap<Int, TestFlow>()
+        val admitted = admitFlow({ true }, { flow }, { active[1] = it },
+            { it.close(); active.remove(1, it) })!!
+        val failure = SecurityException("synthetic launch failure")
+        try {
+            launchAdmittedFlow(admitted,
+                launch = { throw failure },
+                close = { it.close(); active.remove(1, it) },
+                onThreadExhausted = { fail("not native thread exhaustion") })
+            fail("security failure must propagate")
+        } catch (caught: SecurityException) { assertSame(failure, caught) }
+        assertTrue(flow.closed.get())
+        assertTrue(active.isEmpty())
+    }
+
+    @Test fun admittedWorkerLaunchSuccessKeepsRegisteredFlow() {
+        val flow = TestFlow()
+        var launches = 0
+        assertTrue(launchAdmittedFlow(flow, { launches++ },
+            { fail("successful worker must not be closed") },
+            { fail("successful worker must not fail") }))
+        assertEquals(1, launches)
+        assertFalse(flow.closed.get())
+    }
+
+    @Test fun admittedWorkerCleanupFailurePreservesOriginalLaunchFailure() {
+        val failure = SecurityException("synthetic launch failure")
+        val cleanup = IllegalStateException("synthetic cleanup failure")
+        try {
+            launchAdmittedFlow(TestFlow(), { throw failure }, { throw cleanup },
+                { fail("not native thread exhaustion") })
+            fail("failure must propagate")
+        } catch (caught: SecurityException) {
+            assertSame(failure, caught)
+            assertEquals(1, caught.suppressed.size)
+            assertSame(cleanup, caught.suppressed[0])
+        }
+    }
+
+    @Test fun nativeThreadExhaustionWithCleanupFailureKeepsOriginalError() {
+        val failure = OutOfMemoryError("synthetic native thread limit")
+        val cleanup = IllegalStateException("synthetic cleanup failure")
+        try {
+            launchAdmittedFlow(TestFlow(), { throw failure }, { throw cleanup },
+                { fail("failed cleanup must not report a clean recovery") })
+            fail("original error must propagate if cleanup also fails")
+        } catch (caught: OutOfMemoryError) {
+            assertSame(failure, caught)
+            assertEquals(1, caught.suppressed.size)
+            assertSame(cleanup, caught.suppressed[0])
+        }
+    }
+
     private fun stopDuringAdmission(pauseDuringCreation: Boolean) {
         val running = AtomicBoolean(true)
         val reached = CountDownLatch(1)

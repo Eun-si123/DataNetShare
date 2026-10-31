@@ -29,3 +29,34 @@ internal inline fun <T : Any> admitFlow(
     close(flow)
     return null
 }
+
+/**
+ * Admission publishes a flow before its worker is launched. If Thread.start()
+ * fails, the worker's finally block cannot release the published flow.
+ * Release it here; native thread exhaustion must also fail the bridge closed.
+ * Other launch failures retain their original type and reach the TUN reader's
+ * existing failure handler. Worker run loops remain outside this guard.
+ */
+internal inline fun <T : Any> launchAdmittedFlow(
+    flow: T,
+    launch: () -> Unit,
+    close: (T) -> Unit,
+    onThreadExhausted: () -> Unit
+): Boolean {
+    try {
+        launch()
+        return true
+    } catch (failure: Throwable) {
+        try {
+            close(flow)
+        } catch (cleanup: Throwable) {
+            if (cleanup !== failure) failure.addSuppressed(cleanup)
+            throw failure
+        }
+        if (failure is OutOfMemoryError) {
+            onThreadExhausted()
+            return false
+        }
+        throw failure
+    }
+}
