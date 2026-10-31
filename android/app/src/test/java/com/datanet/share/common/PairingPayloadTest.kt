@@ -82,6 +82,20 @@ class PairingPayloadTest {
         }
     }
 
+    @Test fun encodingRejectsUnpairedUtf16WithoutChangingSsid() {
+        // Java's URL encoder replaces malformed UTF-16 with '?', silently
+        // changing the SSID on the receiving phone. Never emit such a QR.
+        for (ssid in listOf("DIRECT-\uD800", "\uDC00-DIRECT", "a\uD800b", "\uD800\uD800")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                direct.copy(ssid = ssid).encode()
+            }
+        }
+        // Legitimate replacement characters and valid surrogate pairs remain valid.
+        assertWifiAccepted("DIRECT-?", "password")
+        assertWifiAccepted("DIRECT-\uFFFD", "password")
+        assertWifiAccepted("DIRECT-\uD83D\uDE00", "password")
+    }
+
     @Test fun wifiSsidLimitUsesUtf8BytesForEncodingAndParsing() {
         for (ssid in listOf("a", "a".repeat(32), "한".repeat(10) + "ab", "\ud83d\ude00".repeat(8))) {
             assertWifiAccepted(ssid, "password")
