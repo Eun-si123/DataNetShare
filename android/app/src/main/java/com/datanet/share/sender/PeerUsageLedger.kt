@@ -12,7 +12,11 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class PeerUsageLedger {
     data class Snapshot(val ip: String, val activeConnections: Int,
-                        val rxBytes: Long, val txBytes: Long)
+                        val rxBytes: Long, val txBytes: Long) {
+        // This is UI-only peer data. Kotlin's generated data-class toString()
+        // would expose the remote IP in accidental exception/debug logging.
+        override fun toString(): String = "PeerUsageLedger.Snapshot(<redacted>)"
+    }
 
     /** One lease per authenticated connection, sharing counters for the same IP. */
     class Entry internal constructor(private val totals: Totals) {
