@@ -19,6 +19,9 @@ class ConnectionFormState : ViewModel() {
     var customProxyPassword: String = ""
     var pendingAutoReceiver: Boolean = false
     var customP2pPasswordInitialized: Boolean = false
+    // Retained across rotation so an empty field after restore failure cannot
+    // silently delete the encrypted password record.
+    var customP2pPasswordRestoreFailed: Boolean = false
     var p2pSuffix: String = ""
     // Non-secret disclosure state follows Activity across rotation only.
     var showAdvancedSettings: Boolean = false
