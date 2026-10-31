@@ -21,6 +21,11 @@ data class PairingPayload(
     val ssid: String = "",
     val wifiPassword: String = ""
 ) {
+    // Data-class generated toString() would expose plaintext SOCKS/Wi-Fi credentials,
+    // SSID and peer address in exception messages or accidental debug logging.
+    // encode() is the only intentional QR serialization path.
+    override fun toString(): String = "PairingPayload(<redacted>)"
+
     fun encode(): String {
         require(isValid()) { "Invalid session pairing details" }
         return buildString {
@@ -40,7 +45,9 @@ data class PairingPayload(
         Endpoint.isIpv4(host) && port in 1..65535 &&
             ProxyPasswordPolicy.valid(password) &&
             ((ssid.isEmpty() && wifiPassword.isEmpty()) ||
-                (ssid.toByteArray(Charsets.UTF_8).size in 1..32 &&
+                // URL encoding replaces malformed UTF-16 with '?', changing the SSID.
+                (Charsets.UTF_8.newEncoder().canEncode(ssid) &&
+                    ssid.toByteArray(Charsets.UTF_8).size in 1..32 &&
                     ssid.none { Character.isISOControl(it) } &&
                     wifiPassword.length in 8..63 && wifiPassword.all { it.code in 32..126 }))
 

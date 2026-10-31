@@ -32,8 +32,13 @@ class UdpFlow(
     // Aggregate only; no packet bytes, endpoints or per-packet UI/log messages.
     private val onOversizedReply: () -> Unit = {}
 ) {
+    companion object {
+        // The VPN uses MTU 1500. IPv4 (20 bytes) + UDP (8 bytes) leaves
+        // at most 1472 bytes; fragmented/oversize datagrams are unsupported.
+        private const val MAX_VPN_UDP_PAYLOAD = 1472
+    }
     private val closed = AtomicBoolean()
-    // Bounded ~96 KiB per flow for ordinary <=1472-byte datagrams.
+    // Bounded ~96 KiB per flow even for malformed/oversized TUN input.
     // Speed tests can burst before the SOCKS UDP ASSOCIATE handshake finishes.
     private val queue = ArrayBlockingQueue<ByteArray>(64)
     private var control: Socket? = null
@@ -45,6 +50,10 @@ class UdpFlow(
      */
     fun send(payload: ByteArray) {
         if (closed.get()) return
+        if (payload.size > MAX_VPN_UDP_PAYLOAD) {
+            onError("UDP packet exceeds VPN MTU")
+            return
+        }
         if (queue.offer(payload)) lastActivity = System.nanoTime()
         else onError("UDP packet queue full")
     }
@@ -90,6 +99,11 @@ class UdpFlow(
                 val bytes = Socks5.encodeDatagram(destination, payload)
                 datagram.send(DatagramPacket(bytes, bytes.size)); onTx(payload.size)
             }
+        } catch (_: InterruptedException) {
+            // Cancellation of the blocking queue poll must not erase the worker's
+            // interrupt status or be reported as an upstream setup failure.
+            Thread.currentThread().interrupt()
+            if (!closed.get()) onError("UDP relay interrupted. Reconnect to resume.")
         } catch (e: Exception) {
             if (!closed.get()) {
                 // Do not expose destination, proxy credentials or exception messages.
@@ -107,7 +121,7 @@ class UdpFlow(
                 if (decoded.address.port != key.destinationPort ||
                     decoded.address.host != InetAddress.getByAddress(key.destinationBytes).hostAddress) continue
                 // Oversize datagrams require IP fragmentation, which this IPv4 receiver does not implement.
-                if (decoded.payload.size > 1472) {
+                if (decoded.payload.size > MAX_VPN_UDP_PAYLOAD) {
                     onOversizedReply()
                     continue
                 }

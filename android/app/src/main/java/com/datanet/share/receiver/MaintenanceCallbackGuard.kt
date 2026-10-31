@@ -11,8 +11,11 @@ internal object MaintenanceCallbackGuard {
     inline fun run(callback: () -> Unit) {
         try {
             callback()
-        } catch (_: Exception) {
-            // Best-effort reporting only; keep the maintenance loop alive.
+        } catch (failure: Exception) {
+            // InterruptedException clears the thread's cancellation flag.
+            // Preserve it so the next maintenance sleep can stop promptly.
+            if (failure is InterruptedException) Thread.currentThread().interrupt()
+            // Other observer failures are best-effort; keep maintenance alive.
         }
     }
 
@@ -25,8 +28,13 @@ internal object MaintenanceCallbackGuard {
         try {
             tick()
             true
-        } catch (_: Exception) {
-            onFailure()
+        } catch (failure: Exception) {
+            try {
+                onFailure()
+            } finally {
+                // Fail closed as before, but never erase an interrupt signal.
+                if (failure is InterruptedException) Thread.currentThread().interrupt()
+            }
             false
         }
 }

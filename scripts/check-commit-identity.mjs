@@ -66,54 +66,99 @@ function selfTest() {
   assert.deepEqual(inspectCommit(agentTrailer('Privacy Guard Agent'),'owner',123),[]);
   assert.ok(inspectCommit(agentTrailer('Privacy Guard'),'owner',123).some(reason => reason.includes('Agent')));
   assert.deepEqual(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Other Human <456+other@users.noreply.github.com>'),'owner',123),[]);
+  // A GitHub-signed merge commit can still leak an owner's profile name.
+  assert.ok(inspectCommit({commit:{author:{name:'Private Display',email:masked},committer:{name:'owner',email:masked},message:'Merge PR'},author:{login:'owner'},committer:{login:'owner'}},'owner',123).length);
+  // An independent linked human may deliberately use a public non-GitHub email.
+  const human={commit:{author:{name:'Contributor',email:'public@company.example'},committer:{name:'Contributor',email:'public@company.example'},message:'fix: human'},author:{login:'contributor'},committer:{login:'contributor'}};
+  assert.deepEqual(inspectCommit(human,'owner',123),[]);
+  // A bot/unlinked Agent cannot use arbitrary private email.
+  assert.ok(inspectCommit({...human,author:null,committer:null},'owner',123).length);
   console.log('Commit identity privacy: synthetic cases passed');
 }
 
 if (process.argv.includes('--self-test')) {
   selfTest();
 } else {
+  // Two modes share the same trusted policy. The push mode runs AFTER publication;
+  // it detects merge-generated metadata, but cannot retroactively prevent disclosure.
+  const pushMode = process.argv.includes('--audit-push');
   const repository = process.env.GITHUB_REPOSITORY;
   const prNumber = Number(process.env.PR_NUMBER);
+  const baseSha = String(process.env.PUSH_BASE_SHA || '');
+  const headSha = String(process.env.PUSH_HEAD_SHA || '');
   const token = process.env.GITHUB_TOKEN;
-  if (!/^[-\w.]+\/[-\w.]+$/.test(repository || '') || !Number.isSafeInteger(prNumber) || prNumber < 1 || !token) {
-    console.error('Commit identity privacy: missing trusted GitHub context');
+  const shaPattern = /^[0-9a-f]{40}$/i;
+  const validPush = shaPattern.test(baseSha) && shaPattern.test(headSha) &&
+    !/^0{40}$/.test(baseSha) && baseSha !== headSha;
+  if (!/^[-\w.]+\/[-\w.]+$/.test(repository || '') || !token ||
+      (pushMode ? !validPush : !Number.isSafeInteger(prNumber) || prNumber < 1)) {
+    console.error('Commit identity privacy: missing or invalid trusted GitHub context');
     process.exitCode = 2;
   } else {
     const base = 'https://api.github.com/repos/' + repository;
     async function read(url) {
-      const response=await fetch(url,{headers:{
+      const response = await fetch(url, {headers: {
         authorization:'Bearer '+token,
         accept:'application/vnd.github+json',
         'x-github-api-version':'2022-11-28'
       }});
-      if(!response.ok)throw new Error('GitHub API read failed ('+response.status+')');
+      if(!response.ok) throw new Error('GitHub API read failed ('+response.status+')');
       return response.json();
     }
     try {
-      const pr=await read(base+'/pulls/'+prNumber);
-      if(pr.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase())throw new Error('PR repository mismatch');
-      if(pr.commits>250)throw new Error('PR has more commits than the GitHub API permits auditing');
-      const profile=await read('https://api.github.com/users/'+encodeURIComponent(repository.split('/')[0]));
-      if(!profile || !profile.login || !profile.id)throw new Error('Cannot resolve owner public identity');
-      const entries=[];
-      for(let page=1;page<=3;page++){
-        const batch=await read(base+'/pulls/'+prNumber+'/commits?per_page=100&page='+page);
-        if(!Array.isArray(batch))throw new Error('Invalid GitHub API response');
-        entries.push(...batch);
-        if(batch.length<100)break;
+      const profile = await read('https://api.github.com/users/'+encodeURIComponent(repository.split('/')[0]));
+      if (!profile || !profile.login || !profile.id) throw new Error('Cannot resolve owner public identity');
+      const entries = [];
+      if (pushMode) {
+        // GitHub's compare API caps exposed commits; never silently audit a partial set.
+        for (let page=1; page<=3; page++) {
+          const result = await read(base+'/compare/'+baseSha+'...'+headSha+'?per_page=100&page='+page);
+          if (result.status !== 'ahead') throw new Error('Push comparison is not a fast-forward');
+          if (result.head_commit && result.head_commit.sha !== headSha) throw new Error('Push HEAD mismatch');
+          if (!Number.isSafeInteger(result.total_commits) || result.total_commits < 1 || result.total_commits > 250)
+            throw new Error('Push commit count is missing or exceeds complete-audit limit');
+          if (!Array.isArray(result.commits)) throw new Error('Invalid push comparison response');
+          entries.push(...result.commits);
+          if (entries.length >= result.total_commits) {
+            if (entries.length !== result.total_commits) throw new Error('Duplicate or incomplete push commit metadata');
+            break;
+          }
+          if (page===3 || result.commits.length<100) throw new Error('Incomplete push commit metadata');
+        }
+        if (entries.at(-1)?.sha !== headSha) throw new Error('Head commit missing from push audit');
+      } else {
+        const pr = await read(base+'/pulls/'+prNumber);
+        if (pr.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase()) throw new Error('PR repository mismatch');
+        if (pr.commits>250) throw new Error('PR has more commits than the GitHub API permits auditing');
+        for (let page=1; page<=3; page++) {
+          const batch=await read(base+'/pulls/'+prNumber+'/commits?per_page=100&page='+page);
+          if(!Array.isArray(batch)) throw new Error('Invalid GitHub API response');
+          entries.push(...batch);
+          if(batch.length<100) break;
+        }
+        if(entries.length!==pr.commits) throw new Error('Incomplete PR commit identity metadata');
       }
-      if(entries.length!==pr.commits)throw new Error('Incomplete PR commit identity metadata');
       let problems=0;
-      for(const item of entries){
+      for (const item of entries) {
         const found=inspectCommit(item,repository.split('/')[0],profile.id,profile.name);
-        for(const reason of found){
-          // Do not expose the original name, email, or commit message in CI output.
+        for (const reason of found) {
+          // Do not expose identity details; SHA and fixed failure categories only.
           console.error('Commit '+String(item.sha).slice(0,12)+': '+reason);
           problems++;
         }
       }
-      if(problems){console.error('Private attribution detected. Re-create affected unmerged commits with approved public or no-reply identities.');process.exitCode=1;}
-      else console.log('Commit identity privacy: '+entries.length+' PR commits passed');
-    }catch(error){console.error('Commit identity privacy: '+error.message);process.exitCode=2;}
+      if (problems) {
+        console.error(pushMode
+          ? 'Published mainline commit attribution requires privacy remediation; do not rewrite shared history automatically.'
+          : 'Private attribution detected. Correct affected unmerged commits before publication.');
+        process.exitCode=1;
+      } else {
+        console.log('Commit identity privacy: '+entries.length+(pushMode?' pushed':' PR')+' commits passed');
+      }
+    } catch (error) {
+      // Only our own fixed errors are normally emitted; network failures are redacted.
+      console.error('Commit identity privacy: '+String(error.message).slice(0,160));
+      process.exitCode=2;
+    }
   }
 }

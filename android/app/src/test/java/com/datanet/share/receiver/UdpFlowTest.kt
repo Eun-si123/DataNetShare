@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
     @Test fun oversizeReplyIsCountedAndNextReplyStillArrives() = ProxyFixture().use { fixture ->
-        DatagramSocket(InetSocketAddress(InetAddress.getLoopbackAddress(), 0)).use { server ->
+        // The flow targets 127.0.0.1; bind the fixture to IPv4 even on IPv6-first JVMs.
+        DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { server ->
             Thread({
                 try {
                     repeat(3) {
@@ -99,6 +100,42 @@ class UdpFlowTest {
             assertTrue(errors.isEmpty())
             flow.send(byteArrayOf(0x55))
             assertEquals(listOf("UDP packet queue full"), errors)
+        } finally { flow.close() }
+    }
+
+    @Test fun oversizeOutboundPacketsCannotFillTheBoundedQueue() {
+        val errors = mutableListOf<String>()
+        val flow = UdpFlow(FlowKey(1, 1025, 2, 53), "127.0.0.1", 1,
+            "test-only", { true }, { true }, {}, {}, {}, {},
+            onError = { errors.add(it) })
+        try {
+            flow.send(ByteArray(1473))
+            flow.send(ByteArray(65_507))
+            assertEquals(listOf("UDP packet exceeds VPN MTU", "UDP packet exceeds VPN MTU"), errors)
+            // Rejected payloads must not occupy a queue slot. Exactly 64
+            // maximum-MTU payloads still fit; the next packet overflows.
+            repeat(64) { flow.send(ByteArray(1472)) }
+            assertEquals(2, errors.size)
+            flow.send(byteArrayOf(1))
+            assertEquals("UDP packet queue full", errors.last())
+            assertEquals(3, errors.size)
+        } finally { flow.close() }
+    }
+
+    @Test fun maximumMtuOutboundUdpPacketStillTraversesTheProxy() = ProxyFixture().use { fixture ->
+        val output = LinkedBlockingQueue<Ipv4Packet>()
+        val errors = LinkedBlockingQueue<String>()
+        val flow = UdpFlow(FlowKey(0x0a000001, 10004, 0x7f000001, fixture.udpPort),
+            "127.0.0.1", fixture.proxy.boundPort, fixture.password, { true }, { true },
+            { output.add(Ipv4Packet.parse(it)!!) }, {}, {}, {}, onError = { errors.add(it) })
+        try {
+            val payload = ByteArray(1472) { (it and 255).toByte() }
+            flow.send(payload)
+            Thread({ flow.start() }, "test-udp-outbound-mtu").apply { isDaemon = true; start() }
+            val response = output.poll(5, TimeUnit.SECONDS)
+            assertNotNull("max-MTU datagram must still be relayed", response)
+            assertArrayEquals(payload, response!!.payload)
+            assertTrue(errors.isEmpty())
         } finally { flow.close() }
     }
 

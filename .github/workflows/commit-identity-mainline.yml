@@ -1,0 +1,31 @@
+name: Commit identity mainline audit
+
+# Detection after a main push is NOT a preventive publication gate.
+# Keep existing required PR commit checks; review the actual merge method separately.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  audit-main-commit-identities:
+    name: Mainline commit identity audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout published main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check synthetic policy cases
+        run: node scripts/check-commit-identity.mjs --self-test
+      - name: Audit all commits introduced by this push
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-commit-identity.mjs --audit-push

@@ -11,6 +11,14 @@ class PairingPayloadTest {
         ssid = "DIRECT-A1 My Phone", wifiPassword = "wifi+password;\\$"
     )
 
+    @Test fun debugStringNeverExposesPairingSecretsOrPeerIdentifiers() {
+        // A Kotlin data class normally prints every constructor field, including credentials.
+        assertEquals("PairingPayload(<redacted>)", direct.toString())
+        assertEquals("PairingPayload(<redacted>)", PairingPayload("192.168.42.10", 8282, password).toString())
+        // Serialization remains intentional and separate from diagnostic formatting.
+        assertEquals(direct, PairingPayload.parse(direct.encode()))
+    }
+
     @Test fun wifiDirectRoundTripPreservesAllCredentials() {
         assertEquals(direct, PairingPayload.parse(direct.encode()))
         assertTrue(direct.encode().startsWith("datanetshare://pair/v1?"))
@@ -72,6 +80,20 @@ class PairingPayloadTest {
         assertThrows(IllegalArgumentException::class.java) {
             PairingPayload("192.168.49.1", 8282, password, "DIRECT-FOO", "").encode()
         }
+    }
+
+    @Test fun encodingRejectsUnpairedUtf16WithoutChangingSsid() {
+        // Java's URL encoder replaces malformed UTF-16 with '?', silently
+        // changing the SSID on the receiving phone. Never emit such a QR.
+        for (ssid in listOf("DIRECT-\uD800", "\uDC00-DIRECT", "a\uD800b", "\uD800\uD800")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                direct.copy(ssid = ssid).encode()
+            }
+        }
+        // Legitimate replacement characters and valid surrogate pairs remain valid.
+        assertWifiAccepted("DIRECT-?", "password")
+        assertWifiAccepted("DIRECT-\uFFFD", "password")
+        assertWifiAccepted("DIRECT-\uD83D\uDE00", "password")
     }
 
     @Test fun wifiSsidLimitUsesUtf8BytesForEncodingAndParsing() {

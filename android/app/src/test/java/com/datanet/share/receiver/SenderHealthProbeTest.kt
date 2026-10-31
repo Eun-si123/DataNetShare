@@ -36,6 +36,55 @@ class SenderHealthProbeTest {
         }
     }
 
+    @Test(timeout = 6_000) fun stalledAuthenticationReplyTimesOutAndClosesProbeSocket() {
+        // A peer can accept the TCP connection and the SOCKS auth method, then
+        // stop responding. The receiver must not remain stuck in its health check.
+        val address = java.net.InetAddress.getByName("127.0.0.1")
+        ServerSocket(0, 1, address).use { listener ->
+            val observed = java.util.concurrent.LinkedBlockingQueue<Any>()
+            val worker = Thread({
+                try {
+                    listener.accept().use { peer ->
+                        peer.soTimeout = 3_000
+                        val input = java.io.DataInputStream(peer.getInputStream())
+                        val greeting = ByteArray(3)
+                        input.readFully(greeting)
+                        check(greeting.contentEquals(byteArrayOf(5, 1, 2))) {
+                            "unexpected SOCKS method greeting"
+                        }
+                        peer.getOutputStream().write(byteArrayOf(5, 2))
+                        peer.getOutputStream().flush()
+                        val authVersion = input.readUnsignedByte()
+                        val user = ByteArray(input.readUnsignedByte())
+                        input.readFully(user)
+                        val password = ByteArray(input.readUnsignedByte())
+                        input.readFully(password)
+                        observed.offer(authVersion)
+                        // Never send the RFC 1929 result. The probe must time out,
+                        // close its socket, and let this server observe EOF.
+                        observed.offer(input.read())
+                    }
+                } catch (failure: Exception) {
+                    observed.offer(failure)
+                }
+            }, "test-stalled-probe-auth").apply { isDaemon = true; start() }
+
+            lateinit var candidate: Socket
+            assertFalse(SenderHealthProbe.check("127.0.0.1", listener.localPort,
+                "synthetic-probe-password", timeoutMs = 350) { socket ->
+                candidate = socket
+                true
+            })
+            assertTrue("timed-out health probe must release its socket", candidate.isClosed)
+            assertEquals("authentication must reach the reply stage", 1,
+                observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals("peer must observe EOF after probe timeout", -1,
+                observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            worker.join(2_000)
+            assertFalse("stalled test sender must exit", worker.isAlive)
+        }
+    }
+
     @Test fun policyNeedsConsecutiveFailuresAndRecoversOnSuccess() {
         val policy = SenderHealthPolicy(missLimit = 3)
         assertFalse(policy.observe(false))
@@ -87,5 +136,36 @@ class SenderHealthProbeTest {
         assertFalse(policy.observe(false))
         assertFalse(policy.observe(false))
         assertTrue(policy.observe(false))
+    }
+
+    @Test fun probeEndsAfterAuthenticationWithoutSendingAnySocksRequest() {
+        // A health check must not send CONNECT/UDP ASSOCIATE: it is not a
+        // destination reachability test and must not consume upstream data.
+        val password = "synthetic-probe-password"
+        // Match the IPv4-only probe destination even when the JVM prefers IPv6 loopback.
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
+            val observed = java.util.concurrent.LinkedBlockingQueue<Any>()
+            val worker = Thread({
+                try {
+                    listener.accept().use { peer ->
+                        peer.soTimeout = 2_000
+                        val input = java.io.DataInputStream(peer.getInputStream())
+                        com.datanet.share.common.Socks5.authenticateServer(
+                            input, peer.getOutputStream(), password)
+                        // EOF is -1. A SOCKS request would start with version 5.
+                        observed.offer(input.read())
+                    }
+                } catch (failure: Exception) {
+                    observed.offer(failure)
+                }
+            }, "test-health-probe-auth-only").apply { isDaemon = true; start() }
+
+            assertTrue(SenderHealthProbe.check("127.0.0.1", listener.localPort,
+                password, timeoutMs = 1_500, setup = { true }))
+            assertEquals("health probe must close immediately after auth, without a SOCKS request",
+                -1, observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            worker.join(2_000)
+            assertFalse("fake sender worker must finish", worker.isAlive)
+        }
     }
 }
