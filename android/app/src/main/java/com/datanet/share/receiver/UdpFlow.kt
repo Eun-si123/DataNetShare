@@ -30,7 +30,9 @@ class UdpFlow(
     private val onError: (String) -> Unit = {},
     private val onConnected: () -> Unit = {},
     // Aggregate only; no packet bytes, endpoints or per-packet UI/log messages.
-    private val onOversizedReply: () -> Unit = {}
+    private val onOversizedReply: () -> Unit = {},
+    // Injected only by host tests to exercise native Thread.start() failures.
+    private val launchWorker: (Thread) -> Unit = { it.start() }
 ) {
     companion object {
         // The VPN uses MTU 1500. IPv4 (20 bytes) + UDP (8 bytes) leaves
@@ -82,17 +84,25 @@ class UdpFlow(
             datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000
             onConnected() // UDP ASSOCIATE control handshake and relay socket succeeded
             socket.soTimeout = 1000
-            Thread({
-                try {
-                    while (!closed.get()) {
-                        try { if (input.read() < 0) break } catch (_: SocketTimeoutException) {}
-                        if (System.nanoTime() - lastActivity > 30_000_000_000L) break
-                    }
-                } catch (e: IOException) {
-            if (!closed.get()) onError("UDP upstream read failed (${e.javaClass.simpleName})")
-        } finally { close() }
-            }, "tun-udp-control").apply { isDaemon = true; start() }
-            Thread({ receive(datagram) }, "tun-udp-receive").apply { isDaemon = true; start() }
+            try {
+                Thread({
+                    try {
+                        while (!closed.get()) {
+                            try { if (input.read() < 0) break } catch (_: SocketTimeoutException) {}
+                            if (System.nanoTime() - lastActivity > 30_000_000_000L) break
+                        }
+                    } catch (e: IOException) {
+                        if (!closed.get()) onError("UDP upstream read failed (${e.javaClass.simpleName})")
+                    } finally { close() }
+                }, "tun-udp-control").apply { isDaemon = true; launchWorker(this) }
+                Thread({ receive(datagram) }, "tun-udp-receive").apply { isDaemon = true; launchWorker(this) }
+            } catch (_: OutOfMemoryError) {
+                // A child worker may already be running. The outer finally
+                // closes both sockets and wakes it; never leave a silent,
+                // half-running UDP association after native thread exhaustion.
+                if (!closed.get()) onError("UDP relay worker could not start. Reconnect to resume.")
+                return
+            }
             val destination = Socks5.Address(InetAddress.getByAddress(key.destinationBytes).hostAddress!!, key.destinationPort)
             while (!closed.get()) {
                 val payload = queue.poll(1, TimeUnit.SECONDS) ?: continue
