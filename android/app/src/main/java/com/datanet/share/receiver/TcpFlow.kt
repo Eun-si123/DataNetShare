@@ -109,6 +109,13 @@ class TcpFlow(
 
     fun receive(packet: Ipv4Packet) = synchronized(lock) {
         if (closed) return@synchronized
+        // A valid app RST aborts the flow and releases its sender SOCKS slot.
+        // Require the next expected sequence to reject stale/spoofed resets
+        // from a prior flow; never acknowledge or echo a received RST.
+        if (packet.flags and 0x04 != 0) {
+            if (unsigned(packet.sequence) == expected) close()
+            return@synchronized
+        }
         lastActivity = System.nanoTime()
         if (packet.flags and 0x10 != 0) {
             val ack = unsigned(packet.acknowledgement)
