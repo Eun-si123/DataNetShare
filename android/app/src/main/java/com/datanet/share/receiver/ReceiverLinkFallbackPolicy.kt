@@ -14,11 +14,16 @@ import java.util.Locale
 internal object ReceiverLinkFallbackPolicy {
     private val virtualPrefixes = listOf(
         "tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale",
+        "ip6tnl", "gretap", "erspan", "clat", // Linux tunnel / CLAT devices.
         "v4-" // Android 464XLAT stacked interface (AOSP Nat464Xlat.CLAT_PREFIX).
     )
 
+    // Numeric Linux GRE/SIT tunnel names; avoid excluding unrelated OEM names.
+    private val numberedTunnels = Regex("^(gre|sit)[0-9]+$")
+
     fun allows(name: String): Boolean {
         val normalized = name.lowercase(Locale.ROOT)
-        return virtualPrefixes.none { normalized.startsWith(it) }
+        return virtualPrefixes.none { normalized.startsWith(it) } &&
+            !numberedTunnels.matches(normalized)
     }
 }
