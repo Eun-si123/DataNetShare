@@ -3,7 +3,9 @@ package com.datanet.share.common
 import com.datanet.share.receiver.TcpCapacityPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class DiagnosticJournalTest {
@@ -41,6 +43,40 @@ class DiagnosticJournalTest {
         assertTrue(summary.contains("shared TCP/UDP budget"))
         assertFalse(summary.contains("40 concurrent flows"))
         assertTrue(summary.endsWith("×1"))
+    }
+
+    @Test fun sessionResetCannotBeOverwrittenByDelayedFailurePublication() {
+        val journal = DiagnosticJournal()
+        val published = Collections.synchronizedList(mutableListOf<String>())
+        val firstPublishEntered = CountDownLatch(1)
+        val releaseFirstPublish = CountDownLatch(1)
+        val resetStarted = CountDownLatch(1)
+        val workers = Executors.newFixedThreadPool(2)
+        try {
+            val note = workers.submit {
+                journal.recordAndPublish(NetworkEvent.TCP_UPSTREAM) { snapshot ->
+                    firstPublishEntered.countDown()
+                    check(releaseFirstPublish.await(5, TimeUnit.SECONDS))
+                    published.add(snapshot)
+                }
+            }
+            assertTrue(firstPublishEntered.await(5, TimeUnit.SECONDS))
+            val reset = workers.submit {
+                resetStarted.countDown()
+                journal.clearAndPublish { published.add(it) }
+            }
+            assertTrue(resetStarted.await(5, TimeUnit.SECONDS))
+            releaseFirstPublish.countDown()
+            note.get(5, TimeUnit.SECONDS)
+            reset.get(5, TimeUnit.SECONDS)
+            assertEquals(2, published.size)
+            assertTrue(published[0].contains("TCP upstream"))
+            assertTrue(published[1].contains("No internal network failures"))
+            assertEquals(published[1], journal.snapshot())
+        } finally {
+            releaseFirstPublish.countDown()
+            workers.shutdownNow()
+        }
     }
 
     @Test fun concurrentEventsDoNotLoseCounts() {

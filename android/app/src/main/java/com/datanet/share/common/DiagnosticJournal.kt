@@ -37,6 +37,15 @@ class DiagnosticJournal(private val maxKinds: Int = 12) {
         counts.clear()
         return snapshotLocked()
     }
+    // Keep the state change and its LiveData publication in the same order.
+    // Otherwise a delayed note() may publish an old failure *after* a new
+    // session has cleared the journal, even though snapshot() is empty.
+    @Synchronized fun recordAndPublish(kind: NetworkEvent, publish: (String) -> Unit) {
+        publish(record(kind))
+    }
+    @Synchronized fun clearAndPublish(publish: (String) -> Unit) {
+        publish(clear())
+    }
     @Synchronized fun snapshot(): String = snapshotLocked()
     private fun snapshotLocked(): String = if (counts.isEmpty()) {
         "No internal network failures recorded. This does not confirm Internet connectivity."
