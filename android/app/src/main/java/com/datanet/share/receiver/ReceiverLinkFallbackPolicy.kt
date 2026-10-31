@@ -4,18 +4,19 @@ import java.util.Locale
 
 /**
  * Network.bindSocket() is preferred. If Android exposes only a raw interface,
- * never choose a known VPN/tunnel interface as the local SOCKS transport.
+ * never choose a known VPN/tunnel or cellular interface as the local SOCKS transport.
  * Such an interface can share a private IPv4 prefix with the sender while
- * still routing the protected socket back into a VPN.
+ * still routing the protected socket through a VPN or the mobile network.
  *
  * Keep unfamiliar OEM local-link names eligible; this is a narrow safeguard,
  * not a replacement for Android's network selection.
  */
 internal object ReceiverLinkFallbackPolicy {
-    private val virtualPrefixes = listOf(
+    private val unsafePrefixes = listOf(
         "tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale",
         "ip6tnl", "gretap", "erspan", "clat", // Linux tunnel / CLAT devices.
-        "v4-" // Android 464XLAT stacked interface (AOSP Nat464Xlat.CLAT_PREFIX).
+        "v4-", // Android 464XLAT stacked interface (AOSP Nat464Xlat.CLAT_PREFIX).
+        "rmnet", "ccmni", "wwan", "pdp" // Cellular packet-data interfaces on Android/Linux.
     )
 
     // Numeric Linux GRE/SIT tunnel names; avoid excluding unrelated OEM names.
@@ -23,7 +24,7 @@ internal object ReceiverLinkFallbackPolicy {
 
     fun allows(name: String): Boolean {
         val normalized = name.lowercase(Locale.ROOT)
-        return virtualPrefixes.none { normalized.startsWith(it) } &&
+        return unsafePrefixes.none { normalized.startsWith(it) } &&
             !numberedTunnels.matches(normalized)
     }
 }
