@@ -13,3 +13,11 @@ internal object ConnectionControls {
         else -> ConnectionAction.START_DIRECT
     }
 }
+
+/** Activity-level service dispatch failures must never echo platform exception details. */
+internal object ServiceDispatchFailureMessages {
+    @Suppress("UNUSED_PARAMETER")
+    fun start(error: Exception): String = "Could not start service"
+    @Suppress("UNUSED_PARAMETER")
+    fun stop(error: Exception): String = "Could not send stop command"
+}

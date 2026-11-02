@@ -192,7 +192,8 @@
                 android:visibility="gone" android:background="#1F2937" android:padding="12dp">
                 <TextView android:id="@+id/scannedWifiText" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:textColor="#FFFFFF"
-                    android:textSize="14sp" android:textIsSelectable="true"/>
+                    android:textSize="14sp" android:textIsSelectable="true"
+                    android:saveEnabled="false"/>
                 <Button android:id="@+id/btnCopyWifi" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:minHeight="48dp"
                     android:text="@string/copy_scanned_wifi_password"/>
@@ -247,7 +248,8 @@
             <TextView android:id="@+id/credentialsText" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:textColor="#FFFFFF"
                 android:textSize="15sp" android:fontFamily="monospace"
-                android:textIsSelectable="true" android:layout_marginTop="8dp"/>
+                android:textIsSelectable="true" android:layout_marginTop="8dp"
+                android:saveEnabled="false"/>
             <Button android:id="@+id/btnCopy" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:minHeight="48dp"
                 android:text="@string/copy_credentials"/>

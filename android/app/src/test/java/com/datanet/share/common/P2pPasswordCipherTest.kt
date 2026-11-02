@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import javax.crypto.KeyGenerator
 import javax.crypto.AEADBadTagException
+import javax.crypto.Cipher
 
 class P2pPasswordCipherTest {
     private fun key() = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
@@ -76,6 +77,38 @@ class P2pPasswordCipherTest {
             try {
                 P2pPasswordCipher.decrypt(ByteArray(invalidLength), k)
                 fail("Invalid encrypted record length must be rejected")
+            } catch (_: IllegalArgumentException) {}
+        }
+    }
+
+    @Test fun printableAsciiBoundaryCharactersRoundTrip() {
+        val k = key()
+        for (code in 32..126) {
+            val secret = code.toChar().toString().repeat(8)
+            assertEquals("ASCII $code", secret,
+                P2pPasswordCipher.decrypt(P2pPasswordCipher.encrypt(secret, k), k))
+        }
+    }
+
+    @Test fun rejectAuthenticatedButInvalidPlaintext() {
+        val k = key()
+        // A valid GCM tag is not sufficient: a restored record must still meet
+        // the Wi-Fi Direct passphrase policy, including ASCII and length bounds.
+        val invalid = listOf(
+            ByteArray(0),
+            "x".repeat(7).toByteArray(Charsets.US_ASCII),
+            "x".repeat(64).toByteArray(Charsets.US_ASCII),
+            "abc\ndefgh".toByteArray(Charsets.US_ASCII),
+            "abc\u007fdefg".toByteArray(Charsets.US_ASCII),
+            byteArrayOf(65, 66, 67, 68, 69, 70, 71, 0x80.toByte())
+        )
+        for ((index, plaintext) in invalid.withIndex()) {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, k)
+            val authenticatedEnvelope = cipher.iv + cipher.doFinal(plaintext)
+            try {
+                P2pPasswordCipher.decrypt(authenticatedEnvelope, k)
+                fail("Authenticated invalid plaintext accepted at case $index")
             } catch (_: IllegalArgumentException) {}
         }
     }

@@ -3,6 +3,8 @@ package com.datanet.share.receiver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
 import java.net.DatagramSocket
@@ -73,6 +75,52 @@ class ReceiverSocketSetupTest {
                 assertEquals("No local link", expected.message)
             }
             assertFalse(protectCalled)
+        }
+    }
+
+    @Test fun tcpProtectionExceptionPropagatesAfterBindingWithoutConnecting() {
+        Socket().use { socket ->
+            val denied = SecurityException("synthetic protection denial")
+            val steps = mutableListOf<String>()
+            try {
+                ReceiverSocketSetup.bindThenProtect(socket, {
+                    it.bind(InetSocketAddress(loopback, 0))
+                    steps += "bind"
+                }, {
+                    assertTrue(it.isBound)
+                    assertFalse(it.isConnected)
+                    steps += "protect"
+                    throw denied
+                })
+                fail("protection failure must propagate")
+            } catch (actual: SecurityException) {
+                assertSame(denied, actual)
+            }
+            assertEquals(listOf("bind", "protect"), steps)
+            assertFalse(socket.isConnected)
+        }
+    }
+
+    @Test fun udpProtectionExceptionPropagatesAfterBindingWithoutConnecting() {
+        DatagramSocket(null).use { socket ->
+            val denied = SecurityException("synthetic UDP protection denial")
+            val steps = mutableListOf<String>()
+            try {
+                ReceiverSocketSetup.bindThenProtect(socket, {
+                    it.bind(InetSocketAddress(loopback, 0))
+                    steps += "bind"
+                }, {
+                    assertTrue(it.isBound)
+                    assertFalse(it.isConnected)
+                    steps += "protect"
+                    throw denied
+                })
+                fail("UDP protection failure must propagate")
+            } catch (actual: SecurityException) {
+                assertSame(denied, actual)
+            }
+            assertEquals(listOf("bind", "protect"), steps)
+            assertFalse(socket.isConnected)
         }
     }
 }

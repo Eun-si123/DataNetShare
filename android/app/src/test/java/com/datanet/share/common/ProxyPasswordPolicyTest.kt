@@ -20,4 +20,21 @@ class ProxyPasswordPolicyTest {
         val pairing = PairingPayload("192.168.49.1", 8282, "CustomProxyPass-2026", "DIRECT-xyPhone", "WifiSecret-2026")
         assertEquals(pairing, PairingPayload.parse(pairing.encode()))
     }
+
+    @Test fun asciiCredentialBoundaryRejectsSpaceControlsAndDel() {
+        // The minimum-length password must reject every non-printable ASCII
+        // code point, including space and DEL, not only newlines.
+        for (code in 0..127) {
+            val password = "a".repeat(11) + code.toChar()
+            assertEquals("ASCII code=$code", code in 33..126, ProxyPasswordPolicy.valid(password))
+        }
+    }
+
+    @Test fun credentialLengthBoundariesAndUnpairedSurrogate() {
+        assertFalse(ProxyPasswordPolicy.valid("a".repeat(11)))
+        assertTrue(ProxyPasswordPolicy.valid("a".repeat(12)))
+        assertTrue(ProxyPasswordPolicy.valid("~".repeat(128)))
+        assertFalse(ProxyPasswordPolicy.valid("~".repeat(129)))
+        assertFalse(ProxyPasswordPolicy.valid("a".repeat(11) + '\uD800'))
+    }
 }
