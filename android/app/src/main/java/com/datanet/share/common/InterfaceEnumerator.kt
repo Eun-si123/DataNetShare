@@ -46,7 +46,7 @@ object InterfaceEnumerator {
      */
     internal fun isLocalCandidate(info: InterfaceInfo): Boolean {
         val name = info.name.lowercase(Locale.ROOT)
-        if (listOf("tun", "tap", "wg", "ipsec", "ppp", "veth", "dummy", "tailscale", "v4-")
+        if (listOf("tun", "tap", "wg", "wireguard", "ipsec", "ppp", "veth", "dummy", "tailscale", "v4-")
                 .any(name::startsWith)) return false
         return info.type in listOf(InterfaceType.WIFI, InterfaceType.WIFI_DIRECT, InterfaceType.USB_TETHERING) ||
             (info.type == InterfaceType.OTHER && java.net.InetAddress.getByName(info.ip).isSiteLocalAddress)
