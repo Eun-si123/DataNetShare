@@ -36,7 +36,10 @@ class WifiDirectHost(private val context: Context) {
         data class Initializing(val attempt: Int, val maxAttempts: Int) : State()
         data class CreatingGroup(val attempt: Int, val maxAttempts: Int) : State()
         data class Retrying(val attempt: Int, val maxAttempts: Int, val nextDelayMs: Long, val reason: String) : State()
-        data class GroupReady(val groupOwnerIp: String, val ssid: String, val passphrase: String) : State()
+        data class GroupReady(val groupOwnerIp: String, val ssid: String, val passphrase: String) : State() {
+            // Group-ready state includes the QR link password and local peer address.
+            override fun toString(): String = "GroupReady(<redacted>)"
+        }
         data class Failed(val reason: String, val hint: String = "") : State()
     }
     private val receiver = object : BroadcastReceiver() {
@@ -108,7 +111,12 @@ class WifiDirectHost(private val context: Context) {
             handler.postDelayed({
                 if (running && token == generation && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
             }, 25_000)
-        } catch (e: Exception) { mutableState.value = State.Failed("Wi-Fi Direct could not initialize", e.javaClass.simpleName) }
+        } catch (e: Exception) {
+            // A failed initialize/register/schedule must not strand running=true,
+            // a registered receiver, or a channel that blocks a later Start.
+            stop()
+            mutableState.value = State.Failed("Wi-Fi Direct could not initialize", e.javaClass.simpleName)
+        }
     }
     private fun create(token: Int, attempt: Int) {
         if (!running || generation != token) return
@@ -189,7 +197,13 @@ class WifiDirectHost(private val context: Context) {
         running = false; ++generation; handler.removeCallbacksAndMessages(null)
         if (registered) { try { context.unregisterReceiver(receiver) } catch (_: Exception) {}; registered = false }
         val old = channel; channel = null
-        fun closeChannel() { if (Build.VERSION.SDK_INT >= 27) old?.close() }
+        fun closeChannel() {
+            if (Build.VERSION.SDK_INT >= 27) {
+                // Channel shutdown is best-effort; a broken OEM channel must
+                // not prevent the remaining session state from being cleared.
+                try { old?.close() } catch (_: RuntimeException) {}
+            }
+        }
         if (ownsGroup && old != null) {
             try { manager?.removeGroup(old, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() { closeChannel() }; override fun onFailure(reason: Int) { closeChannel() }

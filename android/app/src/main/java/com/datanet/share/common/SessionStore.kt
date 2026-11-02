@@ -16,6 +16,8 @@ object SessionStore {
         val wifiPassword: String = ""
     ) {
         val busy: Boolean get() = status == "starting" || status == "active"
+        // Session credentials and peer identifiers must never appear in implicit logs.
+        override fun toString(): String = "State(<redacted>)"
     }
     val state = MutableLiveData(State())
     val stats = MutableLiveData("")

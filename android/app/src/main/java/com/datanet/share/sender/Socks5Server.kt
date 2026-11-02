@@ -318,7 +318,13 @@ class Socks5Server(
                         // Keep the original host/port as the association key; resolution and
                         // socket binding happen together when a destination is first opened.
                         val target = data.address
-                        val remote = remoteSockets[target] ?: createRemote(target) ?: continue
+                        val remote = try { remoteSockets[target] ?: createRemote(target) }
+                        catch (_: RuntimeException) {
+                            // Android network binding/permission failures can be unchecked.
+                            // createRemote releases its permit and socket on failure;
+                            // keep this authenticated UDP association alive for retry.
+                            continue
+                        } ?: continue
                         lastActivity.set(System.nanoTime())
                         try {
                             remote.send(DatagramPacket(data.payload, data.payload.size))

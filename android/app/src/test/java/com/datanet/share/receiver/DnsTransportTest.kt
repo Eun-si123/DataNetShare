@@ -84,8 +84,11 @@ class DnsTransportTest {
 
     private class DnsFixture : AutoCloseable {
         val proxy = ProxyFixture()
-        private val tcp = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
-        private val udp = DatagramSocket(InetSocketAddress(InetAddress.getLoopbackAddress(), tcp.localPort))
+        // The SOCKS fixture targets IPv4 127.0.0.1. On IPv6-first JVMs,
+        // getLoopbackAddress() can instead bind ::1 and strand both DNS servers.
+        private val ipv4Loopback = InetAddress.getByName("127.0.0.1")
+        private val tcp = ServerSocket(0, 1, ipv4Loopback)
+        private val udp = DatagramSocket(InetSocketAddress(ipv4Loopback, tcp.localPort))
         val key = FlowKey(0x0a000001, 53001, 0x7f000001, tcp.localPort)
         val tcpQueries = LinkedBlockingQueue<ByteArray>()
         init {

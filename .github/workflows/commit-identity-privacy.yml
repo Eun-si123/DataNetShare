@@ -22,6 +22,8 @@ jobs:
           persist-credentials: false
       - name: Check attribution policy cases
         run: node scripts/check-commit-identity.mjs --self-test
+      - name: Check owner-directed Agent pre-push safeguards
+        run: node --test scripts/preflight-push-identity.test.mjs
       - name: Audit every PR commit without exposing emails in logs
         env:
           GITHUB_TOKEN: ${{ github.token }}

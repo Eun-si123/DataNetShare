@@ -28,4 +28,24 @@ class ConnectionControlsTest {
             }
         }
     }
+
+    @Test fun serviceStartFailureDoesNotEchoPlatformExceptionDetails() {
+        for (error in listOf(
+            SecurityException("synthetic-private-credential"),
+            IllegalStateException("synthetic-private-endpoint"),
+            RuntimeException("synthetic-private-path")
+        )) {
+            assertEquals("Could not start service", ServiceDispatchFailureMessages.start(error))
+        }
+    }
+
+    @Test fun serviceStopFailureDoesNotEchoPlatformExceptionDetails() {
+        for (error in listOf(
+            SecurityException("synthetic-private-credential"),
+            IllegalStateException("synthetic-private-endpoint"),
+            RuntimeException("synthetic-private-path")
+        )) {
+            assertEquals("Could not send stop command", ServiceDispatchFailureMessages.stop(error))
+        }
+    }
 }
