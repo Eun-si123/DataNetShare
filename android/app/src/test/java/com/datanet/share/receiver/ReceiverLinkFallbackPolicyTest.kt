@@ -17,6 +17,15 @@ class ReceiverLinkFallbackPolicyTest {
         }
     }
 
+    @Test fun rejectsCellularInterfacesThatCouldSharePrivatePeerPrefix() {
+        // A modem interface may have an RFC1918 address that matches a local
+        // sender prefix. The raw-interface fallback must not bind SOCKS to it.
+        for (name in listOf("wwan0", "WWAN1", "pdp0", "PDP2", "rmnet_data0", "ccmni0")) {
+            assertFalse("Cellular interface must not carry receiver SOCKS: $name",
+                ReceiverLinkFallbackPolicy.allows(name))
+        }
+    }
+
     @Test fun keepsPhysicalAndUnfamiliarOemLocalLinkNamesEligible() {
         listOf("wlan0", "p2p0", "rndis0", "usb0", "ncm0", "eth0", "ap0", "swlan0", "green0", "sitewifi0")
             .forEach { name ->
