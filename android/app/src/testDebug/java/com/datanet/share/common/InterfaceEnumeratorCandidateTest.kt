@@ -17,10 +17,25 @@ class InterfaceEnumeratorCandidateTest {
         }
     }
 
+    @Test fun cellularAndAdditionalTunnelNamesNeverBecomePrivateLocalCandidates() {
+        // These are rejected by ReceiverLinkFallbackPolicy as well. In particular,
+        // wwan*/pdp* currently classify as OTHER rather than CELLULAR.
+        for (name in listOf(
+            "wwan0", "WWAN1", "pdp0", "PDP2", "ip6tnl0", "gretap0",
+            "erspan0", "clat4", "gre0", "sit0", "GRE12", "SIT2"
+        )) {
+            assertFalse("Unsafe interface unexpectedly eligible: $name",
+                InterfaceEnumerator.isLocalCandidate(candidate(name, InterfaceEnumerator.InterfaceType.OTHER)))
+        }
+    }
+
     @Test fun physicalAndUnfamiliarPrivateLinksRemainEligible() {
         assertTrue(InterfaceEnumerator.isLocalCandidate(candidate("wlan0", InterfaceEnumerator.InterfaceType.WIFI)))
         assertTrue(InterfaceEnumerator.isLocalCandidate(candidate("p2p0", InterfaceEnumerator.InterfaceType.WIFI_DIRECT)))
         assertTrue(InterfaceEnumerator.isLocalCandidate(candidate("usb0", InterfaceEnumerator.InterfaceType.USB_TETHERING)))
-        assertTrue(InterfaceEnumerator.isLocalCandidate(candidate("eth0", InterfaceEnumerator.InterfaceType.OTHER)))
+        for (name in listOf("eth0", "green0", "sitewifi0")) {
+            assertTrue("Private physical/OEM link unexpectedly excluded: $name",
+                InterfaceEnumerator.isLocalCandidate(candidate(name, InterfaceEnumerator.InterfaceType.OTHER)))
+        }
     }
 }
