@@ -152,14 +152,23 @@ class SenderService : Service() {
         Intent(this, SenderService::class.java).setAction(ACTION_STOP))
 
     private fun cleanup() {
+        // Invalidate callbacks and detach references before any teardown step
+        // that might throw. One failed close must not leave the Wi-Fi Direct
+        // group, cellular request or wake lock behind.
         ++session
-        observer?.let { wifiHost?.state?.removeObserver(it) }; observer = null
-        socks?.stop(); socks = null
-        wifiHost?.stop(); wifiHost = null
-        CellularNetworkTracker.stop()
+        val oldObserver = observer; observer = null
+        val oldSocks = socks; socks = null
+        val oldWifiHost = wifiHost; wifiHost = null
+        val oldWakeLock = wakeLock; wakeLock = null
         sessionPasswordOverride = ""
-        wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        SenderCleanup.run(
+            { if (oldObserver != null) oldWifiHost?.state?.removeObserver(oldObserver) },
+            { oldSocks?.stop() },
+            { oldWifiHost?.stop() },
+            { CellularNetworkTracker.stop() },
+            { oldWakeLock?.let { if (it.isHeld) it.release() } },
+            { stopForeground(STOP_FOREGROUND_REMOVE) }
+        )
     }
     override fun onDestroy() {
         cleanup()

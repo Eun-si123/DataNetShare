@@ -20,6 +20,17 @@ class EndpointTest {
         )) assertFalse("Non-unicast endpoint accepted: $host", Endpoint.isIpv4(host))
     }
 
+    @Test fun canonicalIpv4LengthBoundsAndOversizedInput() {
+        assertTrue(Endpoint.isIpv4("1.1.1.1")) // shortest canonical form
+        assertTrue(Endpoint.isIpv4("223.255.255.255")) // longest allowed first octet
+        assertFalse(Endpoint.isIpv4("1.1.1."))
+        assertFalse(Endpoint.isIpv4("223.255.255.2550"))
+        // A pasted address is untrusted UI input; it must be rejected before
+        // creating a large split() result or parsing its individual tokens.
+        assertFalse(Endpoint.isIpv4("1.".repeat(100_000)))
+        assertFalse(Endpoint.isIpv4("1.2.3." + "4".repeat(100_000)))
+    }
+
     @Test fun rejectsMalformedOrAmbiguousIpv4Text() {
         for (host in listOf(
             "", " 192.168.1.1", "1.2.3", "1.2.3.4.5", "1..2.3",

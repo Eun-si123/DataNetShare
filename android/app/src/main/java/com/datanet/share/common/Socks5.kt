@@ -15,7 +15,11 @@ import java.security.MessageDigest
  */
 object Socks5 {
     const val USERNAME = "datanet"
-    data class Address(val host: String, val port: Int)
+    data class Address(val host: String, val port: Int) {
+        // Destination hosts are private browsing metadata. Keep explicit fields
+        // and data-class equality for routing; redact accidental debug strings.
+        override fun toString(): String = "Address(<redacted>)"
+    }
     data class Datagram(val address: Address, val payload: ByteArray)
 
     fun readAddress(input: DataInputStream, type: Int = input.readUnsignedByte()): Address {
@@ -63,7 +67,11 @@ object Socks5 {
         // Resolve IPv6 literals locally; canonical IPv4 needs no DNS.
         // Domain names are resolved by the sender's selected upstream network.
         val literal = if (address.host.contains(':')) {
-            try { InetAddress.getByName(address.host).address } catch (_: Exception) { null }
+            // A colon is IPv6 literal syntax, never a valid DNS hostname.
+            // Do not silently encode a malformed literal as ATYP=DOMAIN.
+            val parsed = try { InetAddress.getByName(address.host).address } catch (_: Exception) { null }
+            require(parsed != null) { "Invalid IPv6 literal" }
+            parsed
         } else canonicalIpv4Literal(address.host)
         if (literal != null) {
             output.write(if (literal.size == 4) 1 else 4)
