@@ -145,6 +145,10 @@ class SenderService : Service() {
     private fun status(details: String) { SessionStore.publish(SessionStore.current.copy(details = details)) }
     private fun fail(details: String) {
         cleanup()
+        // Failure leaves its hint visible, but must not retain peer IPs or
+        // display stale live-session counters. Sanitized diagnostics remain.
+        SessionStore.peerUsage.postValue(emptyList())
+        SessionStore.stats.postValue("")
         SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
         stopSelf()
     }
