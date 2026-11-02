@@ -15,6 +15,9 @@ internal object SenderHealthProbe {
     fun check(host: String, port: Int, password: String, timeoutMs: Int = 3000,
               setup: (Socket) -> Boolean): Boolean {
         require(timeoutMs in 100..10_000)
+        // Stop may interrupt the watchdog after its loop check but before
+        // this probe begins. Do not prepare or connect a socket for that session.
+        if (Thread.currentThread().isInterrupted) return false
         return try {
             Socket().use { socket ->
                 if (!setup(socket)) return false

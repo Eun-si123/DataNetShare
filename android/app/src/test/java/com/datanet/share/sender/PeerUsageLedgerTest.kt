@@ -7,6 +7,21 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class PeerUsageLedgerTest {
+    @Test fun snapshotDebugStringCannotRevealPeerIp() {
+        val peerIp = "192.0.2.42" // RFC 5737 documentation-only address
+        val ledger = PeerUsageLedger()
+        val lease = ledger.open(peerIp)!!
+        lease.received(17)
+        val snapshot = ledger.snapshot().single()
+
+        // Fields remain available to the local UI; implicit logs must be redacted.
+        assertEquals(peerIp, snapshot.ip)
+        assertEquals(17L, snapshot.rxBytes)
+        assertFalse(snapshot.toString().contains(peerIp))
+        assertTrue(snapshot.toString().contains("redacted"))
+        ledger.close(lease)
+    }
+
     @Test fun aggregatesConnectionsByIpAndBothDirections() {
         val usage = PeerUsageLedger()
         val a = usage.open("192.168.49.81")!!

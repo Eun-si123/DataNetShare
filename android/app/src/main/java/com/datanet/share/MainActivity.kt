@@ -2,6 +2,7 @@ package com.datanet.share
 
 import android.Manifest
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -11,6 +12,7 @@ import android.net.VpnService
 import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -226,8 +228,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnCopyWifi).setOnClickListener {
             val secret = form.wifiPassword
             if (secret.isNotEmpty()) {
-                getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText("Wi-Fi password", secret))
+                copySensitive("Wi-Fi password", secret)
                 showMessage(getString(R.string.copied))
             }
         }
@@ -236,7 +237,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnCopy).setOnClickListener {
             val text = findViewById<TextView>(R.id.credentialsText).text
-            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("DataNet Share", text))
+            copySensitive("DataNet Share", text)
             showMessage(getString(R.string.copied))
         }
         findViewById<Button>(R.id.btnCopyDiagnostics).setOnClickListener {
@@ -370,6 +371,18 @@ class MainActivity : AppCompatActivity() {
             append("SOCKS5: ${state.proxyHost}:8282\nUsername: datanet\n${getString(R.string.proxy_password)}: ${state.proxyPassword}")
         } else ""
     }
+    /** Mask Wi-Fi/SOCKS credentials in Android 13+ clipboard previews.
+     * This is a display hint, not encryption or a clipboard access restriction.
+     */
+    private fun copySensitive(label: String, value: CharSequence) {
+        val clip = ClipData.newPlainText(label, value).apply {
+            description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    }
+
     private fun renderImportedWifi() {
         val hasWifi = form.wifiSsid.isNotEmpty()
         findViewById<View>(R.id.scannedWifiPanel).visibility = if (hasWifi) View.VISIBLE else View.GONE
