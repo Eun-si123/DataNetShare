@@ -1,12 +1,11 @@
 package com.datanet.share.common
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UdpTestWorkerLaunchTest {
     @Test fun rejectedWorkerLaunchReportsFailureAndFinishesOnce() {
-        for (failure in listOf(IllegalThreadStateException(), SecurityException(), OutOfMemoryError())) {
+        for (failure in listOf(IllegalThreadStateException("synthetic state private"), SecurityException("synthetic permission private"), OutOfMemoryError("synthetic capacity private"))) {
             var results = 0
             val errors = mutableListOf<String>()
             var finished = 0
@@ -18,7 +17,7 @@ class UdpTestWorkerLaunchTest {
             )
             assertEquals(0, results)
             assertEquals(1, errors.size)
-            assertTrue(errors.single().contains("could not start"))
+            assertEquals("UDP test could not start. Please retry.", errors.single())
             assertEquals(1, finished)
         }
     }
