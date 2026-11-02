@@ -61,6 +61,24 @@ class Ipv4HeaderOptionsBoundaryTest {
         assertEquals(0, parsed.tcpOptions.size)
     }
 
+    @Test fun optionAdjustedMinimumTransportHeaderIsEnforced() {
+        // IHL=24 fits in both packets; transport headers still need 8/20 bytes.
+        for ((protocol, total) in listOf(17 to 28, 17 to 31, 6 to 43)) {
+            val frame = ByteArray(total)
+            frame[0] = 0x46 // IPv4 with 24-byte header.
+            frame[2] = (total ushr 8).toByte()
+            frame[3] = total.toByte()
+            frame[9] = protocol.toByte()
+            // Nonzero ports keep the test specific to header length, not port validation.
+            frame[24] = 0x12
+            frame[25] = 0x34
+            frame[26] = 0x01
+            frame[27] = 0xBB.toByte()
+            if (protocol == 6) frame[36] = 0x50 // TCP data offset: 20 bytes.
+            assertNull("protocol=$protocol, total=$total", Ipv4Packet.parse(frame))
+        }
+    }
+
     @Test fun claimedIpOptionsWithoutCompleteTransportHeaderAreRejected() {
         val udp = IpPackets.udp(key, byteArrayOf(1))
         val tcp = IpPackets.tcp(key, 1, 0, 0x02, 1024, byteArrayOf())
