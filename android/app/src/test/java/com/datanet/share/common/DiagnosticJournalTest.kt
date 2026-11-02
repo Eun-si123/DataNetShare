@@ -7,6 +7,7 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class DiagnosticJournalTest {
     @Test fun emptyJournalMakesNoUnverifiedSuccessClaim() {
@@ -51,6 +52,7 @@ class DiagnosticJournalTest {
         val firstPublishEntered = CountDownLatch(1)
         val releaseFirstPublish = CountDownLatch(1)
         val resetStarted = CountDownLatch(1)
+        val resetThread = AtomicReference<Thread>()
         val workers = Executors.newFixedThreadPool(2)
         try {
             val note = workers.submit {
@@ -62,10 +64,18 @@ class DiagnosticJournalTest {
             }
             assertTrue(firstPublishEntered.await(5, TimeUnit.SECONDS))
             val reset = workers.submit {
+                resetThread.set(Thread.currentThread())
                 resetStarted.countDown()
                 journal.clearAndPublish { published.add(it) }
             }
             assertTrue(resetStarted.await(5, TimeUnit.SECONDS))
+            // Prove reset is waiting for the journal monitor before releasing note().
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (resetThread.get()?.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.sleep(5)
+            }
+            assertEquals("reset must be blocked behind the first publication",
+                Thread.State.BLOCKED, resetThread.get()?.state)
             releaseFirstPublish.countDown()
             note.get(5, TimeUnit.SECONDS)
             reset.get(5, TimeUnit.SECONDS)
