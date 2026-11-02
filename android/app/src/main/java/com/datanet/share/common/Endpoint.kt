@@ -3,6 +3,9 @@ package com.datanet.share.common
 /** Numeric IPv4 sender endpoint; loopback remains valid for local tests. */
 object Endpoint {
     fun isIpv4(host: String): Boolean {
+        // Canonical dotted IPv4 is 7..15 ASCII chars. Reject oversized input
+        // before split() allocates a token for every separator on the UI path.
+        if (host.length !in 7..15) return false
         val parts = host.split('.')
         if (parts.size != 4 || !parts.all { part ->
                 part.isNotEmpty() && part.all { it in '0'..'9' } &&

@@ -14,7 +14,7 @@ enum class NetworkEvent(val description: String) {
     TCP_IDLE("Receiver TCP flow timed out"),
     TCP_RETRANSMIT("Receiver TCP retransmissions exhausted"),
     TCP_FLOW_LIMIT("Receiver TCP capacity reached (shared TCP/UDP budget)"),
-    UDP_FLOW_LIMIT("Receiver UDP capacity reached (40 concurrent flows)"),
+    UDP_FLOW_LIMIT("Receiver UDP capacity reached (per-UDP cap or shared TCP/UDP budget)"),
     UDP_QUEUE("Receiver UDP packet queue overflowed"),
     UDP_SETUP("Receiver UDP proxy setup failed"),
     UDP_RELAY("Receiver UDP relay failed"),
