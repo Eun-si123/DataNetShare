@@ -27,8 +27,12 @@ object SessionStore {
     val telemetry = MutableLiveData("")
     private val diagnosticJournal = DiagnosticJournal()
     val diagnostics = MutableLiveData(diagnosticJournal.snapshot())
-    fun note(kind: NetworkEvent) { diagnostics.postValue(diagnosticJournal.record(kind)) }
-    fun resetDiagnostics() { diagnostics.postValue(diagnosticJournal.clear()) }
+    fun note(kind: NetworkEvent) {
+        diagnosticJournal.recordAndPublish(kind) { diagnostics.postValue(it) }
+    }
+    fun resetDiagnostics() {
+        diagnosticJournal.clearAndPublish { diagnostics.postValue(it) }
+    }
     @Volatile var current = State(); private set
 
     @Synchronized fun publish(value: State) { current = value; state.postValue(value) }
