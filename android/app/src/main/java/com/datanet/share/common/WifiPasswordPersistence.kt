@@ -5,7 +5,10 @@ package com.datanet.share.common
  * A failed read is not proof that an encrypted record is permanently unusable.
  */
 internal object WifiPasswordPersistence {
-    data class RestoreResult(val password: String?, val failed: Boolean)
+    data class RestoreResult(val password: String?, val failed: Boolean) {
+        // The decrypted Wi-Fi passphrase must not leak through implicit logging.
+        override fun toString(): String = "RestoreResult(<redacted>)"
+    }
 
     fun restore(load: () -> String?): RestoreResult =
         try {
