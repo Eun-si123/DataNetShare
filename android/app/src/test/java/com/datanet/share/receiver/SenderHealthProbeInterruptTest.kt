@@ -9,6 +9,35 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class SenderHealthProbeInterruptTest {
+    @Test fun cancelledAfterSuccessfulSocketSetupNeverConnectsToSender() {
+        // Stop can arrive while Network.bindSocket()/VpnService.protect() runs,
+        // even if the setup callback then returns true without throwing.
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
+            listener.soTimeout = 1_200
+            val accepted = AtomicBoolean(false)
+            val acceptor = Thread({
+                try { listener.accept().use { accepted.set(true) } }
+                catch (_: java.net.SocketTimeoutException) { }
+            }, "test-cancelled-probe-listener").apply { isDaemon = true; start() }
+            val candidate = AtomicReference<Socket>()
+            val preserved = AtomicBoolean(false)
+            val worker = Thread({
+                SenderHealthProbe.check("127.0.0.1", listener.localPort,
+                    "synthetic-health-password", timeoutMs = 300) { socket ->
+                    candidate.set(socket)
+                    Thread.currentThread().interrupt()
+                    true
+                }
+                preserved.set(Thread.currentThread().isInterrupted)
+            }, "test-cancel-during-setup").apply { isDaemon = true; start() }
+            worker.join(2_000)
+            acceptor.join(2_000)
+            assertFalse("cancelled health probe worker stalled", worker.isAlive)
+            assertFalse("cancelled probe must not connect after setup", accepted.get())
+            assertTrue("cancelled probe must close its prepared socket", candidate.get().isClosed)
+            assertTrue("cancelled probe must retain interruption", preserved.get())
+        }
+    }
     @Test fun alreadyInterruptedWatchdogNeverPreparesOrConnectsProbeSocket() {
         val setupCalls = java.util.concurrent.atomic.AtomicInteger()
         val result = AtomicReference<Boolean>()

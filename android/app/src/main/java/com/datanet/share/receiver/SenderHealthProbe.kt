@@ -20,9 +20,13 @@ internal object SenderHealthProbe {
         if (Thread.currentThread().isInterrupted) return false
         return try {
             Socket().use { socket ->
-                if (!setup(socket)) return false
+                // Stop can interrupt the watchdog while bind/protect is running.
+                // Even a successful setup must not launch a cancelled connection.
+                if (!setup(socket) || Thread.currentThread().isInterrupted) return false
                 socket.soTimeout = timeoutMs
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
+                // If Stop arrived during connect, do not send session credentials.
+                if (Thread.currentThread().isInterrupted) return false
                 Socks5.authenticateClient(DataInputStream(socket.getInputStream()),
                     socket.getOutputStream(), password)
                 true
