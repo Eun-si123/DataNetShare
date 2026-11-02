@@ -70,7 +70,7 @@ class ReceiverVpnService : VpnService() {
             val token = ++generation
             // Probe before VPN installation. QR Wi-Fi can have IPv4 provisioned
             // before the group owner is actually reachable on the local link.
-            Thread({
+            if (!ReceiverWorkerLaunchGuard.start { Thread({
                 try {
                     val qrRequestedNetwork = PeerWifiConnector.network != null
                     val link = ReceiverLink(this, host)
@@ -111,7 +111,9 @@ class ReceiverVpnService : VpnService() {
                         }
                     }
                 }
-            }, "receiver-check").apply { isDaemon = true; start() }
+            }, "receiver-check").apply { isDaemon = true; start() } }) {
+                fail("Receiver startup worker could not start. Reconnect to resume.")
+            }
         } catch (e: Exception) { fail(ReceiverStartupFailureMessages.receiverStart(e)) }
         return START_NOT_STICKY
     }
@@ -135,7 +137,7 @@ class ReceiverVpnService : VpnService() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DataNetShare::Receiver").apply { acquire() }
             val token = generation
             val link = ReceiverLink(this, host)
-            bridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
+            val createdBridge = Tun2Socks(descriptor.fileDescriptor, host, port, password,
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 { socket -> ReceiverSocketSetup.bindThenProtect(socket, { link.bind(it) }, { protect(it) }) },
                 onFailure = { message -> main.post { if (generation == token) fail(message) } },
@@ -192,10 +194,18 @@ class ReceiverVpnService : VpnService() {
                         })
                     }
                 })
-                .also { it.start() }
+            // Publish ownership before launching workers: a partial launch must
+            // be stopped by cleanup even when native thread creation fails.
+            bridge = createdBridge
+            if (!ReceiverWorkerLaunchGuard.start { createdBridge.start() }) {
+                fail("VPN worker could not start. Reconnect to resume.")
+                return
+            }
             SessionStore.publish(SessionStore.State(SessionStore.Mode.RECEIVER, "active", "Experimental IPv4 VPN via $host:$port", host))
             getSystemService(NotificationManager::class.java).notify(Constants.RECEIVER_NOTIFICATION_ID, notification("IPv4 tunnel via $host:$port"))
-            startPeerWatchdog(token, host, port, password)
+            if (!startPeerWatchdog(token, host, port, password)) {
+                fail("Receiver health monitor could not start. Reconnect to resume.")
+            }
         } catch (e: Exception) { fail(ReceiverStartupFailureMessages.tunnelStart(e)) }
     }
 
@@ -208,7 +218,8 @@ class ReceiverVpnService : VpnService() {
      * All data sockets are protected and bound to the same local peer link.
      * Generation checks suppress stale callbacks after explicit Stop/restart.
      */
-    private fun startPeerWatchdog(token: Int, host: String, port: Int, password: String) {
+    private fun startPeerWatchdog(token: Int, host: String, port: Int, password: String): Boolean =
+        ReceiverWorkerLaunchGuard.start {
         val watcher = Thread({
             val policy = SenderHealthPolicy(3)
             val link = ReceiverLink(this, host)

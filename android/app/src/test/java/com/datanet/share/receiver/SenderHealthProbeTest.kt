@@ -168,4 +168,32 @@ class SenderHealthProbeTest {
             assertFalse("fake sender worker must finish", worker.isAlive)
         }
     }
+
+    @Test fun interruptedSocketPreparationClosesProbeAndPreservesCancellation() {
+        // A cancelled receiver watchdog must not lose its interrupt flag or
+        // retain an unconnected socket when link preparation is interrupted.
+        // Use a separate thread to avoid interrupting the JUnit worker.
+        val returned = java.util.concurrent.atomic.AtomicReference<Boolean>()
+        val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val socketClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val socketConnected = java.util.concurrent.atomic.AtomicBoolean(true)
+        val worker = Thread {
+            lateinit var candidate: Socket
+            returned.set(SenderHealthProbe.check("127.0.0.1", 9,
+                "synthetic-password", timeoutMs = 500) {
+                candidate = it
+                throw InterruptedException("synthetic watchdog cancellation")
+            })
+            interrupted.set(Thread.currentThread().isInterrupted)
+            socketClosed.set(candidate.isClosed)
+            socketConnected.set(candidate.isConnected)
+        }
+        worker.start()
+        worker.join(2_000)
+        assertFalse("cancelled probe worker must exit", worker.isAlive)
+        assertEquals(false, returned.get())
+        assertTrue("interrupt signal must survive probe cleanup", interrupted.get())
+        assertTrue("cancelled probe must close its socket", socketClosed.get())
+        assertFalse("cancelled probe must never connect", socketConnected.get())
+    }
 }
