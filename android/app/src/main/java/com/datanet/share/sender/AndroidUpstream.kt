@@ -114,8 +114,9 @@ class AndroidUpstream(
                     }
                     return Socks5Server.UdpConnection(socket, destination)
                 } catch (e: IOException) {
-                    // Retry only recoverable network/socket errors. Permission or
-                    // platform programming failures must not silently switch routes.
+                    // Android bindSocket may wrap EPERM/EACCES in SocketException.
+                    // Never retry a denied bind on another route.
+                    if (isUdpBindingPermissionDenied(e)) throw e
                     last = IOException("UDP upstream setup failed", e)
                 }
             }
