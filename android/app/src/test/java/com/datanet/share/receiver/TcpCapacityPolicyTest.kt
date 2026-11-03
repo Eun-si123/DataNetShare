@@ -49,4 +49,15 @@ class TcpCapacityPolicyTest {
         assertFalse(TcpCapacityPolicy.evictIdle(established - 1, true))
         assertTrue(TcpCapacityPolicy.evictIdle(established, true))
     }
+    @Test fun invalidOrOverflowedCountsNeverAdmitAnotherFlow() {
+        val invalidCounts = listOf(
+            -1 to 0, 0 to -1, Int.MIN_VALUE to Int.MIN_VALUE,
+            1 to Int.MAX_VALUE, Int.MAX_VALUE to 1,
+            Int.MAX_VALUE to Int.MAX_VALUE
+        )
+        for ((tcp, udp) in invalidCounts) {
+            assertFalse("TCP must reject invalid counts tcp=$tcp udp=$udp", TcpCapacityPolicy.allowTcp(tcp, udp))
+            assertFalse("UDP must reject invalid counts tcp=$tcp udp=$udp", TcpCapacityPolicy.allowUdp(tcp, udp))
+        }
+    }
 }
