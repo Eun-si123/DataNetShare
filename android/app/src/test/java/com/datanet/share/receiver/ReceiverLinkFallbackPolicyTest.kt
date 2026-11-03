@@ -7,7 +7,7 @@ import org.junit.Test
 class ReceiverLinkFallbackPolicyTest {
     @Test fun rejectsVirtualAndVpnInterfacesEvenIfTheyHavePrivateIpv4() {
         listOf(
-            "tun0", "tap0", "wg0", "ipsec0", "ppp0", "veth1234",
+            "tun0", "tap0", "wg0", "wireguard0", "WIREGUARD1", "ipsec0", "ppp0", "veth1234",
             "dummy0", "tailscale0", "TUN12", "WG1",
             "v4-wlan0", "v4-rmnet_data0", "V4-ETH0",
             "ip6tnl0", "sit0", "gre0", "gretap0", "erspan0", "clat4"
