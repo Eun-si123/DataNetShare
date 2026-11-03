@@ -107,13 +107,15 @@ class AndroidUpstream(
             }
             for (address in addresses) {
                 val socket = DatagramSocket()
+                val destination = InetSocketAddress(address, port)
                 try {
-                    if (network != null) network.bindSocket(socket)
-                    val destination = InetSocketAddress(address, port)
-                    socket.connect(destination)
+                    UdpUpstreamSocketSetup.prepare(socket, destination) {
+                        if (network != null) network.bindSocket(socket)
+                    }
                     return Socks5Server.UdpConnection(socket, destination)
-                } catch (e: Exception) {
-                    socket.close()
+                } catch (e: IOException) {
+                    // Retry only recoverable network/socket errors. Permission or
+                    // platform programming failures must not silently switch routes.
                     last = IOException("UDP upstream setup failed", e)
                 }
             }
