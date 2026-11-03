@@ -59,6 +59,9 @@ class Socks5ServerTest {
             assertNotEquals(a.port, b.port)
             DatagramSocket().use { udpA -> DatagramSocket().use { udpB ->
                 udpA.soTimeout = 3000; udpB.soTimeout = 3000
+                // Some constrained hosts return ENOBUFS for a 60,000-byte loopback
+                // datagram. Request a larger buffer without weakening the test.
+                udpA.sendBufferSize = 1_048_576
                 fun roundTrip(socket: DatagramSocket, relay: Socks5.Address, payload: ByteArray) {
                     val frame = Socks5.encodeDatagram(Socks5.Address("127.0.0.1", fixture.udpPort), payload)
                     socket.send(DatagramPacket(frame, frame.size, InetSocketAddress(relay.host, relay.port)))
