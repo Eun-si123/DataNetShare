@@ -179,7 +179,15 @@ class TcpFlow(
         // A SYN does not prove that the client completed the TCP handshake.
         // Until the peer ACKs our SYN-ACK, do not consume a sender SOCKS5 slot.
         synchronized(lock) {
-            while (!closed && !established) lock.wait(1000)
+            try {
+                while (!closed && !established) lock.wait(1000)
+            } catch (_: InterruptedException) {
+                // Cancellation before the handshake must release the flow slot,
+                // not strand an unowned socket or lose the interrupt signal.
+                Thread.currentThread().interrupt()
+                try { remote.close() } finally { close() }
+                return
+            }
             if (closed) { remote.close(); return }
             socket = remote
         }
