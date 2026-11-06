@@ -6,6 +6,24 @@ import java.net.InetAddress
 import java.nio.ByteBuffer
 
 class ProtocolTest {
+    @Test fun implicitSocksDestinationStringsHideHostAndPort() {
+        val destination = Socks5.Address("example.test", 443)
+        // The codec and map keys still require explicit host/port access.
+        assertEquals("example.test", destination.host)
+        assertEquals(443, destination.port)
+        assertEquals(destination, destination.copy())
+        assertEquals(destination.hashCode(), destination.copy().hashCode())
+
+        // Accidental logging of a request or decoded UDP datagram must not
+        // disclose the destination host or port via generated data-class text.
+        val datagram = Socks5.Datagram(destination, byteArrayOf(1, 2, 3))
+        for (debug in listOf(destination.toString(), datagram.toString())) {
+            assertFalse(debug.contains("example.test"))
+            assertFalse(debug.contains("443"))
+            assertTrue(debug.contains("redacted"))
+        }
+    }
+
     @Test fun datagramRoundTripsIpv4Ipv6AndHostname() {
         listOf("192.168.77.1", "2001:db8::1234", "example.test").forEach { host ->
             val decoded = Socks5.decodeDatagram(Socks5.encodeDatagram(Socks5.Address(host, 65535), byteArrayOf(1, 2, 3)))!!
@@ -53,6 +71,18 @@ class ProtocolTest {
                 assertNull("fragment flags/offset=$fragmentBits", Ipv4Packet.parse(fragment))
             }
         }
+    }
+
+    @Test fun implicitIpv4FlowStringsHidePeerEndpoints() {
+        val key = FlowKey(0x0a112233, 47001, 0x0b445566, 49002)
+        val flowDebug = key.toString()
+        assertEquals("FlowKey(<redacted>)", flowDebug)
+        val packet = Ipv4Packet.parse(IpPackets.tcp(key, 1, 2, 0x10, 1024, byteArrayOf(1)))!!
+        val packetDebug = packet.toString()
+        assertFalse(packetDebug.contains(key.source.toString()))
+        assertFalse(packetDebug.contains(key.destination.toString()))
+        assertFalse(packetDebug.contains("47001"))
+        assertFalse(packetDebug.contains("49002"))
     }
 
     @Test fun receiverEndpointIsExplicitIpv4() {

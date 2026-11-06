@@ -60,6 +60,42 @@ class ReceiverSocketSetupTest {
         }
     }
 
+    @Test fun udpProtectionFalseIsNotIgnored() {
+        DatagramSocket(null).use { socket ->
+            var protectCalled = false
+            assertFalse(ReceiverSocketSetup.bindThenProtect(socket, {
+                it.bind(InetSocketAddress(loopback, 0))
+            }, {
+                assertTrue(it.isBound)
+                assertFalse(it.isConnected)
+                protectCalled = true
+                false
+            }))
+            assertTrue(protectCalled)
+            assertFalse(socket.isConnected)
+        }
+    }
+
+    @Test fun udpBindingFailureDoesNotAttemptProtection() {
+        DatagramSocket(null).use { socket ->
+            var protectCalled = false
+            val failure = IOException("synthetic UDP bind failure")
+            try {
+                ReceiverSocketSetup.bindThenProtect(socket, {
+                    throw failure
+                }, {
+                    protectCalled = true
+                    true
+                })
+                fail("UDP binding failure must propagate")
+            } catch (actual: IOException) {
+                assertSame(failure, actual)
+            }
+            assertFalse(protectCalled)
+            assertFalse(socket.isConnected)
+        }
+    }
+
     @Test fun bindingFailureDoesNotAttemptProtection() {
         Socket().use { socket ->
             var protectCalled = false

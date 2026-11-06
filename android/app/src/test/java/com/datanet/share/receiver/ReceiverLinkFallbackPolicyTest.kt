@@ -7,12 +7,21 @@ import org.junit.Test
 class ReceiverLinkFallbackPolicyTest {
     @Test fun rejectsVirtualAndVpnInterfacesEvenIfTheyHavePrivateIpv4() {
         listOf(
-            "tun0", "tap0", "wg0", "ipsec0", "ppp0", "veth1234",
+            "tun0", "tap0", "wg0", "wireguard0", "WIREGUARD1", "ipsec0", "ppp0", "veth1234",
             "dummy0", "tailscale0", "TUN12", "WG1",
             "v4-wlan0", "v4-rmnet_data0", "V4-ETH0",
             "ip6tnl0", "sit0", "gre0", "gretap0", "erspan0", "clat4"
         ).forEach { name ->
             assertFalse("Virtual interface must not carry SOCKS transport: $name",
+                ReceiverLinkFallbackPolicy.allows(name))
+        }
+    }
+
+    @Test fun rejectsCellularInterfacesThatCouldSharePrivatePeerPrefix() {
+        // A modem interface may have an RFC1918 address that matches a local
+        // sender prefix. The raw-interface fallback must not bind SOCKS to it.
+        for (name in listOf("wwan0", "WWAN1", "pdp0", "PDP2", "rmnet_data0", "ccmni0")) {
+            assertFalse("Cellular interface must not carry receiver SOCKS: $name",
                 ReceiverLinkFallbackPolicy.allows(name))
         }
     }

@@ -186,12 +186,7 @@ class ReceiverVpnService : VpnService() {
                 onUdpError = { error ->
                     if (generation == token) {
                         recentUdpError = error
-                        SessionStore.note(when {
-                            error.contains("capacity") -> NetworkEvent.UDP_FLOW_LIMIT
-                            error.contains("queue full") -> NetworkEvent.UDP_QUEUE
-                            error.contains("read") -> NetworkEvent.UDP_RELAY
-                            else -> NetworkEvent.UDP_SETUP
-                        })
+                        SessionStore.note(ReceiverUdpErrorPolicy.classify(error))
                     }
                 })
             // Publish ownership before launching workers: a partial launch must
@@ -320,17 +315,24 @@ class ReceiverVpnService : VpnService() {
         physicalUnderlying = null
         lastNetworkCheckAtMs = 0L
         networkStatus = "Network state not yet checked"
-        peerWatchdog?.interrupt(); peerWatchdog = null
-        try { probe?.close() } catch (_: Exception) {}
-        probe = null
-        // FIRST drop Android's actual VPN tunnel/routes even if a TCP worker is
-        // stuck in a socket call or bridge shutdown. Do not leave a black-hole VPN.
+        // Detach every owned resource before invoking any potentially failing
+        // teardown operation. A bad socket, bridge, or wake lock must not leave
+        // the VPN descriptor or foreground service behind.
+        val oldWatchdog = peerWatchdog; peerWatchdog = null
+        val oldProbe = probe; probe = null
         val descriptor = pfd; pfd = null
-        try { descriptor?.close() } catch (_: Exception) {}
         val oldBridge = bridge; bridge = null
-        try { oldBridge?.stop() } catch (_: Exception) {}
-        wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        val oldWakeLock = wakeLock; wakeLock = null
+        ReceiverCleanup.run(
+            { oldWatchdog?.interrupt() },
+            { oldProbe?.close() },
+            // Drop the actual VPN tunnel/routes before stopping flow workers,
+            // even if a TCP worker is stuck in a socket call.
+            { descriptor?.close() },
+            { oldBridge?.stop() },
+            { oldWakeLock?.let { if (it.isHeld) it.release() } },
+            { stopForeground(STOP_FOREGROUND_REMOVE) }
+        )
     }
     override fun onDestroy() {
         // If Android destroys the running VPN service without the app/notification

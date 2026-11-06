@@ -3,6 +3,7 @@ package com.datanet.share.common
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.InetAddress
 
 class UdpTestResponseTest {
     private val transaction = ByteArray(12) { (it + 1).toByte() }
@@ -22,7 +23,14 @@ class UdpTestResponseTest {
 
     @Test fun acceptsFramedBindingSuccessWithMatchingTransaction() {
         assertTrue(UdpTest.isValidBindingResponse(response(mappedIpv4), transaction))
-        assertTrue(UdpTest.isValidBindingResponse(response(mappedIpv6), transaction))
+        assertFalse(UdpTest.isValidBindingResponse(response(mappedIpv6), transaction))
+    }
+
+    @Test fun choosesIpv4OnlyAndRejectsIpv6OnlyStunResolution() {
+        val ipv4 = InetAddress.getByName("192.0.2.1")
+        val ipv6 = InetAddress.getByName("2001:db8::1")
+        assertTrue(UdpTest.chooseIpv4Address(arrayOf(ipv6, ipv4)) == ipv4)
+        assertTrue(UdpTest.chooseIpv4Address(arrayOf(ipv6)) == null)
     }
 
     @Test fun rejectsBindingSuccessWithoutValidXorMappedAddress() {
