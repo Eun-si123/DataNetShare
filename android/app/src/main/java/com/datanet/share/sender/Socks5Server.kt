@@ -237,7 +237,7 @@ class Socks5Server(
                 }
                 3 -> {
                     client.soTimeout = 1000
-                    val assoc = UdpAssociate(client, peer)
+                    val assoc = UdpAssociate(client, peer, address.port)
                     associations.add(assoc)
                     try {
                         assoc.start()
@@ -291,7 +291,8 @@ class Socks5Server(
     }
 
     private inner class UdpAssociate(private val client: Socket,
-                                     private val peer: PeerUsageLedger.Entry?) {
+                                     private val peer: PeerUsageLedger.Entry?,
+                                     private val requestedClientPort: Int) {
         private val relay = DatagramSocket(InetSocketAddress(client.localAddress, 0))
         private val remoteSockets = ConcurrentHashMap<Socks5.Address, DatagramSocket>()
         @Volatile var closed = false
@@ -308,6 +309,9 @@ class Socks5Server(
                         val packet = DatagramPacket(buffer, buffer.size); relay.receive(packet)
                         val source = packet.socketAddress as InetSocketAddress
                         if (source.address != client.inetAddress) continue
+                        // An explicit UDP ASSOCIATE client port must not be claimed
+                        // by a different same-IP socket racing the first packet.
+                        if (requestedClientPort != 0 && source.port != requestedClientPort) continue
                         // Malformed datagrams must not claim the authenticated client's UDP port.
                         // Only this relay thread writes the endpoint; upstream workers read it.
                         val pinned = clientEndpoint
