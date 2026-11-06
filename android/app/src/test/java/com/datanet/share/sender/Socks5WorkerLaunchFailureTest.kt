@@ -94,6 +94,7 @@ class Socks5WorkerLaunchFailureTest {
                 assertEquals(0, server.clientCount)
                 assertEquals(-1, client.getInputStream().read())
             }
+            await("failure callback must complete", { reports.get() >= 1 })
             assertEquals(1, reports.get())
         } finally { server.stop() }
     }
@@ -127,6 +128,7 @@ class Socks5WorkerLaunchFailureTest {
                     await("client permit must return", { available(server, "permits") == 1 })
                     assertEquals(0, server.clientCount)
                 }
+                await("failure callback must complete", { reports.get() >= 1 })
                 assertEquals(1, reports.get())
             } finally { server.stop() }
         }
@@ -153,6 +155,7 @@ class Socks5WorkerLaunchFailureTest {
                 await("control permit must return", { available(server, "permits") == 1 })
                 assertEquals(0, server.clientCount)
             }
+            await("failure callback must complete", { reports.get() >= 1 })
             assertEquals(1, reports.get())
         } finally { server.stop() }
     }
@@ -183,6 +186,7 @@ class Socks5WorkerLaunchFailureTest {
                 await("listener must stop after upstream launch failure", { server.boundPort == 0 })
                 await("control permit must return", { available(server, "permits") == 1 })
             }
+            await("failure callback must complete", { reports.get() >= 1 })
             assertEquals(1, reports.get())
         } finally { server.stop() }
     }
