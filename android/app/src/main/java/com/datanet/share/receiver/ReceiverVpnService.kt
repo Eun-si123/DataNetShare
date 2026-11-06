@@ -186,12 +186,7 @@ class ReceiverVpnService : VpnService() {
                 onUdpError = { error ->
                     if (generation == token) {
                         recentUdpError = error
-                        SessionStore.note(when {
-                            error.contains("capacity") -> NetworkEvent.UDP_FLOW_LIMIT
-                            error.contains("queue full") -> NetworkEvent.UDP_QUEUE
-                            error.contains("read") -> NetworkEvent.UDP_RELAY
-                            else -> NetworkEvent.UDP_SETUP
-                        })
+                        SessionStore.note(ReceiverUdpErrorPolicy.classify(error))
                     }
                 })
             // Publish ownership before launching workers: a partial launch must
