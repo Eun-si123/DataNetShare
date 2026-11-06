@@ -89,7 +89,12 @@ class UdpFlow(
             val bound = Socks5.request(input, output, 3, Socks5.Address("0.0.0.0", sourcePort))
             if (bound.port == 0) throw IOException("Invalid UDP relay port")
             val relayHost = if (bound.host == "0.0.0.0" || bound.host == "0:0:0:0:0:0:0:0") host else bound.host
-            datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000
+            // Do not connect() after binding this socket before SOCKS reply:
+            // queued pre-connect datagrams are not guaranteed to be kernel-filtered
+            // on every Android version. Validate the actual sender of every UDP
+            // response in userspace before decoding or writing into the TUN.
+            val relayAddress = InetAddress.getByName(relayHost)
+            datagram.soTimeout = 1000
             onConnected() // UDP ASSOCIATE control handshake and relay socket succeeded
             socket.soTimeout = 1000
             try {
@@ -103,7 +108,8 @@ class UdpFlow(
                         if (!closed.get()) onError("UDP upstream read failed (${e.javaClass.simpleName})")
                     } finally { close() }
                 }, "tun-udp-control").apply { isDaemon = true; launchWorker(this) }
-                Thread({ receive(datagram) }, "tun-udp-receive").apply { isDaemon = true; launchWorker(this) }
+                Thread({ receive(datagram, relayAddress, bound.port) }, "tun-udp-receive")
+                    .apply { isDaemon = true; launchWorker(this) }
             } catch (_: OutOfMemoryError) {
                 // Exhausting native threads is a bridge-wide failure, unlike an
                 // individual relay exception. Release the association first,
@@ -122,7 +128,8 @@ class UdpFlow(
             while (!closed.get()) {
                 val payload = queue.poll(1, TimeUnit.SECONDS) ?: continue
                 val bytes = Socks5.encodeDatagram(destination, payload)
-                datagram.send(DatagramPacket(bytes, bytes.size)); onTx(payload.size)
+                datagram.send(DatagramPacket(bytes, bytes.size, relayAddress, bound.port))
+                onTx(payload.size)
             }
         } catch (_: InterruptedException) {
             // Cancellation of the blocking queue poll must not erase the worker's
@@ -136,12 +143,16 @@ class UdpFlow(
             }
         } finally { close() }
     }
-    private fun receive(socket: DatagramSocket) {
+    private fun receive(socket: DatagramSocket, relayAddress: InetAddress, relayPort: Int) {
         val buffer = ByteArray(65535)
         try {
             while (!closed.get()) {
                 val packet = DatagramPacket(buffer, buffer.size)
                 try { socket.receive(packet) } catch (_: SocketTimeoutException) { continue }
+                // This socket is intentionally unconnected, so the packet's
+                // real network source is available even for data queued while
+                // SOCKS5 authentication / UDP ASSOCIATE was in progress.
+                if (packet.address != relayAddress || packet.port != relayPort) continue
                 val decoded = Socks5.decodeDatagram(packet.data.copyOfRange(packet.offset, packet.offset + packet.length)) ?: continue
                 if (decoded.address.port != key.destinationPort ||
                     decoded.address.host != InetAddress.getByAddress(key.destinationBytes).hostAddress) continue
