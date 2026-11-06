@@ -66,6 +66,13 @@ class Tun2Socks(
     private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
+    private val nativeWorkerFailure = NativeWorkerFailureGate()
+    private fun failNativeWorkerOnce(message: String) {
+        nativeWorkerFailure.reportOnce(
+            stop = { stop() },
+            report = { MaintenanceCallbackGuard.run { onFailure(message) } }
+        )
+    }
     // The joint admission budget reserves eight sender SOCKS5 clients for probes.
     // With few UDP associations, TCP may borrow unused capacity up to 112.
 
@@ -121,7 +128,13 @@ class Tun2Socks(
                 val buffer = ByteArray(65535)
                 val poll = StructPollfd().apply { fd = input.fd; events = OsConstants.POLLIN.toShort() }
                 while (running) {
-                    if (Os.poll(arrayOf(poll), 500) == 0) continue
+                    // A signal may interrupt poll without invalidating the TUN.
+                    // Retry on the next read-loop iteration instead of stopping the VPN.
+                    val ready = TunPollRecovery.poll(
+                        operation = { Os.poll(arrayOf(poll), 500) },
+                        interrupted = { it is ErrnoException && it.errno == OsConstants.EINTR }
+                    )
+                    if (ready == null || ready == 0) continue
                     if (!running) break
                     if (poll.revents.toInt() and (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL) != 0) error("VPN interface disconnected")
                     if (poll.revents.toInt() and OsConstants.POLLIN == 0) continue
@@ -149,7 +162,12 @@ class Tun2Socks(
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
-        if (packet.flags and 4 != 0) { tcp.remove(key)?.close(); return }
+        if (packet.flags and 4 != 0) {
+            // Delegate RST validation to the flow. Unconditional removal here
+            // would let stale or out-of-window resets kill a newer connection.
+            tcp[key]?.receive(packet)
+            return
+        }
         if (packet.flags and 2 != 0) {
             tcp[key]?.let { it.retransmitSyn(); return }
             if (!TcpCapacityPolicy.allowTcp(tcp.size, udp.size)) {
@@ -188,8 +206,15 @@ class Tun2Socks(
                 close = { it.close() }
             ) ?: return
             tcpAttempts.incrementAndGet()
-            flow.start()
-            Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
+            launchAdmittedFlow(flow,
+                launch = {
+                    flow.start()
+                    Thread({ flow.openUpstream() }, "tun-tcp-connect").apply { isDaemon = true; start() }
+                },
+                close = { it.close() },
+                onThreadExhausted = {
+                    failNativeWorkerOnce("VPN TCP worker could not start. Reconnect to resume.")
+                })
         } else tcp[key]?.receive(packet)
     }
     private fun handleUdp(packet: Ipv4Packet) {
@@ -220,14 +245,22 @@ class Tun2Socks(
                         MaintenanceCallbackGuard.run { onUdpError(message) }
                     },
                     onConnected = { udpConnected.incrementAndGet() },
-                    onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
+                    onOversizedReply = { oversizedUdpReplies.incrementAndGet() },
+                    onThreadExhausted = {
+                        failNativeWorkerOnce("VPN UDP child worker could not start. Reconnect to resume.")
+                    })
                 created
             },
             register = { udp[key] = it },
             close = { it.close() }
         ) ?: return
         udpAttempts.incrementAndGet(); flow.send(packet.payload)
-        Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() }
+        launchAdmittedFlow(flow,
+            launch = { Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() } },
+            close = { it.close() },
+            onThreadExhausted = {
+                failNativeWorkerOnce("VPN UDP worker could not start. Reconnect to resume.")
+            })
     }
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {
         if (!running) return@synchronized
@@ -250,7 +283,13 @@ class Tun2Socks(
                     val waiting = StructPollfd().apply { fd = tunFd; events = OsConstants.POLLOUT.toShort() }
                     val started = System.nanoTime()
                     try {
-                        Os.poll(arrayOf(waiting), 20) > 0 &&
+                        // An interrupted POLLOUT wait is a transient missed write,
+                        // not a reason to tear down every receiver flow.
+                        val ready = TunPollRecovery.poll(
+                            operation = { Os.poll(arrayOf(waiting), 20) },
+                            interrupted = { it is ErrnoException && it.errno == OsConstants.EINTR }
+                        )
+                        ready != null && ready > 0 &&
                             waiting.revents.toInt() and OsConstants.POLLOUT != 0
                     } finally {
                         tunWriteWaits.incrementAndGet()

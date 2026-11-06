@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WifiDirectProfileTest {
+    @Test fun debugStringNeverExposesCustomWifiDirectCredentials() {
+        val profile = WifiDirectProfile("TestDevice", "test-wifi-passphrase-2026", WifiDirectProfile.Band.GHZ_5)
+        assertEquals("WifiDirectProfile(<redacted>)", profile.toString())
+        // Diagnostic formatting must not alter the values used to configure Wi-Fi Direct.
+        assertEquals(profile, profile.copy())
+        assertEquals("test-wifi-passphrase-2026", profile.copy().passphrase)
+    }
+
     @Test fun defaultsKeepLegacyAndroidGeneratedGroup() {
         val profile = WifiDirectProfile()
         assertFalse(profile.isCustomized())

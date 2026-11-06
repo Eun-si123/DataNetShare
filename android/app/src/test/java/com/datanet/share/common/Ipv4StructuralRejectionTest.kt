@@ -37,6 +37,20 @@ class Ipv4StructuralRejectionTest {
         assertNull(Ipv4Packet.parse(changed(tcp, 32, 0xf0))) // beyond total length
     }
 
+    @Test fun rejectsReservedTransportPortZeroBeforeFlowAdmission() {
+        val tcp = IpPackets.tcp(key, 10, 0, 0x02, 4096, byteArrayOf())
+        val udp = IpPackets.udp(key, byteArrayOf(1, 2, 3))
+        // Port zero is reserved as a TCP endpoint and as a UDP destination.
+        // Dropping it at TUN ingress avoids opening useless SOCKS workers.
+        assertNull(Ipv4Packet.parse(changed(tcp, 20, 0).also { it[21] = 0 }))
+        assertNull(Ipv4Packet.parse(changed(tcp, 22, 0).also { it[23] = 0 }))
+        assertNull(Ipv4Packet.parse(changed(udp, 22, 0).also { it[23] = 0 }))
+        // RFC 768 allows UDP source port zero to mean no reply port.
+        assertNotNull(Ipv4Packet.parse(changed(udp, 20, 0).also { it[21] = 0 }))
+        assertNotNull(Ipv4Packet.parse(tcp))
+        assertNotNull(Ipv4Packet.parse(udp))
+    }
+
     @Test fun rejectsUdpLengthMismatchesAndTruncatedReads() {
         val udp = IpPackets.udp(key, byteArrayOf(1, 2, 3, 4))
         assertEquals(4, Ipv4Packet.parse(udp)?.payload?.size)

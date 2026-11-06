@@ -1,9 +1,13 @@
 package com.datanet.share.common
 
+import com.datanet.share.receiver.TcpCapacityPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class DiagnosticJournalTest {
     @Test fun emptyJournalMakesNoUnverifiedSuccessClaim() {
@@ -28,6 +32,63 @@ class DiagnosticJournalTest {
         journal.clear()
         assertTrue(journal.snapshot().contains("No internal"))
     }
+    @Test fun udpCapacityDiagnosticCoversSharedBudgetNotOnlyFortyUdpFlows() {
+        // UDP can be rejected with only eight UDP flows when 112 TCP flows
+        // consume the remainder of the 120-slot shared sender budget.
+        val tcpAtCap = TcpCapacityPolicy.MAX_TCP
+        val udpAtSharedCap = TcpCapacityPolicy.TOTAL_BUDGET - tcpAtCap
+        assertTrue(udpAtSharedCap < TcpCapacityPolicy.MAX_UDP)
+        assertFalse(TcpCapacityPolicy.allowUdp(tcpAtCap, udpAtSharedCap))
+        assertFalse(TcpCapacityPolicy.allowUdp(0, TcpCapacityPolicy.MAX_UDP))
+        val summary = DiagnosticJournal().record(NetworkEvent.UDP_FLOW_LIMIT)
+        assertTrue(summary.contains("shared TCP/UDP budget"))
+        assertFalse(summary.contains("40 concurrent flows"))
+        assertTrue(summary.endsWith("×1"))
+    }
+
+    @Test fun sessionResetCannotBeOverwrittenByDelayedFailurePublication() {
+        val journal = DiagnosticJournal()
+        val published = Collections.synchronizedList(mutableListOf<String>())
+        val firstPublishEntered = CountDownLatch(1)
+        val releaseFirstPublish = CountDownLatch(1)
+        val resetStarted = CountDownLatch(1)
+        val resetThread = AtomicReference<Thread>()
+        val workers = Executors.newFixedThreadPool(2)
+        try {
+            val note = workers.submit {
+                journal.recordAndPublish(NetworkEvent.TCP_UPSTREAM) { snapshot ->
+                    firstPublishEntered.countDown()
+                    check(releaseFirstPublish.await(5, TimeUnit.SECONDS))
+                    published.add(snapshot)
+                }
+            }
+            assertTrue(firstPublishEntered.await(5, TimeUnit.SECONDS))
+            val reset = workers.submit {
+                resetThread.set(Thread.currentThread())
+                resetStarted.countDown()
+                journal.clearAndPublish { published.add(it) }
+            }
+            assertTrue(resetStarted.await(5, TimeUnit.SECONDS))
+            // Prove reset is waiting for the journal monitor before releasing note().
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (resetThread.get()?.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.sleep(5)
+            }
+            assertEquals("reset must be blocked behind the first publication",
+                Thread.State.BLOCKED, resetThread.get()?.state)
+            releaseFirstPublish.countDown()
+            note.get(5, TimeUnit.SECONDS)
+            reset.get(5, TimeUnit.SECONDS)
+            assertEquals(2, published.size)
+            assertTrue(published[0].contains("TCP upstream"))
+            assertTrue(published[1].contains("No internal network failures"))
+            assertEquals(published[1], journal.snapshot())
+        } finally {
+            releaseFirstPublish.countDown()
+            workers.shutdownNow()
+        }
+    }
+
     @Test fun concurrentEventsDoNotLoseCounts() {
         val journal = DiagnosticJournal()
         val latch = CountDownLatch(4)

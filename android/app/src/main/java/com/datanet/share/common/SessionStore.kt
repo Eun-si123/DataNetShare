@@ -16,6 +16,8 @@ object SessionStore {
         val wifiPassword: String = ""
     ) {
         val busy: Boolean get() = status == "starting" || status == "active"
+        // Session credentials and peer identifiers must never appear in implicit logs.
+        override fun toString(): String = "State(<redacted>)"
     }
     val state = MutableLiveData(State())
     val stats = MutableLiveData("")
@@ -25,8 +27,12 @@ object SessionStore {
     val telemetry = MutableLiveData("")
     private val diagnosticJournal = DiagnosticJournal()
     val diagnostics = MutableLiveData(diagnosticJournal.snapshot())
-    fun note(kind: NetworkEvent) { diagnostics.postValue(diagnosticJournal.record(kind)) }
-    fun resetDiagnostics() { diagnostics.postValue(diagnosticJournal.clear()) }
+    fun note(kind: NetworkEvent) {
+        diagnosticJournal.recordAndPublish(kind) { diagnostics.postValue(it) }
+    }
+    fun resetDiagnostics() {
+        diagnosticJournal.clearAndPublish { diagnostics.postValue(it) }
+    }
     @Volatile var current = State(); private set
 
     @Synchronized fun publish(value: State) { current = value; state.postValue(value) }

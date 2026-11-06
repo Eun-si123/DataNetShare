@@ -36,6 +36,55 @@ class SenderHealthProbeTest {
         }
     }
 
+    @Test(timeout = 6_000) fun stalledAuthenticationReplyTimesOutAndClosesProbeSocket() {
+        // A peer can accept the TCP connection and the SOCKS auth method, then
+        // stop responding. The receiver must not remain stuck in its health check.
+        val address = java.net.InetAddress.getByName("127.0.0.1")
+        ServerSocket(0, 1, address).use { listener ->
+            val observed = java.util.concurrent.LinkedBlockingQueue<Any>()
+            val worker = Thread({
+                try {
+                    listener.accept().use { peer ->
+                        peer.soTimeout = 3_000
+                        val input = java.io.DataInputStream(peer.getInputStream())
+                        val greeting = ByteArray(3)
+                        input.readFully(greeting)
+                        check(greeting.contentEquals(byteArrayOf(5, 1, 2))) {
+                            "unexpected SOCKS method greeting"
+                        }
+                        peer.getOutputStream().write(byteArrayOf(5, 2))
+                        peer.getOutputStream().flush()
+                        val authVersion = input.readUnsignedByte()
+                        val user = ByteArray(input.readUnsignedByte())
+                        input.readFully(user)
+                        val password = ByteArray(input.readUnsignedByte())
+                        input.readFully(password)
+                        observed.offer(authVersion)
+                        // Never send the RFC 1929 result. The probe must time out,
+                        // close its socket, and let this server observe EOF.
+                        observed.offer(input.read())
+                    }
+                } catch (failure: Exception) {
+                    observed.offer(failure)
+                }
+            }, "test-stalled-probe-auth").apply { isDaemon = true; start() }
+
+            lateinit var candidate: Socket
+            assertFalse(SenderHealthProbe.check("127.0.0.1", listener.localPort,
+                "synthetic-probe-password", timeoutMs = 350) { socket ->
+                candidate = socket
+                true
+            })
+            assertTrue("timed-out health probe must release its socket", candidate.isClosed)
+            assertEquals("authentication must reach the reply stage", 1,
+                observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals("peer must observe EOF after probe timeout", -1,
+                observed.poll(3, java.util.concurrent.TimeUnit.SECONDS))
+            worker.join(2_000)
+            assertFalse("stalled test sender must exit", worker.isAlive)
+        }
+    }
+
     @Test fun policyNeedsConsecutiveFailuresAndRecoversOnSuccess() {
         val policy = SenderHealthPolicy(missLimit = 3)
         assertFalse(policy.observe(false))
@@ -118,5 +167,33 @@ class SenderHealthProbeTest {
             worker.join(2_000)
             assertFalse("fake sender worker must finish", worker.isAlive)
         }
+    }
+
+    @Test fun interruptedSocketPreparationClosesProbeAndPreservesCancellation() {
+        // A cancelled receiver watchdog must not lose its interrupt flag or
+        // retain an unconnected socket when link preparation is interrupted.
+        // Use a separate thread to avoid interrupting the JUnit worker.
+        val returned = java.util.concurrent.atomic.AtomicReference<Boolean>()
+        val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val socketClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val socketConnected = java.util.concurrent.atomic.AtomicBoolean(true)
+        val worker = Thread {
+            lateinit var candidate: Socket
+            returned.set(SenderHealthProbe.check("127.0.0.1", 9,
+                "synthetic-password", timeoutMs = 500) {
+                candidate = it
+                throw InterruptedException("synthetic watchdog cancellation")
+            })
+            interrupted.set(Thread.currentThread().isInterrupted)
+            socketClosed.set(candidate.isClosed)
+            socketConnected.set(candidate.isConnected)
+        }
+        worker.start()
+        worker.join(2_000)
+        assertFalse("cancelled probe worker must exit", worker.isAlive)
+        assertEquals(false, returned.get())
+        assertTrue("interrupt signal must survive probe cleanup", interrupted.get())
+        assertTrue("cancelled probe must close its socket", socketClosed.get())
+        assertFalse("cancelled probe must never connect", socketConnected.get())
     }
 }

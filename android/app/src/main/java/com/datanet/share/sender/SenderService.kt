@@ -47,10 +47,16 @@ class SenderService : Service() {
     @Volatile private var recentUpstreamFailure: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var session = 0
+    private val statsPublication = SenderSessionPublicationGate()
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.SENDER); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) {
+            cleanup()
+            statsPublication.clearAfterTeardown { SessionStore.stopped(SessionStore.Mode.SENDER) }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action !in listOf(ACTION_START, ACTION_START_LOCAL)) { stopSelf(); return START_NOT_STICKY }
         if (!SessionStore.claim(SessionStore.Mode.SENDER)) {
             if (SessionStore.current.mode != SessionStore.Mode.SENDER) stopSelf()
@@ -104,7 +110,7 @@ class SenderService : Service() {
         val upstream = AndroidUpstream(defaultRoute, this, wifiFallback)
         val server = Socks5Server(host, Constants.SOCKS5_PORT, password, upstream,
             onStats = { clients, rx, tx ->
-                if (token == session) {
+                statsPublication.publishIfCurrent(token, { session }) {
                     val route = if (defaultRoute) describeDefaultRoute() else upstream.routeSummary()
                     val recent = recentUpstreamFailure
                     val idleCount = idleReclaimed.get()
@@ -117,7 +123,9 @@ class SenderService : Service() {
             onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
             onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) },
             onIdleClose = { if (token == session) idleReclaimed.incrementAndGet() },
-            onPeers = { peers -> if (token == session) SessionStore.peerUsage.postValue(peers) })
+            onPeers = { peers -> statsPublication.publishIfCurrent(token, { session }) {
+                SessionStore.peerUsage.postValue(peers)
+            } })
         socks = server
         try {
             server.start()
@@ -145,25 +153,42 @@ class SenderService : Service() {
     private fun status(details: String) { SessionStore.publish(SessionStore.current.copy(details = details)) }
     private fun fail(details: String) {
         cleanup()
-        SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
+        // Failure leaves its hint visible, but must not retain peer IPs or
+        // display stale live-session counters. Sanitized diagnostics remain.
+        statsPublication.clearAfterTeardown {
+            SessionStore.peerUsage.postValue(emptyList())
+            SessionStore.stats.postValue("")
+            SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
+        }
         stopSelf()
     }
     private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Sender", text,
         Intent(this, SenderService::class.java).setAction(ACTION_STOP))
 
     private fun cleanup() {
+        // Invalidate callbacks and detach references before any teardown step
+        // that might throw. One failed close must not leave the Wi-Fi Direct
+        // group, cellular request or wake lock behind.
         ++session
-        observer?.let { wifiHost?.state?.removeObserver(it) }; observer = null
-        socks?.stop(); socks = null
-        wifiHost?.stop(); wifiHost = null
-        CellularNetworkTracker.stop()
+        val oldObserver = observer; observer = null
+        val oldSocks = socks; socks = null
+        val oldWifiHost = wifiHost; wifiHost = null
+        val oldWakeLock = wakeLock; wakeLock = null
         sessionPasswordOverride = ""
-        wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        SenderCleanup.run(
+            { if (oldObserver != null) oldWifiHost?.state?.removeObserver(oldObserver) },
+            { oldSocks?.stop() },
+            { oldWifiHost?.stop() },
+            { CellularNetworkTracker.stop() },
+            { oldWakeLock?.let { if (it.isHeld) it.release() } },
+            { stopForeground(STOP_FOREGROUND_REMOVE) }
+        )
     }
     override fun onDestroy() {
         cleanup()
-        if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.SENDER)
+        statsPublication.clearAfterTeardown {
+            if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.SENDER)
+        }
         super.onDestroy()
     }
 }

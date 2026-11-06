@@ -56,6 +56,37 @@ class MaintenanceCallbackGuardTest {
         }
     }
 
+    @Test fun interruptedOptionalObserverRestoresCancellationSignal() {
+        var restored = false
+        val worker = Thread {
+            MaintenanceCallbackGuard.run {
+                throw InterruptedException("synthetic cancellation")
+            }
+            restored = Thread.currentThread().isInterrupted
+        }
+        worker.start()
+        worker.join(3000)
+        assertEquals(false, worker.isAlive)
+        assertEquals(true, restored)
+    }
+
+    @Test fun interruptedCriticalTickRequestsFailureAndRestoresCancellationSignal() {
+        var restored = false
+        var failures = 0
+        val worker = Thread {
+            val keepRunning = MaintenanceCallbackGuard.runCriticalTick(
+                tick = { throw InterruptedException("synthetic cancellation") },
+                onFailure = { failures++ }
+            )
+            restored = Thread.currentThread().isInterrupted && !keepRunning
+        }
+        worker.start()
+        worker.join(3000)
+        assertEquals(false, worker.isAlive)
+        assertEquals(1, failures)
+        assertEquals(true, restored)
+    }
+
     @Test fun vmErrorsAreNotSilenced() {
         try {
             MaintenanceCallbackGuard.run { throw AssertionError("fatal") }
