@@ -11,6 +11,7 @@ import java.net.SocketAddress
 
 /** Exercise the production TCP socket owner without Android framework mocks. */
 class TcpUpstreamSocketCleanupHostTest {
+    /** Inject a connect error and optionally a close error without leaking the test FD. */
     private class FailingSocket(private val connectFailure: Throwable,
                                 private val closeFailure: Throwable? = null) : Socket() {
         var closes = 0
@@ -19,8 +20,12 @@ class TcpUpstreamSocketCleanupHostTest {
         }
         override fun close() {
             closes++
-            if (closeFailure != null) throw closeFailure
-            super.close()
+            try {
+                if (closeFailure != null) throw closeFailure
+            } finally {
+                // The failure is synthetic; never leave an actual test socket open.
+                super.close()
+            }
         }
     }
 
@@ -64,6 +69,7 @@ class TcpUpstreamSocketCleanupHostTest {
             assertSame(cleanupError, caught.suppressed.single())
         }
         assertEquals(1, socket.closes)
+        assertTrue("synthetic close failure must not leak the test socket", socket.isClosed)
     }
 
     @Test fun successfulConnectionRemainsOpenAndOwnedByCaller() {
