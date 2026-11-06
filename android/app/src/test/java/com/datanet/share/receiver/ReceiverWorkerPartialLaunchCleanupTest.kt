@@ -6,7 +6,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-class ReceiverWorkerLaunchGuardTest {
+class ReceiverWorkerPartialLaunchCleanupTest {
     @Test fun nativeThreadFailureIsReportedWithoutSwallowingOtherFailures() {
         assertFalse(ReceiverWorkerLaunchGuard.start { throw OutOfMemoryError("native thread limit") })
         assertTrue(ReceiverWorkerLaunchGuard.start { })
