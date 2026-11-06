@@ -9,6 +9,38 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class SenderSessionPublicationGateTest {
+    @Test fun stoppedSessionCannotRestoreStatsOrPeerUsageAfterRestart() {
+        val gate = SenderSessionPublicationGate()
+        val generation = AtomicInteger(11)
+        val stats = AtomicReference("old active connections")
+        val peers = AtomicReference(listOf("old peer"))
+        val state = AtomicReference("active")
+
+        // Normal Stop invalidates callbacks before publishing empty session state.
+        generation.set(12)
+        gate.clearAfterTeardown {
+            stats.set("")
+            peers.set(emptyList())
+            state.set("stopped")
+        }
+        // Both old callbacks may run after Stop, including while a new session starts.
+        gate.publishIfCurrent(11, { generation.get() }) { stats.set("stale stats") }
+        gate.publishIfCurrent(11, { generation.get() }) { peers.set(listOf("stale peer")) }
+        assertEquals("", stats.get())
+        assertEquals(emptyList<String>(), peers.get())
+        assertEquals("stopped", state.get())
+
+        generation.set(13)
+        state.set("active")
+        gate.publishIfCurrent(13, { generation.get() }) { stats.set("new stats") }
+        gate.publishIfCurrent(13, { generation.get() }) { peers.set(listOf("new peer")) }
+        gate.publishIfCurrent(11, { generation.get() }) { stats.set("late old stats") }
+        gate.publishIfCurrent(11, { generation.get() }) { peers.set(listOf("late old peer")) }
+        assertEquals("new stats", stats.get())
+        assertEquals(listOf("new peer"), peers.get())
+        assertEquals("active", state.get())
+    }
+
     @Test fun inFlightOldSessionPostCannotOverwriteFailureClear() {
         val gate = SenderSessionPublicationGate()
         val generation = AtomicInteger(7)
