@@ -433,14 +433,34 @@ class Socks5Server(
                                 lastActivity.set(System.nanoTime())
                             }
                         } catch (_: IOException) { /* close() unblocks receive */ }
-                        finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
+                        finally {
+                            remoteSockets.remove(target, socket)
+                            try { socket.close() }
+                            catch (_: Exception) { /* best-effort close; socket no longer owned */ }
+                            finally { datagramPermits.release() }
+                        }
                     }
                 } catch (failure: WorkerLaunchFailure) {
                     failWorkerLaunch()
                     throw failure
                 }
                 return socket
-            } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
+            } catch (failure: Throwable) {
+                // This scope acquired one permit before opening an upstream
+                // socket. Even if socket cleanup itself fails, the permit
+                // must be returned and the original failure preserved.
+                try {
+                    allocated?.let { socket ->
+                        remoteSockets.remove(target, socket)
+                        socket.close()
+                    }
+                } catch (cleanup: Throwable) {
+                    if (cleanup !== failure) failure.addSuppressed(cleanup)
+                } finally {
+                    datagramPermits.release()
+                }
+                throw failure
+            }
         }
 
         @Synchronized fun close() {
