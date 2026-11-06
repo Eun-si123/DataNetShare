@@ -392,7 +392,11 @@ class Socks5Server(
                             // this socket so a *later* packet can select a usable network.
                             // Never replay this datagram: the remote may have received it.
                             remoteSockets.remove(target, remote)
-                            remote.close() // also wakes the receive worker to release its permit
+                            try { remote.close() } // wakes receive worker to release its permit
+                            catch (_: Exception) {
+                                // Socket has been retired from this association.
+                                // A secondary close error must not kill the relay worker.
+                            }
                             continue
                         }
                         rx.addAndGet(data.payload.size.toLong())

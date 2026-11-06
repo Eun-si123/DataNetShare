@@ -15,6 +15,77 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class UdpSendFailureRecoveryTest {
+    @Test fun failedSendWithThrowingCloseStillAllowsLaterPacket() {
+        DatagramSocket(InetSocketAddress("127.0.0.1", 0)).use { echo ->
+            Thread({
+                try {
+                    while (!echo.isClosed) {
+                        val packet = DatagramPacket(ByteArray(256), 256)
+                        echo.receive(packet)
+                        echo.send(packet)
+                    }
+                } catch (_: IOException) { /* shutdown */ }
+            }, "test-udp-throwing-close-echo").apply { isDaemon = true; start() }
+            val closed = CountDownLatch(1)
+            val opened = AtomicInteger()
+            val upstream = object : Socks5Server.Upstream {
+                override fun connect(host: String, port: Int): Socket = throw IOException("unused")
+                override fun resolve(host: String) = throw AssertionError("no split UDP resolution")
+                override fun datagram(): DatagramSocket = throw AssertionError("no split UDP socket")
+                override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
+                    assertEquals("echo.test", host)
+                    assertEquals(echo.localPort, port)
+                    val destination = InetSocketAddress("127.0.0.1", port)
+                    val socket = if (opened.incrementAndGet() == 1) {
+                        object : DatagramSocket() {
+                            override fun send(packet: DatagramPacket) {
+                                throw SocketException("synthetic dropped route")
+                            }
+                            override fun close() {
+                                try { super.close() }
+                                finally {
+                                    closed.countDown()
+                                    throw IllegalStateException("synthetic cleanup error")
+                                }
+                            }
+                        }
+                    } else DatagramSocket()
+                    socket.connect(destination)
+                    return Socks5Server.UdpConnection(socket, destination)
+                }
+            }
+            val proxy = Socks5Server("127.0.0.1", 0, "test-pass", upstream)
+            proxy.start()
+            try {
+                Socket("127.0.0.1", proxy.boundPort).use { control ->
+                    control.soTimeout = 4000
+                    val input = DataInputStream(control.getInputStream())
+                    Socks5.authenticateClient(input, control.getOutputStream(), "test-pass")
+                    val relay = Socks5.request(input, control.getOutputStream(), 3,
+                        Socks5.Address("0.0.0.0", 0))
+                    DatagramSocket().use { client ->
+                        client.soTimeout = 1400
+                        val endpoint = InetSocketAddress(relay.host, relay.port)
+                        fun send(value: Int) {
+                            val frame = Socks5.encodeDatagram(
+                                Socks5.Address("echo.test", echo.localPort), byteArrayOf(value.toByte()))
+                            client.send(DatagramPacket(frame, frame.size, endpoint))
+                        }
+                        send(1)
+                        assertTrue("first socket was not closed after send failure",
+                            closed.await(3, TimeUnit.SECONDS))
+                        send(2) // Never replay the failed first packet.
+                        val reply = DatagramPacket(ByteArray(256), 256)
+                        client.receive(reply)
+                        assertArrayEquals(byteArrayOf(2),
+                            Socks5.decodeDatagram(reply.data.copyOf(reply.length))!!.payload)
+                        assertEquals("second packet must select fresh upstream", 2, opened.get())
+                    }
+                }
+            } finally { proxy.stop() }
+        }
+    }
+
     @Test fun failedSendRetiresSocketAndNextDatagramOpensFreshUpstream() {
         DatagramSocket(InetSocketAddress("127.0.0.1", 0)).use { echo ->
             Thread({
