@@ -15,6 +15,23 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
+    @Test fun receiverCallbackFailureIsDiagnosedAndFlowClosed() = ProxyFixture().use { fixture ->
+        val errors = LinkedBlockingQueue<String>()
+        val closed = CountDownLatch(1)
+        val flow = UdpFlow(FlowKey(0x0a000001, 10008, 0x7f000001, fixture.udpPort),
+            "127.0.0.1", fixture.proxy.boundPort, fixture.password, { true }, { true },
+            { throw IllegalStateException("private payload must not be logged") },
+            {}, {}, { closed.countDown() }, onError = { errors.add(it) })
+        try {
+            flow.send(byteArrayOf(42))
+            Thread({ flow.start() }, "test-udp-callback-failure").apply { isDaemon = true; start() }
+            assertTrue("callback failure must close the association", closed.await(5, TimeUnit.SECONDS))
+            val diagnostic = errors.poll(3, TimeUnit.SECONDS)
+            assertNotNull("callback failure must be diagnosed", diagnostic)
+            assertTrue(diagnostic!!.contains("IllegalStateException"))
+            assertFalse("exception message must not leak", diagnostic.contains("private payload"))
+        } finally { flow.close() }
+    }
     @Test fun oversizeReplyIsCountedAndNextReplyStillArrives() = ProxyFixture().use { fixture ->
         // The flow targets 127.0.0.1; bind the fixture to IPv4 even on IPv6-first JVMs.
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { server ->

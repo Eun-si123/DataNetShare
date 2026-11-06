@@ -47,10 +47,16 @@ class SenderService : Service() {
     @Volatile private var recentUpstreamFailure: String? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var session = 0
+    private val statsPublication = SenderSessionPublicationGate()
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { cleanup(); SessionStore.stopped(SessionStore.Mode.SENDER); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) {
+            cleanup()
+            statsPublication.clearAfterTeardown { SessionStore.stopped(SessionStore.Mode.SENDER) }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action !in listOf(ACTION_START, ACTION_START_LOCAL)) { stopSelf(); return START_NOT_STICKY }
         if (!SessionStore.claim(SessionStore.Mode.SENDER)) {
             if (SessionStore.current.mode != SessionStore.Mode.SENDER) stopSelf()
@@ -104,7 +110,7 @@ class SenderService : Service() {
         val upstream = AndroidUpstream(defaultRoute, this, wifiFallback)
         val server = Socks5Server(host, Constants.SOCKS5_PORT, password, upstream,
             onStats = { clients, rx, tx ->
-                if (token == session) {
+                statsPublication.publishIfCurrent(token, { session }) {
                     val route = if (defaultRoute) describeDefaultRoute() else upstream.routeSummary()
                     val recent = recentUpstreamFailure
                     val idleCount = idleReclaimed.get()
@@ -117,7 +123,9 @@ class SenderService : Service() {
             onUpstreamFailure = { error -> if (token == session) { recentUpstreamFailure = error; SessionStore.note(NetworkEvent.SENDER_UPSTREAM) } },
             onClientLimit = { if (token == session) SessionStore.note(NetworkEvent.SENDER_CLIENT_LIMIT) },
             onIdleClose = { if (token == session) idleReclaimed.incrementAndGet() },
-            onPeers = { peers -> if (token == session) SessionStore.peerUsage.postValue(peers) })
+            onPeers = { peers -> statsPublication.publishIfCurrent(token, { session }) {
+                SessionStore.peerUsage.postValue(peers)
+            } })
         socks = server
         try {
             server.start()
@@ -145,7 +153,13 @@ class SenderService : Service() {
     private fun status(details: String) { SessionStore.publish(SessionStore.current.copy(details = details)) }
     private fun fail(details: String) {
         cleanup()
-        SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
+        // Failure leaves its hint visible, but must not retain peer IPs or
+        // display stale live-session counters. Sanitized diagnostics remain.
+        statsPublication.clearAfterTeardown {
+            SessionStore.peerUsage.postValue(emptyList())
+            SessionStore.stats.postValue("")
+            SessionStore.publish(SessionStore.State(SessionStore.Mode.SENDER, "failed", details))
+        }
         stopSelf()
     }
     private fun notification(text: String) = ServiceNotifications.build(this, "DataNet Share · Sender", text,
@@ -172,7 +186,9 @@ class SenderService : Service() {
     }
     override fun onDestroy() {
         cleanup()
-        if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.SENDER)
+        statsPublication.clearAfterTeardown {
+            if (SessionStore.current.status != "failed") SessionStore.stopped(SessionStore.Mode.SENDER)
+        }
         super.onDestroy()
     }
 }

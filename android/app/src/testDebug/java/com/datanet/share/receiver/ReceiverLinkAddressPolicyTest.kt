@@ -30,6 +30,11 @@ class ReceiverLinkAddressPolicyTest {
         }
     }
 
+    @Test fun thirtyBitBoundaryDoesNotAcceptAdjacentSubnet() {
+        assertTrue(matches("192.168.49.5", "192.168.49.6", 30))
+        assertFalse(matches("192.168.49.5", "192.168.49.9", 30))
+    }
+
     @Test fun ipv6NeverQualifiesAsLocalIpv4SenderLink() {
         assertFalse(matches("fe80::1", "192.168.49.1", 24))
         assertFalse(matches("192.168.49.1", "fe80::1", 24))
