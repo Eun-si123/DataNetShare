@@ -24,6 +24,8 @@ class UdpFlowChildWorkerFailureTest {
         val errors = CopyOnWriteArrayList<String>()
         val closes = AtomicInteger()
         val connected = AtomicInteger()
+        val bridgeStops = AtomicInteger()
+        val bridgeFailures = AtomicInteger()
         val launches = AtomicInteger()
         val started = mutableListOf<Thread>()
         val flow = UdpFlow(
@@ -42,6 +44,13 @@ class UdpFlowChildWorkerFailureTest {
                 }
                 started.add(thread)
                 thread.start()
+            },
+            onThreadExhausted = {
+                assertTrue("child sockets must close before the bridge fails",
+                    control.get()?.isClosed == true && relay.get()?.isClosed == true)
+                assertEquals(1, closes.get())
+                bridgeStops.incrementAndGet()
+                bridgeFailures.incrementAndGet()
             }
         )
         try {
@@ -53,6 +62,8 @@ class UdpFlowChildWorkerFailureTest {
             assertTrue("control socket must be closed", control.get()?.isClosed == true)
             assertTrue("relay socket must be closed", relay.get()?.isClosed == true)
             assertEquals(1, errors.size)
+            assertEquals(if (securityFailure) 0 else 1, bridgeStops.get())
+            assertEquals(if (securityFailure) 0 else 1, bridgeFailures.get())
             val expected = if (securityFailure) "UDP proxy setup/relay failed (SecurityException)"
                 else "UDP relay worker could not start. Reconnect to resume."
             assertEquals(expected, errors.single())

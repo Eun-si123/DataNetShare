@@ -66,6 +66,13 @@ class Tun2Socks(
     private val tunWriteWaitNanos = AtomicLong()
     private val reportedDropBatch = AtomicLong(-1)
     private val writeLock = Any()
+    private val nativeWorkerFailure = NativeWorkerFailureGate()
+    private fun failNativeWorkerOnce(message: String) {
+        nativeWorkerFailure.reportOnce(
+            stop = { stop() },
+            report = { MaintenanceCallbackGuard.run { onFailure(message) } }
+        )
+    }
     // The joint admission budget reserves eight sender SOCKS5 clients for probes.
     // With few UDP associations, TCP may borrow unused capacity up to 112.
 
@@ -206,10 +213,7 @@ class Tun2Socks(
                 },
                 close = { it.close() },
                 onThreadExhausted = {
-                    stop()
-                    MaintenanceCallbackGuard.run {
-                        onFailure("VPN TCP worker could not start. Reconnect to resume.")
-                    }
+                    failNativeWorkerOnce("VPN TCP worker could not start. Reconnect to resume.")
                 })
         } else tcp[key]?.receive(packet)
     }
@@ -241,7 +245,10 @@ class Tun2Socks(
                         MaintenanceCallbackGuard.run { onUdpError(message) }
                     },
                     onConnected = { udpConnected.incrementAndGet() },
-                    onOversizedReply = { oversizedUdpReplies.incrementAndGet() })
+                    onOversizedReply = { oversizedUdpReplies.incrementAndGet() },
+                    onThreadExhausted = {
+                        failNativeWorkerOnce("VPN UDP child worker could not start. Reconnect to resume.")
+                    })
                 created
             },
             register = { udp[key] = it },
@@ -252,10 +259,7 @@ class Tun2Socks(
             launch = { Thread({ flow.start() }, "tun-udp-connect").apply { isDaemon = true; start() } },
             close = { it.close() },
             onThreadExhausted = {
-                stop()
-                MaintenanceCallbackGuard.run {
-                    onFailure("VPN UDP worker could not start. Reconnect to resume.")
-                }
+                failNativeWorkerOnce("VPN UDP worker could not start. Reconnect to resume.")
             })
     }
     private fun writePacket(packet: ByteArray) = synchronized(writeLock) {

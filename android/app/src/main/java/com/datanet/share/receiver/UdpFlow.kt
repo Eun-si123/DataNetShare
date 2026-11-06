@@ -32,7 +32,8 @@ class UdpFlow(
     // Aggregate only; no packet bytes, endpoints or per-packet UI/log messages.
     private val onOversizedReply: () -> Unit = {},
     // Injected only by host tests to exercise native Thread.start() failures.
-    private val launchWorker: (Thread) -> Unit = { it.start() }
+    private val launchWorker: (Thread) -> Unit = { it.start() },
+    private val onThreadExhausted: () -> Unit = {}
 ) {
     companion object {
         // The VPN uses MTU 1500. IPv4 (20 bytes) + UDP (8 bytes) leaves
@@ -97,10 +98,14 @@ class UdpFlow(
                 }, "tun-udp-control").apply { isDaemon = true; launchWorker(this) }
                 Thread({ receive(datagram) }, "tun-udp-receive").apply { isDaemon = true; launchWorker(this) }
             } catch (_: OutOfMemoryError) {
-                // A child worker may already be running. The outer finally
-                // closes both sockets and wakes it; never leave a silent,
-                // half-running UDP association after native thread exhaustion.
-                if (!closed.get()) onError("UDP relay worker could not start. Reconnect to resume.")
+                // Exhausting native threads is a bridge-wide failure, unlike an
+                // individual relay exception. Release the association first,
+                // including a previously started child, then stop the bridge.
+                if (!closed.get()) {
+                    close()
+                    try { onError("UDP relay worker could not start. Reconnect to resume.") }
+                    finally { onThreadExhausted() }
+                }
                 return
             }
             val destination = Socks5.Address(InetAddress.getByAddress(key.destinationBytes).hostAddress!!, key.destinationPort)

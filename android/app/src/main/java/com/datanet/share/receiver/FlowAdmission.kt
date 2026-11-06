@@ -47,16 +47,33 @@ internal inline fun <T : Any> launchAdmittedFlow(
         launch()
         return true
     } catch (failure: Throwable) {
+        var cleaned = true
         try {
             close(flow)
         } catch (cleanup: Throwable) {
             if (cleanup !== failure) failure.addSuppressed(cleanup)
-            throw failure
+            cleaned = false
         }
         if (failure is OutOfMemoryError) {
-            onThreadExhausted()
-            return false
+            // Even partial teardown must not hide global thread exhaustion.
+            // Preserve the original error if failure reporting itself fails.
+            try { onThreadExhausted() }
+            catch (reportFailure: Throwable) {
+                if (reportFailure !== failure) failure.addSuppressed(reportFailure)
+                throw failure
+            }
+            if (cleaned) return false
         }
         throw failure
+    }
+}
+
+/** A native-thread launch failure is a bridge-wide failure, even when it began inside a UDP association. */
+internal class NativeWorkerFailureGate {
+    private val reported = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun reportOnce(stop: () -> Unit, report: () -> Unit) {
+        if (!reported.compareAndSet(false, true)) return
+        try { stop() } finally { report() }
     }
 }

@@ -9,6 +9,46 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class FlowAdmissionTest {
+    @Test fun nativeWorkerFailuresStopAndNotifyBridgeOnlyOnce() {
+        val gate = NativeWorkerFailureGate()
+        val stopped = java.util.concurrent.atomic.AtomicInteger()
+        val reported = java.util.concurrent.atomic.AtomicInteger()
+        val insideStop = CountDownLatch(1)
+        val resumeStop = CountDownLatch(1)
+        val first = Thread {
+            gate.reportOnce(
+                stop = {
+                    stopped.incrementAndGet()
+                    insideStop.countDown()
+                    resumeStop.await(3, TimeUnit.SECONDS)
+                },
+                report = { reported.incrementAndGet() }
+            )
+        }
+        first.start()
+        try {
+            assertTrue("initial bridge stop did not start", insideStop.await(3, TimeUnit.SECONDS))
+            val second = Thread {
+                gate.reportOnce(
+                    stop = { stopped.incrementAndGet() },
+                    report = { reported.incrementAndGet() }
+                )
+            }
+            second.start()
+            second.join(3000)
+            assertFalse("duplicate failure callback stalled", second.isAlive)
+        } finally {
+            resumeStop.countDown()
+            first.join(3000)
+        }
+        assertFalse("original stop thread stalled", first.isAlive)
+        assertEquals(1, stopped.get())
+        assertEquals(1, reported.get())
+        gate.reportOnce({ stopped.incrementAndGet() }, { reported.incrementAndGet() })
+        assertEquals(1, stopped.get())
+        assertEquals(1, reported.get())
+    }
+
     @Test fun stoppedBridgeDoesNotCreateOrRegisterAFlow() {
         val result = admitFlow<Any>({ false },
             { error("must not create after Stop") },
@@ -181,15 +221,17 @@ class FlowAdmissionTest {
     @Test fun nativeThreadExhaustionWithCleanupFailureKeepsOriginalError() {
         val failure = OutOfMemoryError("synthetic native thread limit")
         val cleanup = IllegalStateException("synthetic cleanup failure")
+        var notified = 0
         try {
             launchAdmittedFlow(TestFlow(), { throw failure }, { throw cleanup },
-                { fail("failed cleanup must not report a clean recovery") })
+                { notified++ })
             fail("original error must propagate if cleanup also fails")
         } catch (caught: OutOfMemoryError) {
             assertSame(failure, caught)
             assertEquals(1, caught.suppressed.size)
             assertSame(cleanup, caught.suppressed[0])
         }
+        assertEquals("partial cleanup must still notify the bridge", 1, notified)
     }
 
     private fun stopDuringAdmission(pauseDuringCreation: Boolean) {
