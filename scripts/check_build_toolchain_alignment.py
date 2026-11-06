@@ -17,6 +17,7 @@ WORKFLOWS = (
     "codeql-advanced.yml",
     "gradle-dependency-graph.yml",
     "publish-preview.yml",
+    "jvm-portability.yml",
 )
 
 

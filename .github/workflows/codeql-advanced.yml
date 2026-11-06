@@ -42,11 +42,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure Gradle 8.5 for Kotlin
+      - name: Configure Gradle 8.13 for Kotlin
         if: matrix.language == 'java-kotlin'
         uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
         with:
-          gradle-version: '8.5'
+          gradle-version: '8.13'
           # Reuse main CI's Gradle cache; analysis must not crowd out hot entries.
           cache-read-only: true
 
@@ -58,7 +58,7 @@ jobs:
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           sdk_manager="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
           test -n "$sdk_manager"
-          "$sdk_manager" --install 'platforms;android-34' 'build-tools;34.0.0'
+          "$sdk_manager" --install 'platforms;android-34' 'build-tools;35.0.0'
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Initialize CodeQL (language-specific build mode)
