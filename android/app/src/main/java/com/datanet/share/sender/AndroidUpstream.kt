@@ -132,22 +132,6 @@ class AndroidUpstream(
     }
 }
 
-/**
- * Close a freshly allocated TCP socket on any connection failure, including
- * permission/runtime failures. Those failures must propagate unchanged; only
- * I/O failures are eligible for another upstream address/network.
- */
-internal fun connectSocketOrClose(socket: Socket, destination: InetSocketAddress, timeoutMs: Int): Socket {
-    try {
-        socket.connect(destination, timeoutMs)
-        return socket
-    } catch (failure: Exception) {
-        try { socket.close() }
-        catch (cleanup: Exception) { if (cleanup !== failure) failure.addSuppressed(cleanup) }
-        throw failure
-    }
-}
-
 /** Android may wrap a denied Network.bindSocket in SocketException (an IOException).
  * Check the typed errno cause, never localized exception-message text.
  * Linux EPERM=1 and EACCES=13 are stable ABI values; Android JVM test stubs
