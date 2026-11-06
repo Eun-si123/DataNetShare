@@ -42,7 +42,7 @@ class SenderHealthProbeInterruptTest {
         java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
             val server = Thread({
                 try {
-                    listener.accept().use { peer ->
+                    listener.accept().use peerSocket@{ peer ->
                         peer.soTimeout = 1_000
                         val input = java.io.DataInputStream(peer.getInputStream())
                         val greeting = ByteArray(3)
@@ -50,7 +50,7 @@ class SenderHealthProbeInterruptTest {
                         acceptedBytes.set(greeting)
                         greetingSeen.countDown()
                         // Stop wins before server sends the SOCKS authentication method.
-                        if (!allowMethodResponse.await(3, TimeUnit.SECONDS)) return@use
+                        if (!allowMethodResponse.await(3, TimeUnit.SECONDS)) return@peerSocket
                         try {
                             peer.getOutputStream().write(byteArrayOf(5, 2))
                             peer.getOutputStream().flush()
@@ -96,6 +96,56 @@ class SenderHealthProbeInterruptTest {
                 worker.interrupt()
                 guard.closeActive()
                 allowMethodResponse.countDown()
+                worker.join(3_000)
+                server.join(3_000)
+            }
+        }
+    }
+
+    @Test fun cancelledImmediatelyAfterConnectNeverSendsSocksGreeting() {
+        val accepted = CountDownLatch(1)
+        val observedFirstByte = AtomicReference<Int>()
+        val probeSocket = AtomicReference<Socket>()
+        val interrupted = AtomicBoolean(false)
+        val result = AtomicReference<Boolean>()
+        val backgroundError = AtomicReference<Throwable>()
+        java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { listener ->
+            val server = Thread({
+                try {
+                    listener.accept().use { peer ->
+                        accepted.countDown()
+                        peer.soTimeout = 2_000
+                        observedFirstByte.set(peer.getInputStream().read())
+                    }
+                } catch (error: Throwable) { backgroundError.set(error); accepted.countDown() }
+            }, "test-post-connect-peer").apply { isDaemon = true; start() }
+            val worker = Thread({
+                result.set(SenderHealthProbe.check(
+                    "127.0.0.1", listener.localPort, "synthetic-password", timeoutMs = 500,
+                    socketFactory = {
+                        object : Socket() {
+                            override fun connect(endpoint: java.net.SocketAddress?, timeout: Int) {
+                                super.connect(endpoint, timeout)
+                                Thread.currentThread().interrupt()
+                            }
+                        }.also { probeSocket.set(it) }
+                    }, setup = { true }
+                ))
+                interrupted.set(Thread.currentThread().isInterrupted)
+            }, "test-post-connect-cancel").apply { isDaemon = true; start() }
+            try {
+                assertTrue("peer never accepted TCP connection", accepted.await(3, TimeUnit.SECONDS))
+                worker.join(3_000)
+                server.join(3_000)
+                assertFalse("cancelled probe worker stalled", worker.isAlive)
+                assertFalse("test server remained blocked", server.isAlive)
+                assertNull("socket fixture error", backgroundError.get())
+                assertEquals("cancelled connection must not send SOCKS greeting", -1, observedFirstByte.get())
+                assertEquals(false, result.get())
+                assertTrue("cancellation must preserve interrupt status", interrupted.get())
+                assertTrue("worker must close probe connection", probeSocket.get()?.isClosed == true)
+            } finally {
+                worker.interrupt()
                 worker.join(3_000)
                 server.join(3_000)
             }

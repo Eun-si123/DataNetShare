@@ -14,13 +14,14 @@ import java.net.Socket
 internal object SenderHealthProbe {
     fun check(host: String, port: Int, password: String, timeoutMs: Int = 3000,
               onSocketClosed: (Socket) -> Unit = {},
+              socketFactory: () -> Socket = { Socket() },
               setup: (Socket) -> Boolean): Boolean {
         require(timeoutMs in 100..10_000)
         // Stop may interrupt the watchdog after its loop check but before
         // this probe begins. Do not prepare or connect a socket for that session.
         if (Thread.currentThread().isInterrupted) return false
         return try {
-            val socket = Socket()
+            val socket = socketFactory()
             try {
                 socket.use {
                     // Stop can interrupt the watchdog while bind/protect is running.
