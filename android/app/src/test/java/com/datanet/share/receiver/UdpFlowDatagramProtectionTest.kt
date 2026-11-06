@@ -47,7 +47,7 @@ class UdpFlowDatagramProtectionTest {
         try {
             flow.send(byteArrayOf(1)) // Exercise cleanup of an already-queued first packet.
             flow.start() // Synchronous: returns when datagram protection fails.
-            assertNotNull("UDP socket should be created after SOCKS association", datagram.get())
+            assertNotNull("UDP socket should be created before SOCKS association", datagram.get())
             assertTrue("failed protection must close the UDP socket", datagram.get()!!.isClosed)
             assertEquals("the flow must be removed exactly once", 1, closes.get())
             assertEquals("failed protection must never count as connected", 0, connected.get())

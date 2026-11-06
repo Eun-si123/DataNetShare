@@ -76,12 +76,19 @@ class UdpFlow(
             socket.connect(InetSocketAddress(host, port), 10_000)
             val input = DataInputStream(socket.getInputStream()); val output = socket.getOutputStream()
             Socks5.authenticateClient(input, output, password)
-            val bound = Socks5.request(input, output, 3, Socks5.Address("0.0.0.0", 0))
-            if (bound.port == 0) throw IOException("Invalid UDP relay port")
-            val relayHost = if (bound.host == "0.0.0.0" || bound.host == "0:0:0:0:0:0:0:0") host else bound.host
             val datagram = DatagramSocket(null)
             synchronized(this) { if (closed.get()) { datagram.close(); return }; udp = datagram }
+            // Choose a real source port before asking the sender for its relay.
+            // The sender can then reject a different same-IP socket racing the
+            // first UDP packet, rather than accepting the first valid port.
+            // Keep Android Network.bindSocket/protect before local bind/connect.
             if (!protectDatagram(datagram)) throw IOException("UDP relay socket protection failed")
+            datagram.bind(InetSocketAddress("0.0.0.0", 0))
+            val sourcePort = datagram.localPort
+            if (sourcePort !in 1..65535) throw IOException("Invalid local UDP source port")
+            val bound = Socks5.request(input, output, 3, Socks5.Address("0.0.0.0", sourcePort))
+            if (bound.port == 0) throw IOException("Invalid UDP relay port")
+            val relayHost = if (bound.host == "0.0.0.0" || bound.host == "0:0:0:0:0:0:0:0") host else bound.host
             datagram.connect(InetSocketAddress(relayHost, bound.port)); datagram.soTimeout = 1000
             onConnected() // UDP ASSOCIATE control handshake and relay socket succeeded
             socket.soTimeout = 1000
