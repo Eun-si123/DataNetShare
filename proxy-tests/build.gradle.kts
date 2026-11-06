@@ -18,6 +18,7 @@ sourceSets {
             "com/datanet/share/sender/WifiDirectCallbackGeneration.kt",
             "com/datanet/share/sender/Socks5Server.kt",
             "com/datanet/share/sender/UdpUpstreamSocketSetup.kt",
+            "com/datanet/share/sender/TcpUpstreamSocketSetup.kt",
             "com/datanet/share/sender/SenderFailureMessages.kt",
             "com/datanet/share/sender/PeerUsageLedger.kt", "com/datanet/share/receiver/TcpFlow.kt",
             "com/datanet/share/receiver/UdpFlow.kt", "com/datanet/share/receiver/ReceiverSocketSetup.kt",
