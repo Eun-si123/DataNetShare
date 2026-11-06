@@ -58,9 +58,15 @@ class Socks5Server(
             try {
                 socket.connect(destination)
                 return UdpConnection(socket, destination)
-            } catch (e: Exception) {
-                socket.close()
-                throw e
+            } catch (failure: Throwable) {
+                // This socket was freshly allocated by datagram(); even a
+                // native-resource Error must not escape with an owned FD.
+                // Never convert the original exception/error to IOException.
+                try { socket.close() }
+                catch (cleanup: Throwable) {
+                    if (cleanup !== failure) failure.addSuppressed(cleanup)
+                }
+                throw failure
             }
         }
     }
