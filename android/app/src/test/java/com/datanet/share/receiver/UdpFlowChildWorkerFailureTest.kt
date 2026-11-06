@@ -18,7 +18,9 @@ class UdpFlowChildWorkerFailureTest {
 
     @Test fun childWorkerSecurityExceptionUsesExistingSanitizedFailurePath() = verifyFailure(1, true)
 
-    private fun verifyFailure(failAt: Int, securityFailure: Boolean) = ProxyFixture().use { fixture ->
+    @Test fun nativeExhaustionStillNotifiesIfFlowRemovalThrows() = verifyFailure(1, false, true)
+
+    private fun verifyFailure(failAt: Int, securityFailure: Boolean, closeFails: Boolean = false) = ProxyFixture().use { fixture ->
         val control = AtomicReference<Socket?>()
         val relay = AtomicReference<DatagramSocket?>()
         val errors = CopyOnWriteArrayList<String>()
@@ -34,7 +36,10 @@ class UdpFlowChildWorkerFailureTest {
             { socket -> control.set(socket); true },
             { socket -> relay.set(socket); true },
             { fail("failed child launch must not write into TUN") },
-            {}, {}, { closes.incrementAndGet() },
+            {}, {}, {
+                closes.incrementAndGet()
+                if (closeFails) throw IllegalStateException("private synthetic close error")
+            },
             onError = { errors.add(it) },
             onConnected = { connected.incrementAndGet() },
             launchWorker = { thread ->

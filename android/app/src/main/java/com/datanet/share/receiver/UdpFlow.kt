@@ -102,9 +102,12 @@ class UdpFlow(
                 // individual relay exception. Release the association first,
                 // including a previously started child, then stop the bridge.
                 if (!closed.get()) {
-                    close()
-                    try { onError("UDP relay worker could not start. Reconnect to resume.") }
-                    finally { onThreadExhausted() }
+                    // Even if an onClose callback itself fails, report the
+                    // bridge-wide exhaustion after releasing both sockets.
+                    try { close() } finally {
+                        try { onError("UDP relay worker could not start. Reconnect to resume.") }
+                        finally { onThreadExhausted() }
+                    }
                 }
                 return
             }
