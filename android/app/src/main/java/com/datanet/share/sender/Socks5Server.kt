@@ -433,7 +433,12 @@ class Socks5Server(
                                 lastActivity.set(System.nanoTime())
                             }
                         } catch (_: IOException) { /* close() unblocks receive */ }
-                        finally { remoteSockets.remove(target, socket); socket.close(); datagramPermits.release() }
+                        finally {
+                            remoteSockets.remove(target, socket)
+                            try { socket.close() }
+                            catch (_: Exception) { /* best-effort close; socket no longer owned */ }
+                            finally { datagramPermits.release() }
+                        }
                     }
                 } catch (failure: WorkerLaunchFailure) {
                     failWorkerLaunch()
