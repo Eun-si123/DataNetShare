@@ -97,6 +97,41 @@ class Socks5ServerTest {
             }
         }
     }
+    @Test fun explicitUdpAssociatePortRejectsFirstPacketFromOtherPort() = ProxyFixture().use { fixture ->
+        fixture.client().use { client ->
+            DatagramSocket().use { expected -> DatagramSocket().use { other ->
+                expected.soTimeout = 3000
+                other.soTimeout = 300
+                val relay = Socks5.request(DataInputStream(client.getInputStream()),
+                    client.getOutputStream(), 3, Socks5.Address("0.0.0.0", expected.localPort))
+                val target = InetSocketAddress(relay.host, relay.port)
+                fun send(socket: DatagramSocket, payload: Byte) {
+                    val frame = Socks5.encodeDatagram(
+                        Socks5.Address("127.0.0.1", fixture.udpPort), byteArrayOf(payload))
+                    socket.send(DatagramPacket(frame, frame.size, target))
+                }
+                send(other, 1)
+                try {
+                    other.receive(DatagramPacket(ByteArray(128), 128))
+                    fail("unrequested source port received a relay response")
+                } catch (_: java.net.SocketTimeoutException) { }
+                send(expected, 2)
+                val packet = DatagramPacket(ByteArray(128), 128)
+                expected.receive(packet)
+                assertArrayEquals(byteArrayOf(2),
+                    Socks5.decodeDatagram(packet.data.copyOf(packet.length))!!.payload)
+                send(other, 3)
+                try {
+                    other.receive(DatagramPacket(ByteArray(128), 128))
+                    fail("different source port bypassed the explicit port")
+                } catch (_: java.net.SocketTimeoutException) { }
+                send(expected, 4)
+                expected.receive(packet)
+                assertArrayEquals(byteArrayOf(4),
+                    Socks5.decodeDatagram(packet.data.copyOf(packet.length))!!.payload)
+            } }
+        }
+    }
     @Test fun validUdpPortPinRejectsLaterSameIpSourcePort() = ProxyFixture().use { fixture ->
         fixture.client().use { client ->
             val relay = fixture.associate(client)
