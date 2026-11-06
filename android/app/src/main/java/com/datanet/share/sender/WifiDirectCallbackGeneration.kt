@@ -27,3 +27,22 @@ internal class WifiDirectCallbackGeneration {
 
     fun accepts(token: Int): Boolean = running && generation == token
 }
+
+/** Shared delegate for the real WifiP2pManager.ActionListener and host fakes.
+ * Keep the generation check *inside* the listener invocation path so the
+ * listener cannot accidentally revive a Stop/restarted session.
+ */
+internal class WifiDirectCreateCallbacks(
+    private val generations: WifiDirectCallbackGeneration,
+    private val token: Int,
+    private val onAccepted: () -> Unit,
+    private val onRejected: (Int) -> Unit
+) {
+    fun onSuccess() {
+        if (generations.accepts(token)) onAccepted()
+    }
+
+    fun onFailure(reason: Int) {
+        if (generations.accepts(token)) onRejected(reason)
+    }
+}

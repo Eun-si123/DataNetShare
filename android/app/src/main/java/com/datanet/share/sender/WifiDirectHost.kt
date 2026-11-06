@@ -123,13 +123,9 @@ class WifiDirectHost(private val context: Context) {
         if (!callbackGeneration.accepts(token)) return
         mutableState.value = State.CreatingGroup(attempt, 4)
         try {
-            val listener = object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    if (!callbackGeneration.accepts(token)) return
-                    ownsGroup = true; query(token)
-                }
-                override fun onFailure(reason: Int) {
-                    if (!callbackGeneration.accepts(token)) return
+            val callbacks = WifiDirectCreateCallbacks(callbackGeneration, token,
+                onAccepted = { ownsGroup = true; query(token) },
+                onRejected = { reason ->
                     val name = when (reason) { WifiP2pManager.BUSY -> "BUSY"; WifiP2pManager.P2P_UNSUPPORTED -> "Unsupported"; else -> "Error $reason" }
                     if (attempt < 4 && reason == WifiP2pManager.BUSY) {
                         val delay = 1000L shl (attempt - 1)
@@ -139,7 +135,10 @@ class WifiDirectHost(private val context: Context) {
                         if (requestedConfig != null)
                             "Requested band/group settings may be unsupported or in use. Try Auto and stop existing groups."
                         else "Another app or an existing group may be using Wi-Fi Direct. Stop it before retrying.")
-                }
+                })
+            val listener = object : WifiP2pManager.ActionListener {
+                override fun onSuccess() = callbacks.onSuccess()
+                override fun onFailure(reason: Int) = callbacks.onFailure(reason)
             }
             val activeChannel = channel ?: run {
                 mutableState.value = State.Failed("Wi-Fi Direct channel was not initialized")
