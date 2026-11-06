@@ -311,7 +311,12 @@ class Socks5Server(
                     // download with a quiet upload channel is never considered idle.
                     val idle = System.nanoTime() - lastProgress.get()
                     if (idle >= tcpIdleMillis * 1_000_000L) {
-                        if (idleReported.compareAndSet(false, true)) onIdleClose()
+                        if (idleReported.compareAndSet(false, true)) {
+                            // Idle telemetry is optional. An app/UI callback must
+                            // never escape the relay worker or postpone socket
+                            // teardown and the sole client permit release.
+                            try { onIdleClose() } catch (_: Exception) {}
+                        }
                         from.close(); to.close()
                         return
                     }

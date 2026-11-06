@@ -7,12 +7,87 @@ import java.io.DataInputStream
 import java.io.IOException
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.util.concurrent.LinkedBlockingQueue
 import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class Socks5CallbackFailureIsolationTest {
+    @Test fun throwingIdleReporterCannotEscapeRelayOrStrandClientSlot() {
+        val uncaught = LinkedBlockingQueue<Throwable>()
+        val idleCalls = AtomicInteger()
+        ServerSocket(0, 2, InetAddress.getByName("127.0.0.1")).use { remote ->
+            val upstream = object : Socks5Server.Upstream {
+                override fun connect(host: String, port: Int): Socket =
+                    Socket().apply { connect(InetSocketAddress(host, port), 1_000) }
+                override fun resolve(host: String): Array<InetAddress> = InetAddress.getAllByName(host)
+                override fun datagram(): DatagramSocket = DatagramSocket()
+            }
+            val proxy = Socks5Server("127.0.0.1", 0, "synthetic-password", upstream,
+                onIdleClose = {
+                    idleCalls.incrementAndGet()
+                    throw IllegalStateException("private UI callback details")
+                },
+                maxClients = 1, tcpIdleMillis = 700, socketPollMillis = 100,
+                workerLauncher = { thread ->
+                    thread.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, error ->
+                        uncaught.add(error)
+                    }
+                    thread.start()
+                }
+            )
+            val acceptor = Thread({
+                try {
+                    remote.accept().use { held ->
+                        held.soTimeout = 4_000
+                        try { while (held.getInputStream().read() != -1) {} }
+                        catch (_: IOException) { }
+                    }
+                } catch (_: IOException) { }
+            }, "test-throwing-idle-close-upstream").apply { isDaemon = true; start() }
+            proxy.start()
+            try {
+                Socket("127.0.0.1", proxy.boundPort).use { first ->
+                    first.soTimeout = 4_000
+                    val input = DataInputStream(first.getInputStream())
+                    Socks5.authenticateClient(input, first.getOutputStream(), "synthetic-password")
+                    Socks5.request(input, first.getOutputStream(), 1,
+                        Socks5.Address("127.0.0.1", remote.localPort))
+                    assertEquals("idle timeout must close both relay directions", -1, input.read())
+                }
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+                while (proxy.clientCount != 0 && System.nanoTime() < deadline) Thread.sleep(10)
+                assertEquals("idle client must be reclaimed", 0, proxy.clientCount)
+                assertEquals("one telemetry notification per idle close", 1, idleCalls.get())
+                assertTrue("optional UI callback exception escaped relay worker", uncaught.isEmpty())
+                // A reclaimed session must admit a fresh authenticated client.
+                val nextDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                while (true) {
+                    try {
+                        Socket("127.0.0.1", proxy.boundPort).use { next ->
+                            next.soTimeout = 1_000
+                            Socks5.authenticateClient(DataInputStream(next.getInputStream()),
+                                next.getOutputStream(), "synthetic-password")
+                        }
+                        break
+                    } catch (failure: IOException) {
+                        if (System.nanoTime() >= nextDeadline) throw AssertionError(
+                            "idle cleanup stranded the only client permit", failure)
+                        Thread.sleep(10)
+                    }
+                }
+            } finally {
+                proxy.stop()
+                remote.close()
+                acceptor.join(2_000)
+                assertFalse("upstream acceptor never terminated", acceptor.isAlive)
+            }
+        }
+    }
+
     @Test fun throwingRuntimeClientLimitReporterCannotDisableAcceptLoop() =
         verifyCallbackFailure(IllegalStateException("simulated runtime metrics failure"))
 
