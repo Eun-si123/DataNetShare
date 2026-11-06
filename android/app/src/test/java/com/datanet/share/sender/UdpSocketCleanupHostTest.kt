@@ -6,7 +6,7 @@ import java.io.IOException
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 
-class UdpUpstreamSocketSetupTest {
+class UdpSocketCleanupHostTest {
     private val destination = InetSocketAddress("127.0.0.1", 9)
 
     @Test fun ioFailureClosesSocketAndPreservesOriginalException() {
