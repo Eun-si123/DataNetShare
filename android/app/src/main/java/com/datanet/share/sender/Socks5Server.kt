@@ -440,7 +440,22 @@ class Socks5Server(
                     throw failure
                 }
                 return socket
-            } catch (e: Exception) { allocated?.close(); datagramPermits.release(); throw e }
+            } catch (failure: Throwable) {
+                // This scope acquired one permit before opening an upstream
+                // socket. Even if socket cleanup itself fails, the permit
+                // must be returned and the original failure preserved.
+                try {
+                    allocated?.let { socket ->
+                        remoteSockets.remove(target, socket)
+                        socket.close()
+                    }
+                } catch (cleanup: Throwable) {
+                    if (cleanup !== failure) failure.addSuppressed(cleanup)
+                } finally {
+                    datagramPermits.release()
+                }
+                throw failure
+            }
         }
 
         @Synchronized fun close() {
