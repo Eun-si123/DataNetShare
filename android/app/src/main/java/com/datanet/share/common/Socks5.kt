@@ -105,7 +105,8 @@ object Socks5 {
         if (!ok) throw IOException("Proxy credentials rejected")
     }
 
-    fun authenticateClient(input: DataInputStream, output: OutputStream, password: String) {
+    fun authenticateClient(input: DataInputStream, output: OutputStream, password: String,
+                           beforeCredentials: () -> Boolean = { true }) {
         // The sender always requires RFC 1929 credentials. Never offer NO AUTH,
         // even if a caller accidentally supplies an empty password.
         val pass = password.toByteArray(Charsets.UTF_8)
@@ -114,6 +115,9 @@ object Socks5 {
         if (input.readUnsignedByte() != 5 || input.readUnsignedByte() != 2) {
             throw IOException("Sender rejected authentication method; check proxy password")
         }
+        // A watchdog can be cancelled while reading the method response.
+        // Do not transmit RFC 1929 credentials for a cancelled probe.
+        if (!beforeCredentials()) throw IOException("SOCKS authentication cancelled")
         val user = USERNAME.toByteArray(Charsets.UTF_8)
         output.write(byteArrayOf(1, user.size.toByte())); output.write(user)
         output.write(pass.size); output.write(pass); output.flush()

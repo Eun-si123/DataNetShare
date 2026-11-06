@@ -10,6 +10,23 @@ import java.io.DataInputStream
 import java.io.IOException
 
 class Socks5AuthNegotiationTest {
+    @Test fun cancellationAfterMethodReplyDoesNotSendUsernameOrPassword() {
+        val sent = ByteArrayOutputStream()
+        var gateCalls = 0
+        try {
+            Socks5.authenticateClient(
+                DataInputStream(ByteArrayInputStream(byteArrayOf(5, 2))),
+                sent, "private-synthetic-password", beforeCredentials = {
+                    gateCalls++
+                    false
+                }
+            )
+            fail("cancelled authentication must stop before credential write")
+        } catch (_: IOException) { }
+        assertEquals(1, gateCalls)
+        assertArrayEquals(byteArrayOf(5, 1, 2), sent.toByteArray())
+    }
+
     @Test fun missingPasswordCannotOfferUnauthenticatedSocks() {
         val sent = ByteArrayOutputStream()
         try {

@@ -43,6 +43,7 @@ class ReceiverVpnService : VpnService() {
     @Volatile private var lastNetworkCheckAtMs = 0L
     @Volatile private var networkStatus = "Network state not yet checked"
     @Volatile private var peerWatchdog: Thread? = null
+    private val watchdogProbeSockets = SenderHealthProbeSocketGuard()
     @Volatile private var recentTcpError: String? = null
     @Volatile private var recentUdpError: String? = null
     private val main = Handler(Looper.getMainLooper())
@@ -245,9 +246,11 @@ class ReceiverVpnService : VpnService() {
                     } catch (_: Exception) { /* keep the existing VPN; health probe decides reachability */ }
                 }
                 val alive = SenderHealthProbe.check(host, port, password,
+                    onSocketClosed = { watchdogProbeSockets.unregister(it) },
                     setup = { socket ->
-                        ReceiverSocketSetup.bindThenProtect(socket,
-                            { link.bind(it) }, { protect(it) })
+                        watchdogProbeSockets.register(socket) { generation == token } &&
+                            ReceiverSocketSetup.bindThenProtect(socket,
+                                { link.bind(it) }, { protect(it) })
                     })
                 if (generation != token) break
                 if (policy.observe(alive)) {
@@ -325,6 +328,7 @@ class ReceiverVpnService : VpnService() {
         val oldWakeLock = wakeLock; wakeLock = null
         ReceiverCleanup.run(
             { oldWatchdog?.interrupt() },
+            { watchdogProbeSockets.closeActive() },
             { oldProbe?.close() },
             // Drop the actual VPN tunnel/routes before stopping flow workers,
             // even if a TCP worker is stuck in a socket call.
