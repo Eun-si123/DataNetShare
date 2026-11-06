@@ -109,6 +109,13 @@ class TcpFlow(
 
     fun receive(packet: Ipv4Packet) = synchronized(lock) {
         if (closed) return@synchronized
+        // A valid app RST aborts the flow and releases its sender SOCKS slot.
+        // Require the next expected sequence to reject stale/spoofed resets
+        // from a prior flow; never acknowledge or echo a received RST.
+        if (packet.flags and 0x04 != 0) {
+            if (unsigned(packet.sequence) == expected) close()
+            return@synchronized
+        }
         lastActivity = System.nanoTime()
         if (packet.flags and 0x10 != 0) {
             val ack = unsigned(packet.acknowledgement)
@@ -172,7 +179,15 @@ class TcpFlow(
         // A SYN does not prove that the client completed the TCP handshake.
         // Until the peer ACKs our SYN-ACK, do not consume a sender SOCKS5 slot.
         synchronized(lock) {
-            while (!closed && !established) lock.wait(1000)
+            try {
+                while (!closed && !established) lock.wait(1000)
+            } catch (_: InterruptedException) {
+                // Cancellation before the handshake must release the flow slot,
+                // not strand an unowned socket or lose the interrupt signal.
+                Thread.currentThread().interrupt()
+                try { remote.close() } finally { close() }
+                return
+            }
             if (closed) { remote.close(); return }
             socket = remote
         }

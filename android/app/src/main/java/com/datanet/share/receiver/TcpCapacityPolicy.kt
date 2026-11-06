@@ -16,9 +16,9 @@ internal object TcpCapacityPolicy {
     const val HALF_OPEN_TIMEOUT_NANOS = 10_000_000_000L
 
     fun allowTcp(tcp: Int, udp: Int): Boolean =
-        tcp < MAX_TCP && tcp + udp < TOTAL_BUDGET
+        tcp >= 0 && udp >= 0 && tcp < MAX_TCP && udp < TOTAL_BUDGET - tcp
     fun allowUdp(tcp: Int, udp: Int): Boolean =
-        udp < MAX_UDP && tcp + udp < TOTAL_BUDGET
+        tcp >= 0 && udp >= 0 && udp < MAX_UDP && tcp < TOTAL_BUDGET - udp
 
     fun evictIdle(idleNanos: Long, handshakeComplete: Boolean): Boolean =
         idleNanos >= if (handshakeComplete) IDLE_RECLAIM_NANOS else HALF_OPEN_RECLAIM_NANOS

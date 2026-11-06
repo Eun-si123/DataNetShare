@@ -7,6 +7,21 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class PeerUsageLedgerTest {
+    @Test fun snapshotDebugStringCannotRevealPeerIp() {
+        val peerIp = "192.0.2.42" // RFC 5737 documentation-only address
+        val ledger = PeerUsageLedger()
+        val lease = ledger.open(peerIp)!!
+        lease.received(17)
+        val snapshot = ledger.snapshot().single()
+
+        // Fields remain available to the local UI; implicit logs must be redacted.
+        assertEquals(peerIp, snapshot.ip)
+        assertEquals(17L, snapshot.rxBytes)
+        assertFalse(snapshot.toString().contains(peerIp))
+        assertTrue(snapshot.toString().contains("redacted"))
+        ledger.close(lease)
+    }
+
     @Test fun aggregatesConnectionsByIpAndBothDirections() {
         val usage = PeerUsageLedger()
         val a = usage.open("192.168.49.81")!!
@@ -95,6 +110,29 @@ class PeerUsageLedgerTest {
         assertEquals(11L, afterClose.rxBytes)
         assertEquals(13L, afterClose.txBytes)
         ledger.close(second)
+    }
+
+    @Test fun lateUdpAccountingAfterLeaseCloseCannotPolluteReconnectedPeer() {
+        val ledger = PeerUsageLedger()
+        val oldConnection = ledger.open("198.51.100.9")!!
+        oldConnection.received(100)
+        ledger.close(oldConnection)
+
+        // An upstream UDP worker may finish after the owning SOCKS client
+        // has closed, while another connection from the same IP is active.
+        val newConnection = ledger.open("198.51.100.9")!!
+        oldConnection.received(400)
+        oldConnection.sent(600)
+        val snapshot = ledger.snapshot().single()
+        assertEquals(1, snapshot.activeConnections)
+        assertEquals(100L, snapshot.rxBytes)
+        assertEquals(0L, snapshot.txBytes)
+
+        newConnection.received(25)
+        newConnection.sent(50)
+        assertEquals(125L, ledger.snapshot().single().rxBytes)
+        assertEquals(50L, ledger.snapshot().single().txBytes)
+        ledger.close(newConnection)
     }
 
     @Test fun duplicateCloseCannotReleaseAnotherConnectionForSameIp() {

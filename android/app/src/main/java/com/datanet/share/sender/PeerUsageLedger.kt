@@ -1,7 +1,6 @@
 package com.datanet.share.sender
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -13,17 +12,31 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class PeerUsageLedger {
     data class Snapshot(val ip: String, val activeConnections: Int,
-                        val rxBytes: Long, val txBytes: Long)
+                        val rxBytes: Long, val txBytes: Long) {
+        // This is UI-only peer data. Kotlin's generated data-class toString()
+        // would expose the remote IP in accidental exception/debug logging.
+        override fun toString(): String = "PeerUsageLedger.Snapshot(<redacted>)"
+    }
 
     /** One lease per authenticated connection, sharing counters for the same IP. */
     class Entry internal constructor(private val totals: Totals) {
         val ip: String get() = totals.ip
-        private val released = AtomicBoolean()
-        internal fun closed() {
-            if (released.compareAndSet(false, true)) totals.closed()
+        // UDP response workers can finish after the owning SOCKS connection
+        // closes. Serialize close and accounting per lease so a late worker
+        // cannot charge a newer connection from the same IP.
+        private var released = false
+        @Synchronized internal fun closed() {
+            if (!released) {
+                released = true
+                totals.closed()
+            }
         }
-        fun received(bytes: Int) { totals.received(bytes) }
-        fun sent(bytes: Int) { totals.sent(bytes) }
+        @Synchronized fun received(bytes: Int) {
+            if (!released) totals.received(bytes)
+        }
+        @Synchronized fun sent(bytes: Int) {
+            if (!released) totals.sent(bytes)
+        }
     }
 
     internal class Totals(val ip: String) {
