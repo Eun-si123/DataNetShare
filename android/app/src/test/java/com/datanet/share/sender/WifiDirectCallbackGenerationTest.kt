@@ -7,9 +7,24 @@ import org.junit.Test
 class WifiDirectCallbackGenerationTest {
     private class FakeManager {
         var listener: WifiDirectCreateCallbacks? = null
+        var unrelatedGroupPresent = true
+            private set
+        var removeGroupCalls = 0
+            private set
+
+        /** Capture the exact callback delegate used by the production ActionListener. */
         fun request(callbacks: WifiDirectCreateCallbacks) { listener = callbacks }
+        /** Replay an asynchronous Android request-initiation acknowledgment. */
         fun succeed() { listener!!.onSuccess() }
+        /** Replay an asynchronous Android request-initiation rejection. */
         fun fail(reason: Int) { listener!!.onFailure(reason) }
+        /** Model WifiDirectHost.stop()'s existing ownership/channel decision. */
+        fun stop(ownsGroup: Boolean, channelPresent: Boolean = true) {
+            if (ownsGroup && channelPresent) {
+                removeGroupCalls++
+                unrelatedGroupPresent = false
+            }
+        }
     }
 
     @Test fun stopBeforeCreateSuccessSuppressesTheOldActionListener() {
@@ -18,14 +33,38 @@ class WifiDirectCallbackGenerationTest {
         val manager = FakeManager()
         var accepted = 0
         var failures = 0
+        var ownsSessionGroup = false
         manager.request(WifiDirectCreateCallbacks(gate, token,
-            onAccepted = { accepted++ }, onRejected = { failures++ }))
+            onAccepted = { accepted++; ownsSessionGroup = true },
+            onRejected = { failures++ }))
         gate.stop() // Old Android request may complete after channel close.
+        manager.stop(ownsSessionGroup)
         manager.succeed()
         manager.fail(2)
         assertFalse(gate.running)
         assertEquals(0, accepted)
         assertEquals(0, failures)
+        assertFalse(ownsSessionGroup)
+        assertEquals("Stop must not remove an unrelated pre-existing group", 0, manager.removeGroupCalls)
+        assertTrue(manager.unrelatedGroupPresent)
+    }
+
+    @Test fun rejectedCreateDoesNotTriggerRemovalOfAnExistingGroup() {
+        val gate = WifiDirectCallbackGeneration()
+        val token = gate.start()
+        val manager = FakeManager()
+        var ownsSessionGroup = false
+        val failures = mutableListOf<Int>()
+        manager.request(WifiDirectCreateCallbacks(gate, token,
+            onAccepted = { ownsSessionGroup = true },
+            onRejected = { failures += it }))
+        manager.fail(2)
+        gate.stop()
+        manager.stop(ownsSessionGroup)
+        assertEquals(listOf(2), failures)
+        assertFalse(ownsSessionGroup)
+        assertEquals(0, manager.removeGroupCalls)
+        assertTrue("A foreign group must remain untouched", manager.unrelatedGroupPresent)
     }
 
     @Test fun delayedOldManagerFailureCannotInterfereWithRestartedSession() {

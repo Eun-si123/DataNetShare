@@ -14,17 +14,20 @@ internal class WifiDirectCallbackGeneration {
     var running: Boolean = false
         private set
 
+    /** Begin a new session; only its returned token may update callbacks. */
     fun start(): Int {
         check(!running) { "Wi-Fi Direct session is already active" }
         running = true
         return ++generation
     }
 
+    /** Invalidate every outstanding callback, even after repeated Stop calls. */
     fun stop() {
         running = false
         ++generation
     }
 
+    /** True only for callbacks from the currently running generation. */
     fun accepts(token: Int): Boolean = running && generation == token
 }
 
@@ -38,10 +41,12 @@ internal class WifiDirectCreateCallbacks(
     private val onAccepted: () -> Unit,
     private val onRejected: (Int) -> Unit
 ) {
+    /** Dispatch a create request acknowledgment only to its original session. */
     fun onSuccess() {
         if (generations.accepts(token)) onAccepted()
     }
 
+    /** Suppress a delayed error instead of retrying on a newer channel. */
     fun onFailure(reason: Int) {
         if (generations.accepts(token)) onRejected(reason)
     }
