@@ -10,7 +10,9 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class UdpRepeatedLifecycleCapacityTest {
@@ -18,11 +20,18 @@ class UdpRepeatedLifecycleCapacityTest {
         // 5 * 32 unique UDP destinations exceed the 128 global socket limit
         // if prior sessions leak permits. No Android network or VPN is involved.
         DatagramSocket(InetSocketAddress("127.0.0.1", 0)).use { echo ->
+            val droppedFirstEcho = AtomicBoolean(false)
             Thread({
                 try {
                     while (!echo.isClosed) {
                         val packet = DatagramPacket(ByteArray(256), 256)
                         echo.receive(packet)
+                        // A UDP resource-capacity test must tolerate datagram loss,
+                        // not assume reliable delivery. Force one loss to prove
+                        // the bounded retry path is exercised on every CI OS.
+                        if (packet.length == 2 && packet.data[packet.offset] == 0.toByte() &&
+                            packet.data[packet.offset + 1] == 0.toByte() &&
+                            droppedFirstEcho.compareAndSet(false, true)) continue
                         echo.send(packet)
                     }
                 } catch (_: IOException) { }
@@ -61,19 +70,44 @@ class UdpRepeatedLifecycleCapacityTest {
                             val relay = Socks5.request(input, control.getOutputStream(), 3,
                                 Socks5.Address("0.0.0.0", 0))
                             DatagramSocket().use { client ->
-                                client.soTimeout = 5000
                                 repeat(32) { destinationIndex ->
                                     val payload = byteArrayOf(cycle.toByte(), destinationIndex.toByte())
                                     val frame = Socks5.encodeDatagram(
                                         Socks5.Address("echo-${destinationIndex}.test", echo.localPort),
                                         payload
                                     )
-                                    client.send(DatagramPacket(frame, frame.size,
-                                        InetSocketAddress(relay.host, relay.port)))
-                                    val reply = DatagramPacket(ByteArray(256), 256)
-                                    client.receive(reply)
-                                    assertArrayEquals(payload,
-                                        Socks5.decodeDatagram(reply.data.copyOf(reply.length))!!.payload)
+                                    var matched = false
+                                    // UDP can drop even localhost datagrams under runner load.
+                                    // This test checks permit recovery, not lossless delivery;
+                                    // retry only this test packet, with a hard per-attempt bound.
+                                    repeat(3) {
+                                        if (!matched) {
+                                            client.send(DatagramPacket(frame, frame.size,
+                                                InetSocketAddress(relay.host, relay.port)))
+                                            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                                            while (!matched && System.nanoTime() < deadline) {
+                                                val remaining = deadline - System.nanoTime()
+                                                client.soTimeout = TimeUnit.NANOSECONDS.toMillis(remaining)
+                                                    .coerceAtLeast(1).toInt()
+                                                val reply = DatagramPacket(ByteArray(256), 256)
+                                                try { client.receive(reply) }
+                                                catch (_: SocketTimeoutException) { break }
+                                                val data = Socks5.decodeDatagram(reply.data.copyOf(reply.length))
+                                                assertNotNull("invalid UDP response", data)
+                                                val received = data!!.payload
+                                                if (received.contentEquals(payload)) matched = true
+                                                else {
+                                                    // A previous destination's delayed retry may
+                                                    // arrive later, but unrelated payloads are wrong.
+                                                    assertTrue("unexpected UDP payload", received.size == 2 &&
+                                                        received[0] == cycle.toByte() &&
+                                                        (received[1].toInt() and 0xff) < destinationIndex)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    assertTrue("UDP echo missing after bounded retries: cycle=$cycle, index=$destinationIndex",
+                                        matched)
                                 }
                             }
                         }
@@ -89,6 +123,7 @@ class UdpRepeatedLifecycleCapacityTest {
                     assertEquals("UDP workers leaked after stop cycle ${cycle + 1}",
                         baselineWorkers, udpWorkers())
                 }
+                assertTrue("test must exercise one intentional dropped datagram", droppedFirstEcho.get())
                 assertEquals("every new destination should have obtained a fresh socket",
                     160, opened.get())
             } finally {
