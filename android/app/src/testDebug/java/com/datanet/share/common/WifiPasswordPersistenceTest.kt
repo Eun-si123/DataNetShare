@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WifiPasswordPersistenceTest {
+    @Test fun restoredPasswordIsRedactedInImplicitDebugString() {
+        val secret = "example-restored-wifi-secret"
+        val restored = WifiPasswordPersistence.restore { secret }
+        assertEquals("RestoreResult(<redacted>)", restored.toString())
+        assertEquals(secret, restored.password)
+        assertFalse(restored.failed)
+        assertEquals(restored, restored.copy())
+        assertEquals("RestoreResult(<redacted>)", WifiPasswordPersistence.restore { null }.toString())
+        assertEquals("RestoreResult(<redacted>)", WifiPasswordPersistence.restore {
+            throw IllegalStateException("keystore unavailable")
+        }.toString())
+    }
     @Test fun failedRestorePreservesRecordAndRetryCanSucceed() {
         var record: String? = "ExamplePassphrase!"
         var clearCalls = 0

@@ -31,4 +31,39 @@ class TunPollRecoveryTest {
             assertEquals("bad TUN descriptor", expected.message)
         }
     }
+
+    private class SimulatedErrno(val code: Int) : Exception("synthetic poll errno")
+
+    @Test fun onlyEintrIsRecoverableWhileOtherErrnosPropagate() {
+        val eintr = SimulatedErrno(4)
+        val eagain = SimulatedErrno(11)
+        assertNull(TunPollRecovery.poll(
+            operation = { throw eintr },
+            interrupted = { it is SimulatedErrno && it.code == 4 }
+        ))
+        try {
+            TunPollRecovery.poll(
+                operation = { throw eagain },
+                interrupted = { it is SimulatedErrno && it.code == 4 }
+            )
+            fail("Non-EINTR poll errors must reach VPN failure handling")
+        } catch (caught: SimulatedErrno) {
+            assertSame(eagain, caught)
+        }
+    }
+
+    @Test fun fatalVmErrorsBypassTheRecoverableExceptionClassifier() {
+        val fatal = AssertionError("synthetic fatal poll error")
+        var classifierCalls = 0
+        try {
+            TunPollRecovery.poll(
+                operation = { throw fatal },
+                interrupted = { classifierCalls++; true }
+            )
+            fail("Fatal errors must not be classified as recoverable EINTR")
+        } catch (caught: AssertionError) {
+            assertSame(fatal, caught)
+        }
+        assertEquals(0, classifierCalls)
+    }
 }

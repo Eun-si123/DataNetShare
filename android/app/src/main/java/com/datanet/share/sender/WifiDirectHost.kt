@@ -111,7 +111,12 @@ class WifiDirectHost(private val context: Context) {
             handler.postDelayed({
                 if (running && token == generation && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
             }, 25_000)
-        } catch (e: Exception) { mutableState.value = State.Failed("Wi-Fi Direct could not initialize", e.javaClass.simpleName) }
+        } catch (e: Exception) {
+            // A failed initialize/register/schedule must not strand running=true,
+            // a registered receiver, or a channel that blocks a later Start.
+            stop()
+            mutableState.value = State.Failed("Wi-Fi Direct could not initialize", e.javaClass.simpleName)
+        }
     }
     private fun create(token: Int, attempt: Int) {
         if (!running || generation != token) return
@@ -192,7 +197,13 @@ class WifiDirectHost(private val context: Context) {
         running = false; ++generation; handler.removeCallbacksAndMessages(null)
         if (registered) { try { context.unregisterReceiver(receiver) } catch (_: Exception) {}; registered = false }
         val old = channel; channel = null
-        fun closeChannel() { if (Build.VERSION.SDK_INT >= 27) old?.close() }
+        fun closeChannel() {
+            if (Build.VERSION.SDK_INT >= 27) {
+                // Channel shutdown is best-effort; a broken OEM channel must
+                // not prevent the remaining session state from being cleared.
+                try { old?.close() } catch (_: RuntimeException) {}
+            }
+        }
         if (ownsGroup && old != null) {
             try { manager?.removeGroup(old, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() { closeChannel() }; override fun onFailure(reason: Int) { closeChannel() }

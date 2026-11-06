@@ -2,11 +2,13 @@ package com.datanet.share.common
 
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.security.SecureRandom
 
 object UdpTest {
-    /** Verify STUN framing, mapped address and unpredictable transaction ID. */
+    /** Verify STUN framing and an IPv4 mapping for the IPv4-only receiver. */
     internal fun isValidBindingResponse(bytes: ByteArray, transaction: ByteArray): Boolean {
         if (transaction.size != 12 || bytes.size < 20) return false
         if (bytes[0] != 0x01.toByte() || bytes[1] != 0x01.toByte()) return false
@@ -29,8 +31,7 @@ object UdpTest {
             if (paddedLength > bytes.size - offset - 4) return false
             if (type == 0x0020) {
                 val family = if (valueLength >= 2) bytes[offset + 5].toInt() and 255 else 0
-                if (!((family == 1 && valueLength == 8) ||
-                    (family == 2 && valueLength == 20))) return false
+                if (family != 1 || valueLength != 8) return false
                 hasMappedAddress = true
             }
             offset += 4 + paddedLength
@@ -38,30 +39,65 @@ object UdpTest {
         return hasMappedAddress
     }
 
+    /** An IPv6-only STUN destination cannot exercise the receiver's IPv4 TUN path. */
+    internal fun chooseIpv4Address(addresses: Array<InetAddress>): Inet4Address? =
+        addresses.firstOrNull { it is Inet4Address } as? Inet4Address
+
     fun runTest(onResult: (String) -> Unit, onError: (String) -> Unit, onFinished: () -> Unit) {
-        Thread({
+        runTest(onResult, onError, onFinished) { task ->
+            Thread(task, "udp-test").apply { isDaemon = true; start() }
+        }
+    }
+
+    // Inject only the worker launcher in JVM tests; no external STUN traffic is required.
+    internal fun runTest(
+        onResult: (String) -> Unit,
+        onError: (String) -> Unit,
+        onFinished: () -> Unit,
+        launchWorker: (Runnable) -> Unit
+    ) {
+        val task = Runnable {
             try {
-                onResult("Testing UDP through the active receiver VPN using external STUN…")
+                onResult("Testing IPv4 UDP reachability while the receiver VPN is active…")
                 val request = ByteArray(20)
                 request[1] = 1; request[4] = 0x21; request[5] = 0x12; request[6] = 0xa4.toByte(); request[7] = 0x42
                 val transaction = ByteArray(12).also(SecureRandom()::nextBytes)
                 transaction.copyInto(request, 8)
                 DatagramSocket().use { socket ->
                     socket.soTimeout = 5000
-                    socket.connect(InetSocketAddress("stun.l.google.com", 19302))
+                    val address = chooseIpv4Address(InetAddress.getAllByName("stun.l.google.com"))
+                        ?: error("No IPv4 STUN endpoint available")
+                    socket.connect(InetSocketAddress(address, 19302))
                     val started = System.nanoTime()
                     socket.send(DatagramPacket(request, request.size))
                     val response = DatagramPacket(ByteArray(1500), 1500)
                     socket.receive(response)
                     val bytes = response.data.copyOf(response.length)
                     check(isValidBindingResponse(bytes, transaction)) { "Invalid STUN response" }
-                    onResult("UDP STUN response: ${(System.nanoTime() - started) / 1_000_000} ms. This checks reachability, not gaming performance.")
+                    onResult("IPv4 UDP STUN response: ${(System.nanoTime() - started) / 1_000_000} ms. This checks reachability, not gaming performance.")
                 }
             } catch (_: Exception) {
                 // Socket exception messages can include local network identifiers.
                 onError("UDP test failed. Check the receiver VPN and network, then retry.")
             }
             finally { onFinished() }
-        }, "udp-test").apply { isDaemon = true; start() }
+        }
+        try {
+            launchWorker(task)
+        } catch (_: RuntimeException) {
+            reportLaunchFailure(onError, onFinished)
+        } catch (_: OutOfMemoryError) {
+            // Thread creation can fail with "unable to create native thread".
+            reportLaunchFailure(onError, onFinished)
+        }
+    }
+
+    private fun reportLaunchFailure(onError: (String) -> Unit, onFinished: () -> Unit) {
+        try {
+            // Never expose exception messages that may contain device or network details.
+            onError("UDP test could not start. Please retry.")
+        } finally {
+            onFinished()
+        }
     }
 }

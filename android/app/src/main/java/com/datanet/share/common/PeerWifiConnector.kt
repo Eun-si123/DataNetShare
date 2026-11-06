@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import java.net.Inet4Address
 import java.net.InetSocketAddress
-import java.io.IOException
 
 /**
  * Android 10+ QR peer Wi-Fi request.
@@ -96,24 +95,14 @@ object PeerWifiConnector {
                 announce(this, Status.CHECKING_SENDER)
                 val source = this
                 val worker = Thread({
-                    var reachable = false
-                    for (attempt in 1..QrPeerProbePolicy.MAX_ATTEMPTS) {
-                        if (Thread.currentThread().isInterrupted) break
-                        try {
-                            // Network.socketFactory binds only this socket; leaving
-                            // cellular/default routes and Android VPN settings intact.
-                            value.socketFactory.createSocket().use { socket ->
-                                socket.connect(InetSocketAddress(senderHost, senderPort),
-                                    QrPeerProbePolicy.CONNECT_TIMEOUT_MS)
-                            }
-                            reachable = true
-                            break
-                        } catch (_: IOException) {
-                            if (attempt == QrPeerProbePolicy.MAX_ATTEMPTS) break
-                            try { Thread.sleep(QrPeerProbePolicy.DELAY_MS) }
-                            catch (_: InterruptedException) { break }
+                    val reachable = QrPeerProbePolicy.reachable(connect = {
+                        // Network.socketFactory binds only this socket; leaving
+                        // cellular/default routes and Android VPN settings intact.
+                        value.socketFactory.createSocket().use { socket ->
+                            socket.connect(InetSocketAddress(senderHost, senderPort),
+                                QrPeerProbePolicy.CONNECT_TIMEOUT_MS)
                         }
-                    }
+                    })
                     synchronized(this@PeerWifiConnector) {
                         if (callback !== source || verifyingNetwork != value || token != generation) return@Thread
                         verifyingNetwork = null
@@ -125,9 +114,12 @@ object PeerWifiConnector {
                 }, "qr-peer-readiness").apply { isDaemon = true }
                 synchronized(this@PeerWifiConnector) {
                     if (callback !== source || token != generation) return
+                    // Start under the same monitor as release(): otherwise Stop
+                    // can interrupt a not-yet-started Thread (not guaranteed to
+                    // take effect) and a stale readiness probe can run afterward.
                     verifier = worker
+                    worker.start()
                 }
-                worker.start()
             }
             override fun onUnavailable() {
                 synchronized(this@PeerWifiConnector) {

@@ -140,6 +140,10 @@ class UdpFlow(
             }
         } catch (e: IOException) {
             if (!closed.get()) onError("UDP relay read failed (${e.javaClass.simpleName})")
+        } catch (e: RuntimeException) {
+            // A TUN write or receiver callback may fail independently of the UDP socket.
+            // Report only the exception type; never include payloads or destinations.
+            if (!closed.get()) onError("UDP receive callback failed (${e.javaClass.simpleName})")
         } finally { close() }
     }
     @Synchronized fun close() {
