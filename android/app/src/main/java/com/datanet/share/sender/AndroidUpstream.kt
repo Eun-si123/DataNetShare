@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.system.ErrnoException
 import com.datanet.share.common.CellularNetworkTracker
 import com.datanet.share.common.UpstreamRoutePolicy
 import java.io.IOException
@@ -145,4 +146,20 @@ internal fun connectSocketOrClose(socket: Socket, destination: InetSocketAddress
         catch (cleanup: Exception) { if (cleanup !== failure) failure.addSuppressed(cleanup) }
         throw failure
     }
+}
+
+/** Android may wrap a denied Network.bindSocket in SocketException (an IOException).
+ * Check the typed errno cause, never localized exception-message text.
+ * Linux EPERM=1 and EACCES=13 are stable ABI values; Android JVM test stubs
+ * do not initialize OsConstants errno fields to their device values.
+ */
+internal fun isUdpBindingPermissionDenied(failure: IOException): Boolean {
+    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+    var cause: Throwable? = failure
+    while (cause != null && seen.add(cause)) {
+        if (cause is ErrnoException &&
+            (cause.errno == 1 || cause.errno == 13)) return true
+        cause = cause.cause
+    }
+    return false
 }

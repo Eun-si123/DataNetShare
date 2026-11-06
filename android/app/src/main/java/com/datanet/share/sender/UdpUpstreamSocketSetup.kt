@@ -1,7 +1,5 @@
 package com.datanet.share.sender
 
-import android.system.ErrnoException
-import java.io.IOException
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 
@@ -13,25 +11,11 @@ internal object UdpUpstreamSocketSetup {
         try {
             bind()
             socket.connect(destination)
-        } catch (e: Exception) {
+        } catch (failure: Throwable) {
+            // This is solely a socket ownership boundary, not an error recovery
+            // handler: even a VM/native worker Error must release the socket.
             socket.close()
-            throw e
+            throw failure
         }
     }
-}
-
-/** Android may wrap a denied Network.bindSocket in SocketException (an IOException).
- * Check the typed errno cause, never localized exception-message text.
- * Linux EPERM=1 and EACCES=13 are stable ABI values; Android JVM test stubs
- * do not initialize OsConstants errno fields to their device values.
- */
-internal fun isUdpBindingPermissionDenied(failure: IOException): Boolean {
-    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
-    var cause: Throwable? = failure
-    while (cause != null && seen.add(cause)) {
-        if (cause is ErrnoException &&
-            (cause.errno == 1 || cause.errno == 13)) return true
-        cause = cause.cause
-    }
-    return false
 }
