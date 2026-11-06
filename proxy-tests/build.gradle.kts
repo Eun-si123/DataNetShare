@@ -15,6 +15,7 @@ sourceSets {
             "com/datanet/share/common/UdpTest.kt",
             "com/datanet/share/common/P2pPasswordCipher.kt",
             "com/datanet/share/sender/WifiDirectProfile.kt",
+            "com/datanet/share/sender/WifiDirectCallbackGeneration.kt",
             "com/datanet/share/sender/Socks5Server.kt",
             "com/datanet/share/sender/UdpUpstreamSocketSetup.kt",
             "com/datanet/share/sender/SenderFailureMessages.kt",

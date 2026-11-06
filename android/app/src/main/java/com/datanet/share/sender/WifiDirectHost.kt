@@ -20,8 +20,9 @@ class WifiDirectHost(private val context: Context) {
     private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
     private val handler = Handler(Looper.getMainLooper())
     private var channel: WifiP2pManager.Channel? = null
-    private var generation = 0
-    private var running = false
+    private val callbackGeneration = WifiDirectCallbackGeneration()
+    private val generation: Int get() = callbackGeneration.generation
+    private val running: Boolean get() = callbackGeneration.running
     private var ownsGroup = false
     private var ready = false
     private var registered = false
@@ -98,10 +99,10 @@ class WifiDirectHost(private val context: Context) {
         if (context.getSystemService(WifiManager::class.java)?.isWifiEnabled != true) {
             mutableState.value = State.Failed("Wi-Fi is off", "Enable Wi-Fi in Android settings."); return
         }
-        running = true; val token = ++generation
+        val token = callbackGeneration.start()
         try {
             channel = mgr.initialize(context, context.mainLooper) {
-                if (running && token == generation) mutableState.value = State.Failed("Wi-Fi Direct channel disconnected")
+                if (callbackGeneration.accepts(token)) mutableState.value = State.Failed("Wi-Fi Direct channel disconnected")
             }
             val filter = IntentFilter().apply { addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION); addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) }
             if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -109,7 +110,7 @@ class WifiDirectHost(private val context: Context) {
             registered = true
             create(token, 1)
             handler.postDelayed({
-                if (running && token == generation && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
+                if (callbackGeneration.accepts(token) && !ready) mutableState.value = State.Failed("Wi-Fi Direct setup timed out", "On Android 8–12, enable Location services. Also check Wi-Fi and nearby-device permissions.")
             }, 25_000)
         } catch (e: Exception) {
             // A failed initialize/register/schedule must not strand running=true,
@@ -119,16 +120,16 @@ class WifiDirectHost(private val context: Context) {
         }
     }
     private fun create(token: Int, attempt: Int) {
-        if (!running || generation != token) return
+        if (!callbackGeneration.accepts(token)) return
         mutableState.value = State.CreatingGroup(attempt, 4)
         try {
             val listener = object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    if (!running || generation != token) return
+                    if (!callbackGeneration.accepts(token)) return
                     ownsGroup = true; query(token)
                 }
                 override fun onFailure(reason: Int) {
-                    if (!running || generation != token) return
+                    if (!callbackGeneration.accepts(token)) return
                     val name = when (reason) { WifiP2pManager.BUSY -> "BUSY"; WifiP2pManager.P2P_UNSUPPORTED -> "Unsupported"; else -> "Error $reason" }
                     if (attempt < 4 && reason == WifiP2pManager.BUSY) {
                         val delay = 1000L shl (attempt - 1)
@@ -159,13 +160,13 @@ class WifiDirectHost(private val context: Context) {
         }
     }
     private fun query(token: Int) {
-        if (!running || generation != token) return
+        if (!callbackGeneration.accepts(token)) return
         try { manager?.requestConnectionInfo(channel) { info -> onInfo(token, info) } }
         catch (_: SecurityException) { mutableState.value = State.Failed("Cannot read Wi-Fi Direct connection",
             "Check Nearby devices/Location permission and retry.") }
     }
     private fun onInfo(token: Int, info: WifiP2pInfo?) {
-        if (!running || generation != token) return
+        if (!callbackGeneration.accepts(token)) return
         if (info?.groupFormed != true) {
             if (ready) mutableState.value = State.Failed("Wi-Fi Direct group disconnected")
             return
@@ -175,7 +176,7 @@ class WifiDirectHost(private val context: Context) {
         val ip = info.groupOwnerAddress?.hostAddress ?: return
         try {
             manager?.requestGroupInfo(channel) { group ->
-                if (!running || token != generation) return@requestGroupInfo
+                if (!callbackGeneration.accepts(token)) return@requestGroupInfo
                 if (group == null || group.passphrase.isNullOrEmpty()) {
                     if (!ready) handler.postDelayed({ query(token) }, 500)
                     return@requestGroupInfo
@@ -194,7 +195,7 @@ class WifiDirectHost(private val context: Context) {
             "Check Nearby devices/Location permission and retry.") }
     }
     fun stop() {
-        running = false; ++generation; handler.removeCallbacksAndMessages(null)
+        callbackGeneration.stop(); handler.removeCallbacksAndMessages(null)
         if (registered) { try { context.unregisterReceiver(receiver) } catch (_: Exception) {}; registered = false }
         val old = channel; channel = null
         fun closeChannel() {
