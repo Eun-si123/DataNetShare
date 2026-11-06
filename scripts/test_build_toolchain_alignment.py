@@ -40,6 +40,11 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
                    "with:\n  gradle-version: '9.8.2'\n")
         self.assertTrue(any("publish-preview.yml" in error for error in verify(self.root)))
 
+    def test_portability_workflow_version_drift_fails(self):
+        self.write(".github/workflows/jvm-portability.yml",
+                   "with:\n  gradle-version: '8.14'\n")
+        self.assertTrue(any("jvm-portability.yml" in error for error in verify(self.root)))
+
     def test_kotlin_plugin_drift_fails(self):
         self.write("proxy-tests/build.gradle.kts",
                    'plugins { kotlin("jvm") version "2.4.21" }')

@@ -39,13 +39,13 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1
         with:
-          gradle-version: '8.5'
+          gradle-version: '8.13'
       - name: Install Android SDK 34
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
           test -n "$SDK_MANAGER"
-          "$SDK_MANAGER" --install 'platforms;android-34' 'build-tools;34.0.0'
+          "$SDK_MANAGER" --install 'platforms;android-34' 'build-tools;35.0.0'
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
       - name: Run real host protocol/relay tests
         run: gradle -p proxy-tests test --no-daemon
@@ -56,8 +56,8 @@ jobs:
         run: |
           set -euo pipefail
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
-          SIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$AAPT" dump badging "$APK" | grep -F "name='com.datanet.share.dev'"
