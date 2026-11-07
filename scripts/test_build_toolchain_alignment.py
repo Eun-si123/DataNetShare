@@ -124,6 +124,18 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
         self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
                             for e in verify(self.root)))
 
+    def test_inline_hash_suffix_is_part_of_action_reference(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8").replace(
+                       "github/codeql-action/init@" + "a" * 40 + " # v4",
+                       "github/codeql-action/init@" + "a" * 40 + "#v4"))
+        self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
+                            for e in verify(self.root)))
+
+    def test_whitespace_comment_after_sha_is_valid(self):
+        self.assertEqual([], verify(self.root))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",
