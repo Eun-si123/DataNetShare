@@ -108,6 +108,22 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
                    "    - uses: *codeql_init\n")
         self.assertTrue(any("anchored/aliased uses" in e for e in verify(self.root)))
 
+    def test_spaced_uses_colon_codeql_step_fails(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses : github/codeql-action/init@v4\n")
+        self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
+                            for e in verify(self.root)))
+
+    def test_mixed_case_codeql_repository_step_fails(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: GitHub/CodeQL-Action/analyze@v4\n")
+        self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
+                            for e in verify(self.root)))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",
