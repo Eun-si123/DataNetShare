@@ -11,6 +11,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketException
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -47,7 +48,10 @@ class UdpStopSocketCleanupFailureTest {
 
     @Test(timeout = 20_000)
     fun throwingUdpCloseCannotPreventOtherClientCleanup() {
+        // A blocking queue publishes sockets to the test, but poll() removes
+        // them. Keep separate ownership so failure teardown never loses an FD.
         val upstreamSocket = LinkedBlockingQueue<GatedUdpSocket>()
+        val createdSockets = ConcurrentLinkedQueue<GatedUdpSocket>()
         val upstream = object : Socks5Server.Upstream {
             override fun connect(host: String, port: Int): Socket = error("TCP upstream not used")
             override fun resolve(host: String): Array<InetAddress> = arrayOf(InetAddress.getLoopbackAddress())
@@ -58,6 +62,7 @@ class UdpStopSocketCleanupFailureTest {
                 val destination = InetSocketAddress(InetAddress.getLoopbackAddress(), port)
                 val socket = if (port == 9) FailingCloseUdpSocket() else GatedUdpSocket()
                 socket.connect(destination)
+                createdSockets.add(socket)
                 upstreamSocket.add(socket)
                 return Socks5Server.UdpConnection(socket, destination)
             }
@@ -108,7 +113,7 @@ class UdpStopSocketCleanupFailureTest {
             // whose receive workers intentionally have no independent timeout.
             try { server.stop() }
             finally {
-                upstreamSocket.forEach { socket ->
+                createdSockets.forEach { socket ->
                     if (!socket.isClosed) {
                         try { socket.close() } catch (_: Exception) { /* synthetic close failure */ }
                     }
