@@ -73,11 +73,18 @@ def verify(root: Path) -> list[str]:
         codeql_source,
         flags=re.MULTILINE,
     )
+    # This intentionally narrow workflow puts `uses` only in explicit block
+    # step keys; count all literal key spellings to reject quoted keys or
+    # other unsupported YAML presentations before relying on regex extraction.
+    if len(re.findall(r"\buses\b", codeql_source)) != len(action_refs):
+        errors.append("codeql-advanced.yml: unrecognized uses key form requires separate review")
     # The current CodeQL workflow uses only SHA-pinned remote actions.
     # Fail closed on comments, empty/multiline forms, tags and novel action
     # syntaxes rather than trying to parse an unsupported YAML construct.
     for raw_ref in action_refs:
-        ref = raw_ref.strip("\x27\x22")
+        ref = raw_ref[1:-1] if (len(raw_ref) >= 2 and
+                                raw_ref[0] in ("\x27", "\x22") and
+                                raw_ref[-1] == raw_ref[0]) else raw_ref
         if re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+@[0-9a-f]{40}", ref) is None:
             errors.append("codeql-advanced.yml: unsupported or unpinned uses value requires separate review")
             break

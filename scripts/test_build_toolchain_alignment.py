@@ -173,6 +173,29 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
         self.assertTrue(any("unsupported or unpinned uses value" in e
                             for e in verify(self.root)))
 
+    def test_single_quoted_uses_key_cannot_hide_extra_action(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - " + chr(39) + "uses" + chr(39) + ": github/codeql-action/init@v4\n")
+        self.assertTrue(any("unrecognized uses key form" in e for e in verify(self.root)))
+
+    def test_double_quoted_uses_key_cannot_hide_extra_action(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - " + chr(34) + "uses" + chr(34) + ": github/codeql-action/analyze@v4\n")
+        self.assertTrue(any("unrecognized uses key form" in e for e in verify(self.root)))
+
+    def test_unpaired_quote_after_action_sha_is_rejected(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8").replace(
+                       "github/codeql-action/init@" + "a" * 40 + " # v4",
+                       "github/codeql-action/init@" + "a" * 40 + chr(39)))
+        self.assertTrue(any("unsupported or unpinned uses value" in e
+                            for e in verify(self.root)))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",
