@@ -50,6 +50,24 @@ def verify(root: Path) -> list[str]:
                     "the version update and run actual build tests."
                 )
 
+    # CodeQL init and analyze are one versioned pipeline. Dependabot updating
+    # just one action has failed all three language uploads in this repository.
+    codeql_source = (root / ".github/workflows/codeql-advanced.yml").read_text(encoding="utf-8")
+    codeql_actions = re.findall(
+        r"^\s*uses:\s*github/codeql-action/(init|analyze)@([0-9a-f]{40})(?:\s|$)",
+        codeql_source,
+        flags=re.MULTILINE,
+    )
+    codeql_pins = {name: [sha for action, sha in codeql_actions if action == name]
+                   for name in ("init", "analyze")}
+    if any(len(pins) != 1 for pins in codeql_pins.values()):
+        errors.append("codeql-advanced.yml: expected exactly one SHA-pinned CodeQL init and analyze action")
+    elif codeql_pins["init"][0] != codeql_pins["analyze"][0]:
+        errors.append(
+            "codeql-advanced.yml: CodeQL init/analyze commit pins must match; "
+            "update them together and verify all three language uploads."
+        )
+
     android_build = (root / "android/build.gradle.kts").read_text(encoding="utf-8")
     proxy_build = (root / "proxy-tests/build.gradle.kts").read_text(encoding="utf-8")
     android_kotlin = re.search(

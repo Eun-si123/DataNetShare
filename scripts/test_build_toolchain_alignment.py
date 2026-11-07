@@ -20,7 +20,11 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
         self.write("proxy-tests/build.gradle.kts",
                    'plugins { kotlin("jvm") version "1.9.22" }')
         for name in WORKFLOWS:
-            self.write(f".github/workflows/{name}", "with:\n  gradle-version: '8.5'\n")
+            contents = "with:\n  gradle-version: '8.5'\n"
+            if name == "codeql-advanced.yml":
+                contents += ("    uses: github/codeql-action/init@" + "a" * 40 + " # v4\n"
+                             "    uses: github/codeql-action/analyze@" + "a" * 40 + " # v4\n")
+            self.write(f".github/workflows/{name}", contents)
 
     def write(self, path: str, text: str):
         target = self.root / path
@@ -49,6 +53,30 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
         self.write("proxy-tests/build.gradle.kts",
                    'plugins { kotlin("jvm") version "2.4.21" }')
         self.assertTrue(any("Kotlin plugin mismatch" in error for error in verify(self.root)))
+
+    def test_different_codeql_action_pins_fail(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8").replace("analyze@" + "a" * 40,
+                                                                "analyze@" + "b" * 40))
+        self.assertTrue(any("CodeQL init/analyze commit pins must match" in e
+                            for e in verify(self.root)))
+
+    def test_missing_codeql_action_pin_fails(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8").replace(
+                       "github/codeql-action/analyze@" + "a" * 40, "github/codeql-action/analyze@v4"))
+        self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
+                            for e in verify(self.root)))
+
+    def test_duplicate_codeql_init_pin_fails(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "  uses: github/codeql-action/init@" + "a" * 40 + "\n")
+        self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
+                            for e in verify(self.root)))
 
     def test_missing_ci_pin_fails(self):
         self.write(".github/workflows/codeql-advanced.yml", "jobs:\n  analyze: {}\n")
