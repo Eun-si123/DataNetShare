@@ -73,6 +73,11 @@ def verify(root: Path) -> list[str]:
         codeql_source,
         flags=re.MULTILINE,
     )
+    # Folded/literal block values hide the actual executable action on a
+    # subsequent line. The exact-SHA policy supports inline `uses` values
+    # only; unsupported scalar forms require a separately reviewed parser.
+    if any(ref.startswith((">", "|")) for ref in action_refs):
+        errors.append("codeql-advanced.yml: unsupported uses value form requires separate review")
     if any(ref.startswith(("&", "*")) for ref in action_refs):
         errors.append("codeql-advanced.yml: anchored/aliased uses references require separate review")
     codeql_pins = {name: [ref for action, ref in codeql_actions if action == name]

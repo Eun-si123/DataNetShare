@@ -143,6 +143,20 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
                    "    - {uses: github/codeql-action/init@v4}\n")
         self.assertTrue(any("flow-style YAML mapping" in e for e in verify(self.root)))
 
+    def test_folded_scalar_codeql_step_fails_closed(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: >-\n      github/codeql-action/init@v4\n")
+        self.assertTrue(any("unsupported uses value form" in e for e in verify(self.root)))
+
+    def test_literal_scalar_codeql_step_fails_closed(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: |-\n      github/codeql-action/analyze@v4\n")
+        self.assertTrue(any("unsupported uses value form" in e for e in verify(self.root)))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",
