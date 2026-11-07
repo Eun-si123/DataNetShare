@@ -18,19 +18,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Stop must reclaim all client sockets even if one UDP upstream close fails. */
 class UdpStopSocketCleanupFailureTest {
-    private class FailingCloseUdpSocket : DatagramSocket() {
+    private open class GatedUdpSocket : DatagramSocket() {
         val inReceive = CountDownLatch(1)
         private val closed = CountDownLatch(1)
-        private val throwOnce = AtomicBoolean(true)
         override fun receive(packet: DatagramPacket) {
             inReceive.countDown()
             if (!closed.await(8, TimeUnit.SECONDS)) throw SocketException("synthetic receive stalled")
             throw SocketException("socket closed by Stop")
         }
         override fun close() {
-            // Always release the real descriptor, even when the test throws.
             super.close()
             closed.countDown()
+        }
+    }
+
+    private class FailingCloseUdpSocket : GatedUdpSocket() {
+        private val throwOnce = AtomicBoolean(true)
+        override fun close() {
+            // Always release the real descriptor, even when the test throws.
+            super.close()
             if (throwOnce.compareAndSet(true, false)) {
                 throw IllegalStateException("synthetic UDP close failure")
             }
@@ -38,16 +44,16 @@ class UdpStopSocketCleanupFailureTest {
     }
 
     @Test fun throwingUdpCloseCannotPreventOtherClientCleanup() {
-        val upstreamSocket = LinkedBlockingQueue<FailingCloseUdpSocket>()
+        val upstreamSocket = LinkedBlockingQueue<GatedUdpSocket>()
         val upstream = object : Socks5Server.Upstream {
             override fun connect(host: String, port: Int): Socket = error("TCP upstream not used")
             override fun resolve(host: String): Array<InetAddress> = arrayOf(InetAddress.getLoopbackAddress())
             override fun datagram(): DatagramSocket = error("not used")
             override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
                 assertEquals("127.0.0.1", host)
-                assertEquals(9, port)
+                assertTrue("only two fixture destinations", port == 9 || port == 10)
                 val destination = InetSocketAddress(InetAddress.getLoopbackAddress(), port)
-                val socket = FailingCloseUdpSocket()
+                val socket = if (port == 9) FailingCloseUdpSocket() else GatedUdpSocket()
                 socket.connect(destination)
                 upstreamSocket.add(socket)
                 return Socks5Server.UdpConnection(socket, destination)
@@ -67,17 +73,26 @@ class UdpStopSocketCleanupFailureTest {
                     val relay = Socks5.request(input, control.getOutputStream(), 3,
                         Socks5.Address("0.0.0.0", 0))
                     DatagramSocket().use { sender ->
-                        val frame = Socks5.encodeDatagram(
-                            Socks5.Address("127.0.0.1", 9), byteArrayOf(1))
-                        sender.send(DatagramPacket(frame, frame.size,
-                            InetSocketAddress(relay.host, relay.port)))
-                        val remote = upstreamSocket.poll(3, TimeUnit.SECONDS)
-                        assertNotNull("authenticated UDP upstream did not start", remote)
-                        assertTrue("receive worker did not enter its loop",
-                            remote!!.inReceive.await(3, TimeUnit.SECONDS))
-                        server.stop() // Old code propagates synthetic close exception here.
+                        val endpoint = InetSocketAddress(relay.host, relay.port)
+                        for (destinationPort in listOf(9, 10)) {
+                            val frame = Socks5.encodeDatagram(
+                                Socks5.Address("127.0.0.1", destinationPort),
+                                byteArrayOf(destinationPort.toByte()))
+                            sender.send(DatagramPacket(frame, frame.size, endpoint))
+                        }
+                        val first = upstreamSocket.poll(3, TimeUnit.SECONDS)
+                        val second = upstreamSocket.poll(3, TimeUnit.SECONDS)
+                        assertNotNull("first authenticated UDP upstream did not start", first)
+                        assertNotNull("second authenticated UDP upstream did not start", second)
+                        assertTrue("first worker never entered receive",
+                            first!!.inReceive.await(3, TimeUnit.SECONDS))
+                        assertTrue("second worker never entered receive",
+                            second!!.inReceive.await(3, TimeUnit.SECONDS))
+                        server.stop() // Old code throws from one socket and can skip the other.
                         assertEquals(0, server.boundPort)
-                        assertTrue("failed close must still release real socket", remote.isClosed)
+                        assertTrue("throwing close still releases its real socket", first.isClosed)
+                        assertTrue("another upstream must close regardless of iteration order",
+                            second.isClosed)
                         assertEquals("other active client must be closed during Stop",
                             -1, otherClient.getInputStream().read())
                         assertEquals("UDP control socket must also close", -1,
