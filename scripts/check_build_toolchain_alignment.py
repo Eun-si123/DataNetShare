@@ -69,10 +69,18 @@ def verify(root: Path) -> list[str]:
     # YAML anchors/aliases can hide the value of a `uses` step from a
     # line-oriented pin check. Fail closed instead of silently overlooking one.
     action_refs = re.findall(
-        r"^[ \t]*(?:-[ \t]*)?uses[ \t]*:[ \t]*(\S+)",
+        r"^[ \t]*(?:-[ \t]*)?uses[ \t]*:[ \t]*(\S*)",
         codeql_source,
         flags=re.MULTILINE,
     )
+    # The current CodeQL workflow uses only SHA-pinned remote actions.
+    # Fail closed on comments, empty/multiline forms, tags and novel action
+    # syntaxes rather than trying to parse an unsupported YAML construct.
+    for raw_ref in action_refs:
+        ref = raw_ref.strip("\x27\x22")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+@[0-9a-f]{40}", ref) is None:
+            errors.append("codeql-advanced.yml: unsupported or unpinned uses value requires separate review")
+            break
     # Folded/literal block values hide the actual executable action on a
     # subsequent line. The exact-SHA policy supports inline `uses` values
     # only; unsupported scalar forms require a separately reviewed parser.

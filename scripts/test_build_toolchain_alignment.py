@@ -157,6 +157,22 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
                    "    - uses: |-\n      github/codeql-action/analyze@v4\n")
         self.assertTrue(any("unsupported uses value form" in e for e in verify(self.root)))
 
+    def test_comment_followed_by_multiline_uses_is_not_ignored(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: # inline comment\n      github/codeql-action/init@v4\n")
+        self.assertTrue(any("unsupported or unpinned uses value" in e
+                            for e in verify(self.root)))
+
+    def test_blank_uses_value_cannot_hide_multiline_reference(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses:\n      github/codeql-action/analyze@v4\n")
+        self.assertTrue(any("unsupported or unpinned uses value" in e
+                            for e in verify(self.root)))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",
