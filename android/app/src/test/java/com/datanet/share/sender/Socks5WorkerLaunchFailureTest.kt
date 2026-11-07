@@ -11,6 +11,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -190,4 +191,43 @@ class Socks5WorkerLaunchFailureTest {
             assertEquals(1, reports.get())
         } finally { server.stop() }
     }
+    @Test fun udpWorkerStartedBeforeStopReturnsPermitExactlyOnce() {
+        val started = CountDownLatch(1)
+        val releaseLauncher = CountDownLatch(1)
+        val opened = AtomicReference<DatagramSocket>()
+        val server = Socks5Server(loopback, 0, password, upstream(opened), maxClients = 1,
+            workerLauncher = { worker ->
+                worker.start()
+                if (worker.name == "socks-udp-upstream") {
+                    started.countDown()
+                    check(releaseLauncher.await(3, TimeUnit.SECONDS)) { "Stop did not release launcher" }
+                }
+            })
+        server.start()
+        try {
+            Socket(loopback, server.boundPort).use { client ->
+                client.soTimeout = 1500
+                Socks5.authenticateClient(DataInputStream(client.getInputStream()),
+                    client.getOutputStream(), password)
+                val relay = Socks5.request(DataInputStream(client.getInputStream()),
+                    client.getOutputStream(), 3, Socks5.Address("0.0.0.0", 0))
+                DatagramSocket().use { udp ->
+                    val packet = Socks5.encodeDatagram(Socks5.Address(loopback, 53), byteArrayOf(1))
+                    udp.send(DatagramPacket(packet, packet.size, InetSocketAddress(relay.host, relay.port)))
+                }
+                assertTrue("UDP worker should start before Stop", started.await(3, TimeUnit.SECONDS))
+                server.stop()
+                releaseLauncher.countDown()
+                await("UDP socket closed", { opened.get()?.isClosed == true })
+                await("UDP permit returned", { available(server, "datagramPermits") == 128 })
+                await("TCP control permit returned", { available(server, "permits") == 1 })
+                Thread.sleep(100)
+                assertEquals("UDP permit must not be returned twice", 128, available(server, "datagramPermits"))
+            }
+        } finally {
+            releaseLauncher.countDown()
+            server.stop()
+        }
+    }
+
 }
