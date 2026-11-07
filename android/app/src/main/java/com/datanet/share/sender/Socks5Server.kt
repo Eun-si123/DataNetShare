@@ -468,7 +468,14 @@ class Socks5Server(
         }
 
         @Synchronized fun close() {
-            closed = true; relay.close(); remoteSockets.values.forEach { it.close() }; remoteSockets.clear()
+            closed = true
+            relay.close()
+            // A broken upstream's secondary close failure must not abort Stop:
+            // retire every socket, then allow the proxy to close TCP clients.
+            remoteSockets.values.forEach { socket ->
+                try { socket.close() } catch (_: Exception) { /* best effort; already stopping */ }
+            }
+            remoteSockets.clear()
         }
     }
 }
