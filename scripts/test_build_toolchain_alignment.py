@@ -94,6 +94,20 @@ class BuildToolchainAlignmentTests(unittest.TestCase):
         self.assertTrue(any("expected exactly one SHA-pinned CodeQL" in e
                             for e in verify(self.root)))
 
+    def test_anchored_unpinned_codeql_step_fails(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: &codeql_init github/codeql-action/init@v4\n")
+        self.assertTrue(any("anchored/aliased uses" in e for e in verify(self.root)))
+
+    def test_aliased_uses_step_fails_closed(self):
+        workflow = self.root / ".github/workflows/codeql-advanced.yml"
+        self.write(".github/workflows/codeql-advanced.yml",
+                   workflow.read_text(encoding="utf-8") +
+                   "    - uses: *codeql_init\n")
+        self.assertTrue(any("anchored/aliased uses" in e for e in verify(self.root)))
+
     def test_duplicate_codeql_init_pin_fails(self):
         workflow = self.root / ".github/workflows/codeql-advanced.yml"
         self.write(".github/workflows/codeql-advanced.yml",

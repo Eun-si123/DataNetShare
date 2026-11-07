@@ -61,6 +61,15 @@ def verify(root: Path) -> list[str]:
         codeql_source,
         flags=re.MULTILINE,
     )
+    # YAML anchors/aliases can hide the value of a `uses` step from a
+    # line-oriented pin check. Fail closed instead of silently overlooking one.
+    action_refs = re.findall(
+        r"^[ \t]*(?:-[ \t]*)?uses[ \t]*:[ \t]*(\S+)",
+        codeql_source,
+        flags=re.MULTILINE,
+    )
+    if any(ref.startswith(("&", "*")) for ref in action_refs):
+        errors.append("codeql-advanced.yml: anchored/aliased uses references require separate review")
     codeql_pins = {name: [ref for action, ref in codeql_actions if action == name]
                    for name in ("init", "analyze")}
     if any(len(pins) != 1 or re.fullmatch(r"[0-9a-f]{40}", pins[0]) is None
