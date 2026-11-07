@@ -23,7 +23,9 @@ class UdpStopSocketCleanupFailureTest {
         private val closed = CountDownLatch(1)
         override fun receive(packet: DatagramPacket) {
             inReceive.countDown()
-            if (!closed.await(8, TimeUnit.SECONDS)) throw SocketException("synthetic receive stalled")
+            // Only a real close may release this receive worker: a timeout
+            // would let the test pass without exercising Stop cleanup.
+            closed.await()
             throw SocketException("socket closed by Stop")
         }
         override fun close() {
@@ -43,7 +45,8 @@ class UdpStopSocketCleanupFailureTest {
         }
     }
 
-    @Test fun throwingUdpCloseCannotPreventOtherClientCleanup() {
+    @Test(timeout = 20_000)
+    fun throwingUdpCloseCannotPreventOtherClientCleanup() {
         val upstreamSocket = LinkedBlockingQueue<GatedUdpSocket>()
         val upstream = object : Socks5Server.Upstream {
             override fun connect(host: String, port: Int): Socket = error("TCP upstream not used")
@@ -101,9 +104,16 @@ class UdpStopSocketCleanupFailureTest {
                 }
             }
         } finally {
-            // A failed assertion/Stop must never leak a real descriptor or thread.
-            server.stop()
-            upstreamSocket.forEach { if (!it.isClosed) it.close() }
+            // Even a second Stop failure must not strand test-owned sockets
+            // whose receive workers intentionally have no independent timeout.
+            try { server.stop() }
+            finally {
+                upstreamSocket.forEach { socket ->
+                    if (!socket.isClosed) {
+                        try { socket.close() } catch (_: Exception) { /* synthetic close failure */ }
+                    }
+                }
+            }
         }
     }
 }
