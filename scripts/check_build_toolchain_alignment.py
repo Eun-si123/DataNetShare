@@ -53,14 +53,18 @@ def verify(root: Path) -> list[str]:
     # CodeQL init and analyze are one versioned pipeline. Dependabot updating
     # just one action has failed all three language uploads in this repository.
     codeql_source = (root / ".github/workflows/codeql-advanced.yml").read_text(encoding="utf-8")
+    # Gather *every* reference first, including unpinned @v4 and extra
+    # duplicates. Filtering to SHA-shaped values here would silently ignore
+    # an unsafe extra action alongside the two expected pinned steps.
     codeql_actions = re.findall(
-        r"^\s*uses:\s*github/codeql-action/(init|analyze)@([0-9a-f]{40})(?:\s|$)",
+        r"^\s*uses:\s*github/codeql-action/(init|analyze)@([^\s#]+)",
         codeql_source,
         flags=re.MULTILINE,
     )
-    codeql_pins = {name: [sha for action, sha in codeql_actions if action == name]
+    codeql_pins = {name: [ref for action, ref in codeql_actions if action == name]
                    for name in ("init", "analyze")}
-    if any(len(pins) != 1 for pins in codeql_pins.values()):
+    if any(len(pins) != 1 or re.fullmatch(r"[0-9a-f]{40}", pins[0]) is None
+           for pins in codeql_pins.values()):
         errors.append("codeql-advanced.yml: expected exactly one SHA-pinned CodeQL init and analyze action")
     elif codeql_pins["init"][0] != codeql_pins["analyze"][0]:
         errors.append(
