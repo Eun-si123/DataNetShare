@@ -61,6 +61,11 @@ def verify(root: Path) -> list[str]:
         codeql_source,
         flags=re.MULTILINE,
     )
+    # Flow-style list mappings can carry an executable `uses` field without
+    # a standalone line. This pinned-step policy intentionally requires block
+    # style so unsupported YAML forms fail closed rather than evade the scan.
+    if re.search(r"^\s*-\s*\{", codeql_source, flags=re.MULTILINE):
+        errors.append("codeql-advanced.yml: flow-style YAML mapping requires separate review")
     # YAML anchors/aliases can hide the value of a `uses` step from a
     # line-oriented pin check. Fail closed instead of silently overlooking one.
     action_refs = re.findall(
