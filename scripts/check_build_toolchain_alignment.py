@@ -57,7 +57,7 @@ def verify(root: Path) -> list[str]:
     # duplicates. Filtering to SHA-shaped values here would silently ignore
     # an unsafe extra action alongside the two expected pinned steps.
     codeql_actions = re.findall(
-        r"^\s*uses:\s*github/codeql-action/(init|analyze)@([^\s#]+)",
+        r"^\s*(?:-\s*)?uses:\s*[\x27\x22]?github/codeql-action/(init|analyze)@([^\s#\x27\x22]+)",
         codeql_source,
         flags=re.MULTILINE,
     )
