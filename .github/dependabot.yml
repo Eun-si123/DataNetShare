@@ -15,6 +15,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Exact known-incompatible Core release; revisit with AGP 9.1+ in #232.
+      # Do not hide newer releases or other dependencies from Dependabot.
+      - dependency-name: "androidx.core:core-ktx"
+        versions: ["[1.19.1]"]
     groups:
       android-compatible:
         update-types:
