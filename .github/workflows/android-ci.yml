@@ -8,6 +8,11 @@ on:
       - 'android/**'
       - 'proxy-tests/**'
       - '.github/workflows/android-ci.yml'
+      # CI/toolchain guards must run on the PR that changes them, not only
+      # after merge to main. In particular CodeQL init/analyze must be paired.
+      - '.github/workflows/codeql-advanced.yml'
+      - 'scripts/check_build_toolchain_alignment.py'
+      - 'scripts/test_build_toolchain_alignment.py'
 
 permissions:
   contents: read

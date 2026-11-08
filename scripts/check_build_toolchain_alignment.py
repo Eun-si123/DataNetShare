@@ -50,6 +50,62 @@ def verify(root: Path) -> list[str]:
                     "the version update and run actual build tests."
                 )
 
+    # CodeQL init and analyze are one versioned pipeline. Dependabot updating
+    # just one action has failed all three language uploads in this repository.
+    codeql_source = (root / ".github/workflows/codeql-advanced.yml").read_text(encoding="utf-8")
+    # Gather *every* reference first, including unpinned @v4 and extra
+    # duplicates. Filtering to SHA-shaped values here would silently ignore
+    # an unsafe extra action alongside the two expected pinned steps.
+    codeql_actions = re.findall(
+        r"^\s*(?:-\s*)?uses[ \t]*:\s*[\x27\x22]?(?i:github/codeql-action)/(init|analyze)@([^\s\x27\x22]+)",
+        codeql_source,
+        flags=re.MULTILINE,
+    )
+    # Flow-style list mappings can carry an executable `uses` field without
+    # a standalone line. This pinned-step policy intentionally requires block
+    # style so unsupported YAML forms fail closed rather than evade the scan.
+    if re.search(r"^\s*-\s*\{", codeql_source, flags=re.MULTILINE):
+        errors.append("codeql-advanced.yml: flow-style YAML mapping requires separate review")
+    # YAML anchors/aliases can hide the value of a `uses` step from a
+    # line-oriented pin check. Fail closed instead of silently overlooking one.
+    action_refs = re.findall(
+        r"^[ \t]*(?:-[ \t]*)?uses[ \t]*:[ \t]*(\S*)",
+        codeql_source,
+        flags=re.MULTILINE,
+    )
+    # This intentionally narrow workflow puts `uses` only in explicit block
+    # step keys; count all literal key spellings to reject quoted keys or
+    # other unsupported YAML presentations before relying on regex extraction.
+    if len(re.findall(r"\buses\b", codeql_source)) != len(action_refs):
+        errors.append("codeql-advanced.yml: unrecognized uses key form requires separate review")
+    # The current CodeQL workflow uses only SHA-pinned remote actions.
+    # Fail closed on comments, empty/multiline forms, tags and novel action
+    # syntaxes rather than trying to parse an unsupported YAML construct.
+    for raw_ref in action_refs:
+        ref = raw_ref[1:-1] if (len(raw_ref) >= 2 and
+                                raw_ref[0] in ("\x27", "\x22") and
+                                raw_ref[-1] == raw_ref[0]) else raw_ref
+        if re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+@[0-9a-f]{40}", ref) is None:
+            errors.append("codeql-advanced.yml: unsupported or unpinned uses value requires separate review")
+            break
+    # Folded/literal block values hide the actual executable action on a
+    # subsequent line. The exact-SHA policy supports inline `uses` values
+    # only; unsupported scalar forms require a separately reviewed parser.
+    if any(ref.startswith((">", "|")) for ref in action_refs):
+        errors.append("codeql-advanced.yml: unsupported uses value form requires separate review")
+    if any(ref.startswith(("&", "*")) for ref in action_refs):
+        errors.append("codeql-advanced.yml: anchored/aliased uses references require separate review")
+    codeql_pins = {name: [ref for action, ref in codeql_actions if action == name]
+                   for name in ("init", "analyze")}
+    if any(len(pins) != 1 or re.fullmatch(r"[0-9a-f]{40}", pins[0]) is None
+           for pins in codeql_pins.values()):
+        errors.append("codeql-advanced.yml: expected exactly one SHA-pinned CodeQL init and analyze action")
+    elif codeql_pins["init"][0] != codeql_pins["analyze"][0]:
+        errors.append(
+            "codeql-advanced.yml: CodeQL init/analyze commit pins must match; "
+            "update them together and verify all three language uploads."
+        )
+
     android_build = (root / "android/build.gradle.kts").read_text(encoding="utf-8")
     proxy_build = (root / "proxy-tests/build.gradle.kts").read_text(encoding="utf-8")
     android_kotlin = re.search(
