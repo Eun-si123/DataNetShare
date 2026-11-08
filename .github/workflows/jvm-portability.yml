@@ -39,7 +39,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@1cff18a4cfab5cd8d4c49a8ccf11c1ad18bb30b9 # pinned
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.14.6'
           # Main Android CI owns the shared Gradle cache; don't grow storage
           # for periodic OS portability testing.
           cache-read-only: true
