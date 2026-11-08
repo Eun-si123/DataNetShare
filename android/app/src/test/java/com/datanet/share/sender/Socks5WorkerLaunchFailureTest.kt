@@ -22,18 +22,20 @@ class Socks5WorkerLaunchFailureTest {
     private val loopback = "127.0.0.1"
     private val password = "test-session-password"
 
-    private fun upstream(opened: AtomicReference<DatagramSocket>? = null) =
-        object : Socks5Server.Upstream {
-            override fun connect(host: String, port: Int): Socket = error("unused")
-            override fun resolve(host: String): Array<InetAddress> = arrayOf(InetAddress.getByName(loopback))
-            override fun datagram(): DatagramSocket = DatagramSocket()
-            override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
-                val destination = InetSocketAddress(InetAddress.getByName(loopback), port)
-                val socket = DatagramSocket().apply { connect(destination) }
-                opened?.set(socket)
-                return Socks5Server.UdpConnection(socket, destination)
-            }
+    private fun upstream(
+        opened: AtomicReference<DatagramSocket>? = null,
+        socketFactory: () -> DatagramSocket = { DatagramSocket() }
+    ) = object : Socks5Server.Upstream {
+        override fun connect(host: String, port: Int): Socket = error("unused")
+        override fun resolve(host: String): Array<InetAddress> = arrayOf(InetAddress.getByName(loopback))
+        override fun datagram(): DatagramSocket = DatagramSocket()
+        override fun openUdp(host: String, port: Int): Socks5Server.UdpConnection {
+            val destination = InetSocketAddress(InetAddress.getByName(loopback), port)
+            val socket = socketFactory().apply { connect(destination) }
+            opened?.set(socket)
+            return Socks5Server.UdpConnection(socket, destination)
         }
+    }
 
     private fun await(description: String, condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
@@ -195,16 +197,27 @@ class Socks5WorkerLaunchFailureTest {
         val started = CountDownLatch(1)
         val releaseLauncher = CountDownLatch(1)
         val launcherReturned = CountDownLatch(1)
+        val receiveEntered = CountDownLatch(1)
+        val releaseWorker = CountDownLatch(1)
         val upstreamWorker = AtomicReference<Thread>()
         val opened = AtomicReference<DatagramSocket>()
-        val server = Socks5Server(loopback, 0, password, upstream(opened), maxClients = 1,
+        val route = upstream(opened) {
+            object : DatagramSocket() {
+                override fun receive(packet: DatagramPacket) {
+                    receiveEntered.countDown()
+                    check(releaseWorker.await(8, TimeUnit.SECONDS)) { "Test failed to release UDP worker" }
+                    super.receive(packet)
+                }
+            }
+        }
+        val server = Socks5Server(loopback, 0, password, route, maxClients = 1,
             workerLauncher = { worker ->
                 worker.start()
                 if (worker.name == "socks-udp-upstream") {
                     upstreamWorker.set(worker)
                     started.countDown()
                     try {
-                        check(releaseLauncher.await(3, TimeUnit.SECONDS)) { "Stop did not release launcher" }
+                        check(releaseLauncher.await(8, TimeUnit.SECONDS)) { "Test failed to release launcher" }
                     } finally {
                         launcherReturned.countDown()
                     }
@@ -223,20 +236,26 @@ class Socks5WorkerLaunchFailureTest {
                     udp.send(DatagramPacket(packet, packet.size, InetSocketAddress(relay.host, relay.port)))
                 }
                 assertTrue("UDP worker should start before Stop", started.await(3, TimeUnit.SECONDS))
+                assertTrue("UDP worker must enter receive before Stop",
+                    receiveEntered.await(3, TimeUnit.SECONDS))
                 server.stop()
+                // Worker is still paused before receive(), so only Stop can have closed it.
+                assertTrue("Stop must close upstream socket before worker finalization",
+                    opened.get()?.isClosed == true)
                 releaseLauncher.countDown()
-                await("UDP socket closed", { opened.get()?.isClosed == true })
-                await("UDP permit returned", { available(server, "datagramPermits") == 128 })
-                await("TCP control permit returned", { available(server, "permits") == 1 })
+                releaseWorker.countDown()
                 assertTrue("UDP launcher must return", launcherReturned.await(3, TimeUnit.SECONDS))
                 val worker = upstreamWorker.get()
                 assertNotNull("UDP worker must be captured", worker)
                 worker.join(3000)
                 assertFalse("UDP worker must terminate", worker.isAlive)
-                assertEquals("UDP permit must not be returned twice", 128, available(server, "datagramPermits"))
+                await("TCP control permit returned", { available(server, "permits") == 1 })
+                assertEquals("UDP permit must not be returned twice after worker exit",
+                    128, available(server, "datagramPermits"))
             }
         } finally {
             releaseLauncher.countDown()
+            releaseWorker.countDown()
             server.stop()
         }
     }
