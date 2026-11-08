@@ -32,20 +32,26 @@ internal class ProxyFixture(
         socketPollMillis = socketPollMillis).also { it.start() }
     private val udp = DatagramSocket(InetSocketAddress("127.0.0.1", 0))
     val udpPort get() = udp.localPort
-    init {
-        Thread({
-            try {
-                while (!udp.isClosed) {
-                    val packet = DatagramPacket(ByteArray(65535), 65535)
-                    udp.receive(packet); udp.send(packet)
-                }
-            } catch (_: Exception) { }
-        }, "test-udp-echo").apply { isDaemon = true; start() }
-    }
+    private val udpEchoThread = Thread({
+        try {
+            while (!udp.isClosed) {
+                val packet = DatagramPacket(ByteArray(65535), 65535)
+                udp.receive(packet); udp.send(packet)
+            }
+        } catch (_: Exception) { }
+    }, "test-udp-echo").apply { isDaemon = true; start() }
     fun client() = Socket("127.0.0.1", proxy.boundPort).apply {
         soTimeout = 3000
         Socks5.authenticateClient(DataInputStream(getInputStream()), getOutputStream(), password)
     }
     fun associate(socket: Socket) = Socks5.request(DataInputStream(socket.getInputStream()), socket.getOutputStream(), 3, Socks5.Address("0.0.0.0", 0))
-    override fun close() { proxy.stop(); udp.close() }
+    override fun close() {
+        try { proxy.stop() } finally {
+            udp.close()
+            // Closing the socket unblocks receive(); do not leave fixture workers
+            // running into later tests, even when stop() fails.
+            udpEchoThread.join(1_000)
+            check(!udpEchoThread.isAlive) { "UDP echo fixture did not terminate" }
+        }
+    }
 }
