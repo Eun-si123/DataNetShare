@@ -69,12 +69,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1
         with:
           gradle-version: '8.14.6'
-      - name: Install Android SDK 34
+      - name: Install Android SDK 35
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
           test -n "$SDK_MANAGER"
-          "$SDK_MANAGER" --install 'platforms;android-34' 'build-tools;35.0.0'
+          "$SDK_MANAGER" --install 'platforms;android-35' 'build-tools;35.0.0'
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
       - name: Unit tests, Android lint and debug APK compile
         working-directory: android

@@ -50,7 +50,7 @@ jobs:
           # Reuse main CI's Gradle cache; analysis must not crowd out hot entries.
           cache-read-only: true
 
-      - name: Install Android SDK 34 for Kotlin compilation
+      - name: Install Android SDK 35 for Kotlin compilation
         if: matrix.language == 'java-kotlin'
         shell: bash
         run: |
@@ -58,7 +58,7 @@ jobs:
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           sdk_manager="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)"
           test -n "$sdk_manager"
-          "$sdk_manager" --install 'platforms;android-34' 'build-tools;35.0.0'
+          "$sdk_manager" --install 'platforms;android-35' 'build-tools;35.0.0'
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Initialize CodeQL (language-specific build mode)
