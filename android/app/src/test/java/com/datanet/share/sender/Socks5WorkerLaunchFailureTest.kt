@@ -194,13 +194,20 @@ class Socks5WorkerLaunchFailureTest {
     @Test fun udpWorkerStartedBeforeStopReturnsPermitExactlyOnce() {
         val started = CountDownLatch(1)
         val releaseLauncher = CountDownLatch(1)
+        val launcherReturned = CountDownLatch(1)
+        val upstreamWorker = AtomicReference<Thread>()
         val opened = AtomicReference<DatagramSocket>()
         val server = Socks5Server(loopback, 0, password, upstream(opened), maxClients = 1,
             workerLauncher = { worker ->
                 worker.start()
                 if (worker.name == "socks-udp-upstream") {
+                    upstreamWorker.set(worker)
                     started.countDown()
-                    check(releaseLauncher.await(3, TimeUnit.SECONDS)) { "Stop did not release launcher" }
+                    try {
+                        check(releaseLauncher.await(3, TimeUnit.SECONDS)) { "Stop did not release launcher" }
+                    } finally {
+                        launcherReturned.countDown()
+                    }
                 }
             })
         server.start()
@@ -221,7 +228,11 @@ class Socks5WorkerLaunchFailureTest {
                 await("UDP socket closed", { opened.get()?.isClosed == true })
                 await("UDP permit returned", { available(server, "datagramPermits") == 128 })
                 await("TCP control permit returned", { available(server, "permits") == 1 })
-                Thread.sleep(100)
+                assertTrue("UDP launcher must return", launcherReturned.await(3, TimeUnit.SECONDS))
+                val worker = upstreamWorker.get()
+                assertNotNull("UDP worker must be captured", worker)
+                worker.join(3000)
+                assertFalse("UDP worker must terminate", worker.isAlive)
                 assertEquals("UDP permit must not be returned twice", 128, available(server, "datagramPermits"))
             }
         } finally {
