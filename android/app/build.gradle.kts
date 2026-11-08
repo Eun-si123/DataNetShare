@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.datanet.share"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.datanet.share"
