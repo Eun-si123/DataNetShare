@@ -33,7 +33,7 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # pinned
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # pinned
         with:
           distribution: temurin
           java-version: '17'
