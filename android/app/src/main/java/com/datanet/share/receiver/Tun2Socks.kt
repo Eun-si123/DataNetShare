@@ -78,8 +78,9 @@ class Tun2Socks(
 
     fun start() {
         check(!running); running = true
-        Thread({ readLoop() }, "tun-read").apply { isDaemon = true; start() }
-        Thread({
+        BridgeWorkerStartup.launch(
+            first = { Thread({ readLoop() }, "tun-read").apply { isDaemon = true; start() } },
+            second = { Thread({
             while (running) {
                 try { Thread.sleep(250) } catch (_: InterruptedException) { break }
                 if (!MaintenanceCallbackGuard.runCriticalTick(
@@ -111,7 +112,9 @@ class Tun2Socks(
                     }
                 }
             }
-        }, "tun-maintenance").apply { isDaemon = true; start() }
+        }, "tun-maintenance").apply { isDaemon = true; start() } },
+            rollback = { stop() }
+        )
     }
     fun stop() {
         running = false
