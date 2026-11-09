@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BridgeWorkerStartupTest {
+    @Test fun firstWorkerFailureRollsBackWithoutStartingSecondWorker() {
+        val failure = IllegalStateException("first worker unavailable")
+        var secondStarted = false
+        var rolledBack = 0
+        try {
+            BridgeWorkerStartup.launch(
+                first = { throw failure },
+                second = { secondStarted = true },
+                rollback = { rolledBack++ }
+            )
+            fail("must propagate first worker launch failure")
+        } catch (caught: IllegalStateException) { assertSame(failure, caught) }
+        assertFalse(secondStarted)
+        assertEquals(1, rolledBack)
+    }
+
     @Test fun secondWorkerFailureRollsBackAndPreservesOriginalError() {
         val failure = OutOfMemoryError("native worker unavailable")
         var started = false
