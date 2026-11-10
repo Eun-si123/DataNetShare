@@ -1,6 +1,6 @@
 # Secret scanning
 
-This public repository scans committed secrets with Gitleaks v8.30.1 on pull requests, pushes to `main`, manual dispatches, and a weekly scheduled run. The CI action is pinned to a commit SHA and does not post potential secret values in PR comments, summary output, or downloadable reports.
+This public repository scans committed secrets with Gitleaks v8.30.1 on pull requests, pushes to `main`, manual dispatches, and a weekly scheduled run. To preserve the repository's restrictive Actions allowlist, CI downloads the official Gitleaks CLI and verifies its pinned SHA-256 against the v8.30.1 release checksum before execution. No PR comments, scan artifacts, or secret-bearing job summaries are created.
 
 ## Local check (optional, but recommended)
 
