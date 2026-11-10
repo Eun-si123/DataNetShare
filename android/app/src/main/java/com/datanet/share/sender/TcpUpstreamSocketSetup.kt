@@ -21,3 +21,19 @@ internal fun connectSocketOrClose(socket: Socket, destination: InetSocketAddress
         throw failure
     }
 }
+
+/** Retry IO failures from both socket allocation and connection, per resolved address. */
+internal fun connectAcrossAddresses(
+    addresses: Array<java.net.InetAddress>, port: Int,
+    socketFactory: () -> Socket
+): Socket {
+    var last: java.io.IOException? = null
+    for (address in addresses) {
+        try {
+            return connectSocketOrClose(socketFactory(), InetSocketAddress(address, port), 15_000)
+        } catch (failure: java.io.IOException) {
+            last = failure
+        }
+    }
+    throw last ?: java.io.IOException("No address for destination")
+}
