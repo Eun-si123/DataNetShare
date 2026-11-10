@@ -1,0 +1,9 @@
+# Reviewed existing synthetic test-fixture detections (Gitleaks v8.30.1).
+# Full commit/path/rule/line fingerprints only; never ignore a whole directory or rule.
+# If a match reappears in new commits, investigate it rather than expanding this list.
+# Historical test fixture: android/app/src/test/java/com/datanet/share/common/PairingQrImageTest.kt (line 17)
+b67fbdc7e1355dc504dad84927677b31f8f36502:android/app/src/test/java/com/datanet/share/common/PairingQrImageTest.kt:generic-api-key:17
+# Historical test fixture: android/app/src/test/java/com/datanet/share/sender/WifiDirectProfileTest.kt (line 37)
+c152204987b1521151915f05254cb3d73daf39f4:android/app/src/test/java/com/datanet/share/sender/WifiDirectProfileTest.kt:generic-api-key:37
+# Historical test fixture: android/app/src/test/java/com/datanet/share/common/PairingPayloadTest.kt (line 7)
+b67fbdc7e1355dc504dad84927677b31f8f36502:android/app/src/test/java/com/datanet/share/common/PairingPayloadTest.kt:generic-api-key:7
