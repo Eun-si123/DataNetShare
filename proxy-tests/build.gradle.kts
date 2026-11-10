@@ -27,6 +27,7 @@ sourceSets {
             "com/datanet/share/receiver/TunFailureMessages.kt",
             "com/datanet/share/receiver/ReceiverStartupFailureMessages.kt",
             "com/datanet/share/receiver/ReceiverWorkerLaunchGuard.kt",
+            "com/datanet/share/receiver/BridgeWorkerStartup.kt",
             "com/datanet/share/receiver/UdpFlowPolicy.kt",
             "com/datanet/share/receiver/TcpCapacityPolicy.kt",
             "com/datanet/share/receiver/FlowAdmission.kt",
