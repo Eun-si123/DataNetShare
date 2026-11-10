@@ -4,9 +4,9 @@ This directory is the maintained Kotlin Android project. The root upstream ZIP i
 
 ## Requirements
 
-- JDK 17 and a verified Gradle 8.13 installation.
-- Android SDK platform 34 and build tools 35.0.0.
-- Android Gradle Plugin 8.13.2 and Kotlin 2.3.0 (declared in this project).
+- JDK 17 and a verified Gradle 8.14.6 installation.
+- Android SDK platform 35 and build tools 35.0.0.
+- Android Gradle Plugin 8.13.2 and Kotlin 2.4.21 (declared in this project). The app compiles against SDK 35 while retaining targetSdk 34.
 
 The upstream archive did not contain a valid Gradle wrapper JAR. This fork does not execute `gradle-wrapper.jar.broken`; use installed Gradle or the GitHub Actions workflow. `gradle/wrapper/gradle-wrapper.properties` alone is not an executable wrapper.
 
