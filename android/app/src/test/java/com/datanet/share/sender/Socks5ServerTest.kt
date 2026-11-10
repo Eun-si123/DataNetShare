@@ -310,12 +310,14 @@ class Socks5ServerTest {
             Unit // JUnit4 requires the generated @Test method to return void.
         }
 
-    @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture(maxClients = 64).use { fixture ->
-        val sockets = (1..64).map { Socket("127.0.0.1", fixture.proxy.boundPort).apply { soTimeout = 3000 } }
+    @Test fun concurrentClientLimitRejectsExcessWithoutBlockingStop() = ProxyFixture(maxClients = 8).use { fixture ->
+        // Exercise the admission boundary without requiring 64 OS threads on a constrained CI host.
+        // Worker-launch resource exhaustion is covered by Socks5WorkerLaunchFailureTest.
+        val sockets = (1..8).map { Socket("127.0.0.1", fixture.proxy.boundPort).apply { soTimeout = 3000 } }
         try {
             val deadline = System.nanoTime() + 3_000_000_000L
-            while (fixture.proxy.clientCount < 64 && System.nanoTime() < deadline) Thread.yield()
-            assertEquals(64, fixture.proxy.clientCount)
+            while (fixture.proxy.clientCount < 8 && System.nanoTime() < deadline) Thread.yield()
+            assertEquals(8, fixture.proxy.clientCount)
             Socket("127.0.0.1", fixture.proxy.boundPort).use { extra ->
                 extra.soTimeout = 3000; assertEquals(-1, extra.getInputStream().read())
             }
