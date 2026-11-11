@@ -7,7 +7,9 @@ internal object BridgeWorkerStartup {
             first()
             second()
         } catch (failure: Throwable) {
-            try { rollback() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+            try { rollback() } catch (cleanup: Throwable) {
+                if (cleanup !== failure) failure.addSuppressed(cleanup)
+            }
             throw failure
         }
     }
