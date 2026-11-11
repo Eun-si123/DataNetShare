@@ -364,7 +364,11 @@ class ReceiverVpnService : VpnService() {
         // Android may invoke this Binder callback off the main thread. Serialize
         // revocation cleanup with Stop and queued stats delivery on the main
         // looper, including the case where a newer sender mode has taken over.
+        // A queued revoke belongs to the generation active at callback time.
+        // Stop/reconnect may replace it before the main looper handles this post.
+        val revokedGeneration = generation
         main.post {
+            if (!ReceiverRevocationGeneration.accepts(revokedGeneration, generation)) return@post
             if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
                 cleanup()
                 // Overriding VpnService.onRevoke() skips its default stopSelf().
