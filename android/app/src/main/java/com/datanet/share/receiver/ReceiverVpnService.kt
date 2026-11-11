@@ -361,16 +361,18 @@ class ReceiverVpnService : VpnService() {
         super.onDestroy()
     }
     override fun onRevoke() {
-        // Revocation can arrive after an explicit Stop. Tear down this service,
-        // but do not overwrite a newer sender session with a receiver failure.
-        if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
-            cleanup()
-            // Overriding VpnService.onRevoke() skips its default stopSelf().
-            // This stale service must still terminate without changing the new mode.
-            stopSelf()
-            return
+        // Android may invoke this Binder callback off the main thread. Serialize
+        // revocation cleanup with Stop and queued stats delivery on the main
+        // looper, including the case where a newer sender mode has taken over.
+        main.post {
+            if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
+                cleanup()
+                // Overriding VpnService.onRevoke() skips its default stopSelf().
+                stopSelf()
+            } else {
+                SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
+                fail("Android revoked this VPN connection")
+            }
         }
-        SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
-        fail("Android revoked this VPN connection")
     }
 }
