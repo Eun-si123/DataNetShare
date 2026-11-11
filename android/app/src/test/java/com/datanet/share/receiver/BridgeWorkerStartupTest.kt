@@ -47,6 +47,17 @@ class BridgeWorkerStartupTest {
         }
     }
 
+    @Test fun rollbackRethrowingSameFailureDoesNotMaskOriginal() {
+        val failure = IllegalStateException("shared failure")
+        try {
+            BridgeWorkerStartup.launch({}, { throw failure }, { throw failure })
+            fail("must propagate original launch failure")
+        } catch (caught: IllegalStateException) {
+            assertSame(failure, caught)
+            assertEquals(0, caught.suppressed.size)
+        }
+    }
+
     @Test fun successDoesNotRollBack() {
         var count = 0
         BridgeWorkerStartup.launch({ count++ }, { count++ }, { fail("unexpected rollback") })
