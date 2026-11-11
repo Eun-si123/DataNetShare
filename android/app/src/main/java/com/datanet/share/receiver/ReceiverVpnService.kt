@@ -149,7 +149,7 @@ class ReceiverVpnService : VpnService() {
                         val connectivity = networkConnectivityDiagnostics()
                         val perf = "TCP retransmits ${metrics.tcpRetransmits}" +
                             " · TUN waits ${metrics.tunWriteWaits} (${metrics.tunWriteWaitMs} ms total)"
-                        SessionStore.telemetry.postValue(
+                        val telemetryText = (
                             "Receiver TCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             "\nUDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             "\nTUN drops ${metrics.tunDropped} · $perf" +
@@ -158,7 +158,7 @@ class ReceiverVpnService : VpnService() {
                             "\nUDP replies dropped above VPN MTU: ${metrics.oversizedUdpReplies}" +
                             "\nTransfer RX ${metrics.rxBytes} B / TX ${metrics.txBytes} B" +
                             "\n" + connectivity)
-                        SessionStore.stats.postValue("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
+                        val statsText = ("${metrics.activeTcp} TCP flow(s) · ↓ ${metrics.rxBytes / 1024} KB · ↑ ${metrics.txBytes / 1024} KB" +
                             "\nTCP attempts ${metrics.tcpAttempts} / connected ${metrics.tcpConnected}" +
                             " · UDP attempts ${metrics.udpAttempts} / associated ${metrics.udpConnected} (active ${metrics.activeUdp})" +
                             " · TUN drops ${metrics.tunDropped}" +
@@ -168,6 +168,14 @@ class ReceiverVpnService : VpnService() {
                             "\n$perf" + "\n" + connectivity +
                             (if (tcpError.isNullOrEmpty()) "" else "\nLast TCP error: $tcpError") +
                             (if (udpError.isNullOrEmpty()) "" else "\nLast UDP error: $udpError"))
+                        // Stop and publication both execute on the main looper.
+                        // Recheck the token at delivery, not only at collection.
+                        main.post {
+                            if (generation == token) {
+                                SessionStore.telemetry.value = telemetryText
+                                SessionStore.stats.value = statsText
+                            }
+                        }
                     }
                 },
                 onTcpError = { error ->
@@ -353,16 +361,22 @@ class ReceiverVpnService : VpnService() {
         super.onDestroy()
     }
     override fun onRevoke() {
-        // Revocation can arrive after an explicit Stop. Tear down this service,
-        // but do not overwrite a newer sender session with a receiver failure.
-        if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
-            cleanup()
-            // Overriding VpnService.onRevoke() skips its default stopSelf().
-            // This stale service must still terminate without changing the new mode.
-            stopSelf()
-            return
+        // Android may invoke this Binder callback off the main thread. Serialize
+        // revocation cleanup with Stop and queued stats delivery on the main
+        // looper, including the case where a newer sender mode has taken over.
+        // A queued revoke belongs to the generation active at callback time.
+        // Stop/reconnect may replace it before the main looper handles this post.
+        val revokedGeneration = generation
+        main.post {
+            if (!ReceiverRevocationGeneration.accepts(revokedGeneration, generation)) return@post
+            if (SessionStore.current.mode != SessionStore.Mode.RECEIVER) {
+                cleanup()
+                // Overriding VpnService.onRevoke() skips its default stopSelf().
+                stopSelf()
+            } else {
+                SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
+                fail("Android revoked this VPN connection")
+            }
         }
-        SessionStore.note(NetworkEvent.VPN_SERVICE_ENDED)
-        fail("Android revoked this VPN connection")
     }
 }
