@@ -4,7 +4,19 @@ package com.datanet.share.receiver
 internal object FlowStopCleanup {
     /** A cleanup failure must not suppress the original TUN failure notification. */
     fun reportAfterCleanup(cleanup: () -> Unit, report: () -> Unit) {
-        try { cleanup() } finally { report() }
+        var cleanupFailure: Throwable? = null
+        try {
+            cleanup()
+        } catch (error: Throwable) {
+            cleanupFailure = error
+        }
+        try {
+            report()
+        } catch (error: Throwable) {
+            if (cleanupFailure == null) throw error
+            if (cleanupFailure !== error) cleanupFailure.addSuppressed(error)
+        }
+        cleanupFailure?.let { throw it }
     }
 
     fun <T, U> closeAll(

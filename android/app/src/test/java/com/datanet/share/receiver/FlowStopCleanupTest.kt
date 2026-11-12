@@ -4,6 +4,42 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FlowStopCleanupTest {
+    @Test fun callbackFailureDoesNotMaskCleanupFailure() {
+        val cleanupFailure = IllegalStateException("cleanup")
+        val callbackFailure = IllegalArgumentException("callback")
+        try {
+            FlowStopCleanup.reportAfterCleanup(
+                cleanup = { throw cleanupFailure },
+                report = { throw callbackFailure }
+            )
+            fail("original cleanup failure should remain observable")
+        } catch (caught: IllegalStateException) {
+            assertSame(cleanupFailure, caught)
+            assertArrayEquals(arrayOf(callbackFailure), caught.suppressed)
+        }
+    }
+
+    @Test fun callbackFailureAloneRemainsObservable() {
+        val callbackFailure = IllegalArgumentException("callback")
+        try {
+            FlowStopCleanup.reportAfterCleanup(cleanup = {}, report = { throw callbackFailure })
+            fail("callback failure should remain observable")
+        } catch (caught: IllegalArgumentException) {
+            assertSame(callbackFailure, caught)
+        }
+    }
+
+    @Test fun identicalCleanupAndCallbackFailureDoesNotSelfSuppress() {
+        val failure = IllegalStateException("shared")
+        try {
+            FlowStopCleanup.reportAfterCleanup(cleanup = { throw failure }, report = { throw failure })
+            fail("original failure should remain observable")
+        } catch (caught: IllegalStateException) {
+            assertSame(failure, caught)
+            assertEquals(0, caught.suppressed.size)
+        }
+    }
+
     @Test fun readFailureNotificationSurvivesCleanupException() {
         val failure = IllegalStateException("cleanup")
         var reported = false
