@@ -4,7 +4,7 @@ import com.datanet.share.common.NetworkEvent
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class ReceiverUdpErrorPolicyTest {
+class ReceiverUdpErrorPolicyHostTest {
     @Test fun classifiesKnownUdpFailureStages() {
         val cases = mapOf(
             "Receiver UDP capacity reached (TCP 0, UDP 64, total budget 112)" to NetworkEvent.UDP_FLOW_LIMIT,
