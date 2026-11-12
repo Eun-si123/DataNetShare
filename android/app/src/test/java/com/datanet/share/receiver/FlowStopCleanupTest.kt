@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FlowStopCleanupTest {
+    @Test fun readFailureNotificationSurvivesCleanupException() {
+        val failure = IllegalStateException("cleanup")
+        var reported = false
+        try {
+            FlowStopCleanup.reportAfterCleanup(
+                cleanup = { throw failure },
+                report = { reported = true }
+            )
+            fail("cleanup failure must remain observable")
+        } catch (caught: IllegalStateException) {
+            assertSame(failure, caught)
+        }
+        assertTrue(reported)
+    }
+
     @Test fun failingCloseStillReleasesOtherFlowsAndBothMaps() {
         val first = IllegalStateException("tcp close")
         val second = IllegalStateException("udp close")

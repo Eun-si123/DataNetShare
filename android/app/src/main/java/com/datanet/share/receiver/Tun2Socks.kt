@@ -164,7 +164,12 @@ class Tun2Socks(
                     if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
                 }
             }
-        } catch (e: Exception) { if (running) { stop(); onFailure(TunFailureMessages.read(e)) } }
+        } catch (e: Exception) {
+            if (running) {
+                val message = TunFailureMessages.read(e)
+                FlowStopCleanup.reportAfterCleanup(cleanup = { stop() }, report = { onFailure(message) })
+            }
+        }
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key

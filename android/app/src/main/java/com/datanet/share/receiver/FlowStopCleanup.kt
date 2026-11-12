@@ -2,6 +2,11 @@ package com.datanet.share.receiver
 
 /** Finish both flow-map cleanup paths even if one flow's close callback fails. */
 internal object FlowStopCleanup {
+    /** A cleanup failure must not suppress the original TUN failure notification. */
+    fun reportAfterCleanup(cleanup: () -> Unit, report: () -> Unit) {
+        try { cleanup() } finally { report() }
+    }
+
     fun <T, U> closeAll(
         tcp: Iterable<T>, udp: Iterable<U>,
         closeTcp: (T) -> Unit, closeUdp: (U) -> Unit,
