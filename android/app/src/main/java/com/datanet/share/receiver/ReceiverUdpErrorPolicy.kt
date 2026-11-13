@@ -7,7 +7,9 @@ internal object ReceiverUdpErrorPolicy {
     fun classify(error: String): NetworkEvent = when {
         error.contains("capacity") -> NetworkEvent.UDP_FLOW_LIMIT
         error.contains("queue full") -> NetworkEvent.UDP_QUEUE
-        error.contains("read") || error.startsWith("UDP receive callback failed (") -> NetworkEvent.UDP_RELAY
+        error.startsWith("UDP upstream read failed (") ||
+            error.startsWith("UDP relay read failed (") ||
+            error.startsWith("UDP receive callback failed (") -> NetworkEvent.UDP_RELAY
         else -> NetworkEvent.UDP_SETUP
     }
 }
