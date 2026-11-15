@@ -266,7 +266,7 @@ class TcpFlow(
                     lock.notifyAll()
                 }
             }
-        } catch (e: Exception) { if (!closed) { onError("TCP upload failed (${e.javaClass.simpleName})"); abort() } }
+        } catch (e: Exception) { if (!closed) { try { onError("TCP upload failed (${e.javaClass.simpleName})") } finally { abort() } } }
     }
 
     /** Called by the single bridge maintenance thread, including when the upstream reader blocks. */
@@ -276,8 +276,7 @@ class TcpFlow(
         val timeoutNanos = if (established) TcpCapacityPolicy.IDLE_TIMEOUT_NANOS
             else TcpCapacityPolicy.HALF_OPEN_TIMEOUT_NANOS
         if (inactiveNanos > timeoutNanos) {
-            onError(if (established) "TCP flow idle timeout" else "TCP handshake timed out")
-            abort()
+            try { onError(if (established) "TCP flow idle timeout" else "TCP handshake timed out") } finally { abort() }
             return@synchronized
         }
         val oldest = pending.firstOrNull()
@@ -285,7 +284,10 @@ class TcpFlow(
         // Keep probing below without spending data retries; SYN/FIN still use RTOs.
         val persistingData = established && peerWindow == 0 && oldest?.payload?.isNotEmpty() == true
         if (oldest != null && !persistingData && now - oldest.sent >= minOf(4_000_000_000L, 500_000_000L shl minOf(oldest.attempts, 3))) {
-            if (++oldest.attempts > 8) { onError("TCP peer did not acknowledge retransmissions"); abort(); return@synchronized }
+            if (++oldest.attempts > 8) {
+                try { onError("TCP peer did not acknowledge retransmissions") } finally { abort() }
+                return@synchronized
+            }
             oldest.sent = now; onRetransmit(); emit(oldest)
         }
         if (peerWindow == 0 && now - lastProbe > 1_000_000_000L) {
