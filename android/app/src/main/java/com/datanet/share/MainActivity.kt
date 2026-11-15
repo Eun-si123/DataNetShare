@@ -270,7 +270,11 @@ class MainActivity : AppCompatActivity() {
         val version = packageManager.getPackageInfo(packageName, 0).versionName
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_label, version)
         SessionStore.state.observe(this) { state -> render(state) }
-        SessionStore.stats.observe(this) { text -> findViewById<TextView>(R.id.statsText).text = text }
+        SessionStore.stats.observe(this) { text ->
+            // A queued postValue from an ended session must not restore stale statistics.
+            findViewById<TextView>(R.id.statsText).text =
+                if (SessionStore.current.mode == SessionStore.Mode.NONE) "" else text
+        }
         SessionStore.peerUsage.observe(this) { peers ->
             findViewById<TextView>(R.id.peerUsageText).text = if (peers.isEmpty()) {
                 getString(R.string.peer_usage_empty)
@@ -289,6 +293,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun render(state: SessionStore.State) {
+        // State and stats are delivered by separate LiveData observers.
+        if (state.mode == SessionStore.Mode.NONE) findViewById<TextView>(R.id.statsText).text = ""
         findViewById<TextView>(R.id.statusText).setText(when (state.status) {
             "starting" -> R.string.starting; "active" -> R.string.active; "failed" -> R.string.failed; else -> R.string.idle
         })
