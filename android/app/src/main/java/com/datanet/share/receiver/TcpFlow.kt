@@ -219,8 +219,12 @@ class TcpFlow(
             }
         } catch (e: Exception) {
             if (!closed) {
-                onError(classifyUpstreamError(e))
-                abort()
+                try {
+                    onError(classifyUpstreamError(e))
+                } finally {
+                    // Diagnostics must not prevent socket/flow cleanup.
+                    abort()
+                }
             }
         }
     }
