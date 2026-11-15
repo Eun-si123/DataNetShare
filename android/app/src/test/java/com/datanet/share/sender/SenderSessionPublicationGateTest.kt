@@ -8,7 +8,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-class SenderSessionPublicationGateTest {
+class SenderSessionPublicationGateConcurrencyTest {
     @Test fun staleSessionCannotPublishAfterTeardown() {
         val gate = SenderSessionPublicationGate()
         val generation = AtomicInteger(1)
