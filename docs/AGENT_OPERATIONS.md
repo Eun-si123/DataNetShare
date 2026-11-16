@@ -11,7 +11,7 @@ This is a **small GitHub-native extension** to the existing AGENTS.md and specia
 
 ## 2. Coordinate independent agents
 
-1. Before claiming work, check fresh PRs, Issue scope, CI and current branch/worktree. TeamForge-specific queue/claim rules continue to apply where available.
+1. Before claiming work, check fresh PRs, Issue scope, CI and current branch/worktree. Use DataNetShare's own `agent-ops.py preflight` and live Issue/PR overlap checks; do not import queue or claim rules from TeamForge or another repository.
 2. Use a distinct task branch/worktree. Run `python3 scripts/agent-ops.py preflight --area AREA --branch agent/AREA/short-task [--issue N]` with a GitHub read token before editing. A conflicting open PR touching the area blocks automatic selection, even if its branch name looks unrelated.
 3. Prefer no simultaneous edits to the same area. If parallelism is necessary, explicitly separate independent files and test contracts; coordinate via Issues/PRs rather than editing the same checkout. GitHub Actions `concurrency` covers its own workflow group only; neither it nor Issue comments form an atomic lock across external agents. **Recheck** immediately before writes/PR submission.
 4. Do not discard any agent's branch, force-push over others, close unfamiliar Issues/PRs, or resolve conflicts by overwriting work. API/auth/pagination errors mean *unknown*, not available.
