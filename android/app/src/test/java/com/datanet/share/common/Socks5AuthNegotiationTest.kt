@@ -69,6 +69,20 @@ class Socks5AuthNegotiationTest {
         assertArrayEquals(byteArrayOf(5, 1, 2), sent.toByteArray())
     }
 
+    @Test fun senderRejectsWrongPasswordWithoutAcceptingRequest() {
+        val password = "synthetic-test-password"
+        val wrong = "synthetic-wrong-password".toByteArray(Charsets.UTF_8)
+        val username = Socks5.USERNAME.toByteArray(Charsets.UTF_8)
+        val offered = byteArrayOf(5, 1, 2, 1, username.size.toByte()) + username +
+            byteArrayOf(wrong.size.toByte()) + wrong
+        val sent = ByteArrayOutputStream()
+        try {
+            Socks5.authenticateServer(DataInputStream(ByteArrayInputStream(offered)), sent, password)
+            fail("Wrong password must reject authentication")
+        } catch (_: IOException) { }
+        assertArrayEquals(byteArrayOf(5, 2, 1, 1), sent.toByteArray())
+    }
+
     @Test fun senderRejectsUnauthenticatedClientMethod() {
         val sent = ByteArrayOutputStream()
         try {
