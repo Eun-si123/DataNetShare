@@ -27,6 +27,23 @@ class QrPeerProbePolicyTest {
         assertEquals(QrPeerProbePolicy.MAX_ATTEMPTS - 1, waits)
     }
 
+    @Test fun cancellationDuringFailedConnectSkipsBackoffAndFurtherAttempts() {
+        var attempts = 0
+        var waits = 0
+        var stopped = false
+        assertFalse(QrPeerProbePolicy.reachable(
+            connect = {
+                attempts++
+                stopped = true
+                throw IOException("synthetic link teardown")
+            },
+            cancelled = { stopped },
+            delay = { waits++ }
+        ))
+        assertEquals(1, attempts)
+        assertEquals(0, waits)
+    }
+
     @Test fun platformRuntimeFailureStopsWithoutRetryOrUncaughtWorkerException() {
         var attempts = 0
         assertFalse(QrPeerProbePolicy.reachable(

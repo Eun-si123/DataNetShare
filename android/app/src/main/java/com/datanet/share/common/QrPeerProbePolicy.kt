@@ -20,7 +20,7 @@ object QrPeerProbePolicy {
                 connect()
                 return true
             } catch (_: IOException) {
-                if (attempt == MAX_ATTEMPTS) return false
+                if (attempt == MAX_ATTEMPTS || cancelled()) return false
                 try { delay(DELAY_MS) }
                 catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
