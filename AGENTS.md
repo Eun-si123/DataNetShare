@@ -32,6 +32,7 @@ This is a **public, actively maintained Android networking fork**, not the archi
 | Current user-facing preview and setup | `README.md`; Korean guide `docs/README.ko.md` |
 | Product purpose and open-ended design/feature exploration | `docs/PRODUCT_DIRECTION.md` (only when choosing or rethinking direction) |
 | Code navigation / test ownership | `docs/CODEMAP.md`; then actual Kotlin source and tests |
+| Cross-agent feature-to-regression routing (advisory) | `agent-evals/feature-contracts.json`, `scripts/agent_feature_map.py`; actual CI and `docs/TESTING.md` remain evidence owners |
 | Architecture / trust boundaries | `docs/ARCHITECTURE.md` and **current implementation** |
 | Security, credentials, privacy | `docs/SECURITY-REVIEW.md`, manifest, current source |
 | Test evidence, real-phone observations, pending field checks | `docs/TESTING.md` |
