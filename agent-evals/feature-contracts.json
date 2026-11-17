@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    {
+      "id": "sender-socks5",
+      "source": [
+        "android/app/src/main/java/com/datanet/share/sender/Socks5Server.kt"
+      ],
+      "regressions": [
+        "android/app/src/test/java/com/datanet/share/sender/Socks5ServerTest.kt",
+        "android/app/src/test/java/com/datanet/share/sender/Socks5BlockedWriteStopTest.kt"
+      ],
+      "fieldEvidence": [
+        "docs/TESTING.md"
+      ]
+    },
+    {
+      "id": "receiver-tcp",
+      "source": [
+        "android/app/src/main/java/com/datanet/share/receiver/TcpFlow.kt"
+      ],
+      "regressions": [
+        "android/app/src/test/java/com/datanet/share/receiver/TcpFlowTest.kt",
+        "android/app/src/test/java/com/datanet/share/receiver/TcpFlowAbortCleanupTest.kt"
+      ],
+      "fieldEvidence": [
+        "docs/TESTING.md"
+      ]
+    },
+    {
+      "id": "diagnostic-journal",
+      "source": [
+        "android/app/src/main/java/com/datanet/share/common/DiagnosticJournal.kt"
+      ],
+      "regressions": [
+        "android/app/src/test/java/com/datanet/share/common/DiagnosticJournalTest.kt"
+      ],
+      "fieldEvidence": [
+        "docs/TESTING.md"
+      ]
+    }
+  ]
+}
