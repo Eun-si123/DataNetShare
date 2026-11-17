@@ -57,8 +57,11 @@ class UdpFlow(
             onError("UDP packet exceeds VPN MTU")
             return
         }
-        if (queue.offer(payload)) lastActivity = System.nanoTime()
-        else onError("UDP packet queue full")
+        val accepted = synchronized(this) {
+            if (closed.get()) return
+            queue.offer(payload).also { if (it) lastActivity = System.nanoTime() }
+        }
+        if (!accepted) onError("UDP packet queue full")
     }
 
     fun idleForAtLeast(nowNanos: Long, thresholdNanos: Long): Boolean {
