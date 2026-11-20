@@ -83,4 +83,30 @@ class TcpUpstreamSocketCleanupHostTest {
             }
         }
     }
+    @Test fun factoryIoFailureRetriesNextAddress() {
+        val addresses = arrayOf(InetAddress.getLoopbackAddress(), InetAddress.getLoopbackAddress())
+        ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { server ->
+            var calls = 0
+            connectAcrossAddresses(addresses, server.localPort) {
+                calls++
+                if (calls == 1) throw IOException("synthetic factory failure")
+                Socket()
+            }.use { connected -> assertTrue(connected.isConnected) }
+            assertEquals(2, calls)
+        }
+    }
+
+    @Test fun factoryPermissionFailureNeverRetries() {
+        var calls = 0
+        val failure = SecurityException("synthetic denied")
+        try {
+            connectAcrossAddresses(arrayOf(InetAddress.getLoopbackAddress(), InetAddress.getLoopbackAddress()), 9) {
+                calls++
+                throw failure
+            }
+            fail("expected failure")
+        } catch (caught: SecurityException) { assertSame(failure, caught) }
+        assertEquals(1, calls)
+    }
+
 }
