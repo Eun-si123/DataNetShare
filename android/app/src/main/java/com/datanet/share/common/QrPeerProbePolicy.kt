@@ -18,7 +18,9 @@ object QrPeerProbePolicy {
             if (cancelled()) return false
             try {
                 connect()
-                return true
+                // A Stop can race with a successful socket connect. Do not publish
+                // readiness for a request cancelled while connect was blocking.
+                return !cancelled()
             } catch (_: IOException) {
                 if (attempt == MAX_ATTEMPTS || cancelled()) return false
                 try { delay(DELAY_MS) }

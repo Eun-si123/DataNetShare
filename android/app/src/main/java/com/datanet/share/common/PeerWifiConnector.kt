@@ -118,7 +118,19 @@ object PeerWifiConnector {
                     // can interrupt a not-yet-started Thread (not guaranteed to
                     // take effect) and a stale readiness probe can run afterward.
                     verifier = worker
-                    worker.start()
+                    try {
+                        worker.start()
+                    } catch (failure: RuntimeException) {
+                        // A rejected thread start must not leave the QR flow
+                        // indefinitely stuck in CHECKING_SENDER. A new request
+                        // can be initiated after the failure is reported.
+                        verifier = null
+                        verifyingNetwork = null
+                        network = null
+                        ++generation
+                        status = Status.SENDER_UNREACHABLE
+                        announce(source, Status.SENDER_UNREACHABLE)
+                    }
                 }
             }
             override fun onUnavailable() {

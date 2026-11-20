@@ -11,3 +11,12 @@
 *.iml
 
 # Retain the original upstream ZIP for provenance.
+
+# API credentials and local machine secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.token
+*.pem
+.npmrc
