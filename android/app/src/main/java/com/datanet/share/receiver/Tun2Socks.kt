@@ -121,8 +121,11 @@ class Tun2Socks(
         // Closing a flow removes it from its ConcurrentHashMap via onClose.
         // Kotlin toList() can race with concurrent removals and throw, leaving
         // the VPN cleanup incomplete. CHM iteration is weakly consistent.
-        tcp.values.forEach { it.close() }; tcp.clear()
-        udp.values.forEach { it.close() }; udp.clear()
+        FlowStopCleanup.closeAll(
+            tcp.values, udp.values,
+            closeTcp = { it.close() }, closeUdp = { it.close() },
+            clearTcp = { tcp.clear() }, clearUdp = { udp.clear() }
+        )
         // ReceiverVpnService owns/closes the descriptor. readLoop polls with a finite timeout.
     }
     private fun readLoop() {
@@ -161,7 +164,12 @@ class Tun2Socks(
                     if (packet.protocol == 6) handleTcp(packet) else handleUdp(packet)
                 }
             }
-        } catch (e: Exception) { if (running) { stop(); onFailure(TunFailureMessages.read(e)) } }
+        } catch (e: Exception) {
+            if (running) {
+                val message = TunFailureMessages.read(e)
+                FlowStopCleanup.reportAfterCleanup(cleanup = { stop() }, report = { onFailure(message) })
+            }
+        }
     }
     private fun handleTcp(packet: Ipv4Packet) {
         val key = packet.key
