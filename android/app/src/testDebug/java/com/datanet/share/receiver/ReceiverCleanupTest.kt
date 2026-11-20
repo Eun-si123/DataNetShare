@@ -40,6 +40,18 @@ class ReceiverCleanupTest {
         assertTrue(interrupted)
     }
 
+    @Test fun ordinaryCleanupFailureDoesNotInterruptCaller() {
+        var interrupted = true
+        val worker = Thread {
+            ReceiverCleanup.run({ throw IllegalStateException("synthetic cleanup failure") }, {})
+            interrupted = Thread.currentThread().isInterrupted
+        }
+        worker.start()
+        worker.join(2_000)
+        assertFalse("cleanup worker should finish", worker.isAlive)
+        assertFalse("ordinary failures must not set interrupt status", interrupted)
+    }
+
     @Test fun fatalErrorsRemainVisible() {
         var laterStepCalled = false
         try {
