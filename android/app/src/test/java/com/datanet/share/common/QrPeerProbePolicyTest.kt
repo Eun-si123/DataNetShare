@@ -44,6 +44,17 @@ class QrPeerProbePolicyTest {
         assertEquals(0, waits)
     }
 
+    @Test fun cancellationDuringSuccessfulConnectDoesNotReportReady() {
+        var stopped = false
+        var attempts = 0
+        assertFalse(QrPeerProbePolicy.reachable(
+            connect = { attempts++; stopped = true },
+            cancelled = { stopped },
+            delay = { fail("successful connect must not wait") }
+        ))
+        assertEquals(1, attempts)
+    }
+
     @Test fun platformRuntimeFailureStopsWithoutRetryOrUncaughtWorkerException() {
         var attempts = 0
         assertFalse(QrPeerProbePolicy.reachable(
