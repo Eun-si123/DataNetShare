@@ -94,4 +94,32 @@ class Socks5AuthNegotiationTest {
         } catch (_: IOException) { }
         assertArrayEquals(byteArrayOf(5, 0xff.toByte()), sent.toByteArray())
     }
+
+    @Test fun senderRejectsWrongPasswordWithExplicitFailureReply() {
+        val request = byteArrayOf(5, 1, 2, 1, 7) +
+            "datanet".toByteArray() + byteArrayOf(5) + "wrong".toByteArray()
+        val sent = ByteArrayOutputStream()
+        try {
+            Socks5.authenticateServer(
+                DataInputStream(ByteArrayInputStream(request)), sent, "expected-test-password"
+            )
+            fail("Wrong password must not authenticate")
+        } catch (_: IOException) { }
+        assertArrayEquals(byteArrayOf(5, 2, 1, 1), sent.toByteArray())
+    }
+
+    @Test fun senderRejectsWrongUsernameEvenWithCorrectPassword() {
+        val password = "expected-test-password"
+        val request = byteArrayOf(5, 1, 2, 1, 5) +
+            "other".toByteArray() + byteArrayOf(password.length.toByte()) + password.toByteArray()
+        val sent = ByteArrayOutputStream()
+        try {
+            Socks5.authenticateServer(
+                DataInputStream(ByteArrayInputStream(request)), sent, password
+            )
+            fail("Wrong username must not authenticate")
+        } catch (_: IOException) { }
+        assertArrayEquals(byteArrayOf(5, 2, 1, 1), sent.toByteArray())
+    }
+
 }
