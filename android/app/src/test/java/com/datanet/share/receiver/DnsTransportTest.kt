@@ -36,6 +36,27 @@ class DnsTransportTest {
         } finally { flow.close() }
     }
 
+    @Test fun dnsErrorResponsesPreserveRcodeAndQuestionOverUdp() = DnsFixture().use { dns ->
+        val packets = LinkedBlockingQueue<Ipv4Packet>()
+        val flow = dns.udpFlow { packets.add(Ipv4Packet.parse(it)!!) }
+        try {
+            // Distinct query types exercise NXDOMAIN and SERVFAIL without a live resolver.
+            val missing = query(99)
+            val failed = query(100)
+            flow.send(missing); flow.send(failed)
+            Thread({ flow.start() }, "test-dns-error-flow").apply { isDaemon = true; start() }
+            val replies = listOf(packets.poll(5, TimeUnit.SECONDS)!!,
+                packets.poll(5, TimeUnit.SECONDS)!!).associateBy { it.payload[it.payload.size - 3].toInt() and 255 }
+            for ((type, question, rcode) in listOf(Triple(99, missing, 3), Triple(100, failed, 2))) {
+                val response = replies[type]!!.payload
+                assertArrayEquals(answer(question, false), response)
+                assertEquals("DNS error code must survive SOCKS UDP relay", rcode, response[3].toInt() and 15)
+                assertArrayEquals("transaction ID must survive", question.copyOfRange(0, 2), response.copyOfRange(0, 2))
+                assertEquals("no answer on DNS error", 0, response[7].toInt() and 255)
+            }
+        } finally { flow.close() }
+    }
+
     @Test fun truncatedUdpDnsCanBeRetriedOverTcpWithAnAnswerLargerThanMtu() = DnsFixture().use { dns ->
         val udpPackets = LinkedBlockingQueue<Ipv4Packet>()
         val udp = dns.udpFlow { udpPackets.add(Ipv4Packet.parse(it)!!) }
@@ -132,6 +153,7 @@ class DnsTransportTest {
         private fun answer(question: ByteArray, tcp: Boolean): ByteArray {
             val type = question[question.size - 3].toInt() and 255
             val truncated = type == 16 && !tcp
+            val errorCode = when (type) { 99 -> 3; 100 -> 2; else -> 0 }
             val data = when (type) {
                 1 -> byteArrayOf(192.toByte(), 0, 2, 1)
                 28 -> InetAddress.getByName("2001:db8::1").address
@@ -141,10 +163,10 @@ class DnsTransportTest {
             }
             return ByteArrayOutputStream().apply {
                 DataOutputStream(this).apply {
-                    write(question, 0, 2); writeShort(if (truncated) 0x8380 else 0x8180)
-                    writeShort(1); writeShort(if (truncated) 0 else 1); writeShort(0); writeShort(0)
+                    write(question, 0, 2); writeShort(if (truncated) 0x8380 else 0x8180 or errorCode)
+                    writeShort(1); writeShort(if (truncated || errorCode != 0) 0 else 1); writeShort(0); writeShort(0)
                     write(question, 12, question.size - 12)
-                    if (!truncated) {
+                    if (!truncated && errorCode == 0) {
                         writeShort(0xc00c); writeShort(type); writeShort(1); writeInt(60)
                         writeShort(data.size); write(data)
                     }
