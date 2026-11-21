@@ -15,6 +15,26 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
+    @Test fun concurrentSendAndCloseNeverRetainQueuedPackets() {
+        repeat(40) { iteration ->
+            val flow = UdpFlow(FlowKey(1, 10000 + iteration, 2, 53),
+                "127.0.0.1", 1, "test", { true }, { true }, {}, {}, {}, {})
+            val start = CountDownLatch(1)
+            val sender = Thread {
+                start.await()
+                repeat(200) { flow.send(byteArrayOf(1)) }
+            }
+            sender.start()
+            start.countDown()
+            flow.close()
+            sender.join(3000)
+            assertFalse("sender must terminate", sender.isAlive)
+            val field = UdpFlow::class.java.getDeclaredField("queue")
+            field.isAccessible = true
+            val queue = field.get(flow) as java.util.concurrent.BlockingQueue<*>
+            assertTrue("closed flow must not retain packets", queue.isEmpty())
+        }
+    }
     @Test fun receiverCallbackFailureIsDiagnosedAndFlowClosed() = ProxyFixture().use { fixture ->
         val errors = LinkedBlockingQueue<String>()
         val closed = CountDownLatch(1)
