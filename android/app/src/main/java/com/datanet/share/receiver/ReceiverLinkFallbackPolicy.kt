@@ -14,7 +14,7 @@ import java.util.Locale
 internal object ReceiverLinkFallbackPolicy {
     private val unsafePrefixes = listOf(
         "tun", "tap", "wg", "wireguard", "ipsec", "ppp", "veth", "dummy", "tailscale",
-        "ip6tnl", "gretap", "erspan", "clat", // Linux tunnel / CLAT devices.
+        "ip6tnl", "gretap", "erspan", "gre_sys", "vti", "ip_vti", "ip6_vti", "xfrm", "clat", // Linux tunnel / CLAT devices.
         "v4-", // Android 464XLAT stacked interface (AOSP Nat464Xlat.CLAT_PREFIX).
         "rmnet", "ccmni", "wwan", "pdp" // Cellular packet-data interfaces on Android/Linux.
     )
