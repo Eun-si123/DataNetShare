@@ -159,6 +159,11 @@ class UdpFlow(
     }
     @Synchronized fun close() {
         if (!closed.compareAndSet(false, true)) return
-        try { control?.close() } catch (_: IOException) {}; udp?.close(); queue.clear(); onClose()
+        try { control?.close() } catch (_: IOException) {}
+        udp?.close()
+        // Match send() synchronization: a sender already past the first closed check
+        // must finish enqueueing before the final queue drain.
+        synchronized(this) { queue.clear() }
+        onClose()
     }
 }
