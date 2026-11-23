@@ -32,6 +32,19 @@ class TunPollRecoveryTest {
         }
     }
 
+    @Test fun interruptionClassifierFailureIsNotSuppressed() {
+        val classifierFailure = IllegalStateException("classifier failed")
+        try {
+            TunPollRecovery.poll(
+                operation = { throw InterruptedIOException() },
+                interrupted = { throw classifierFailure }
+            )
+            fail("Classifier failure must propagate")
+        } catch (caught: IllegalStateException) {
+            assertSame(classifierFailure, caught)
+        }
+    }
+
     private class SimulatedErrno(val code: Int) : Exception("synthetic poll errno")
 
     @Test fun onlyEintrIsRecoverableWhileOtherErrnosPropagate() {
