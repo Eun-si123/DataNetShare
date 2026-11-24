@@ -153,7 +153,14 @@ def scan(remote=False):
         areas.append({'area': area, 'status': status, 'score': score, 'files': len(selected),
                       'changes_since_review': changes, 'receipt_error': error,
                       'active_prs': blocked, 'hints': hints})
-    areas.sort(key=lambda a: (-a['score'], a['area']))
+    # A high review score never makes an occupied area available for new work.
+    # Keep occupied areas visible for PR reconciliation, not fresh claims.
+    if remote:
+        order = {'NEEDS_REINSPECTION': 0, 'ACTIVE_PR_CHECK_BEFORE_WORK': 1,
+                 'REVIEWED_UNCHANGED': 2}
+        areas.sort(key=lambda a: (order[a['status']], -a['score'], a['area']))
+    else:
+        areas.sort(key=lambda a: (-a['score'], a['area']))
     return {'repository': cfg['repository'], 'head': git('rev-parse', 'HEAD'),
             'mode': 'READ_ONLY_CANDIDATES_NOT_AI_TASKS', 'remote_verified': remote,
             'areas': areas, 'warning': 'TODOs are hints, not defects. A review receipt is not a test pass.'}

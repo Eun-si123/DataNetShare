@@ -6,6 +6,7 @@ This is a **small GitHub-native extension** to the existing AGENTS.md and specia
 
 - `python3 scripts/agent-ops.py scan` scans committed source areas, surfaces bounded TODO/FIXME/HACK hints, and ranks areas without a review receipt or with changes since a verified review commit. Markers are only leads; investigate the actual failure before writing code or opening an Issue.
 - `python3 scripts/agent-ops.py scan --remote` additionally queries open GitHub PRs **and their changed files** and marks overlapping areas. Requires `GITHUB_TOKEN` (or `GH_TOKEN`); missing/failed/truncated API reads fail closed. The GitHub Actions scheduled scan uses the ephemeral read-only token and posts its result in the job summary, not in an ever-growing status commit.
+- Remote scan orders unoccupied reinspection candidates before active-PR areas and reviewed-unchanged areas; scores still rank within each group. Active PRs remain visible for reconciliation. This is not a product-priority decision, authorization, or exclusive lock.
 - Choose the highest-impact **confirmed** bug, a meaningful unreviewed area, or a specific improvement backed by tests. Compare with no change. A candidate rank is not an authorization, proof of a bug, or a request to maximize commits.
 - The schedule is best effort and only discovers candidates. It does **not** launch a coding agent or guarantee a particular completion time. Existing external hourly development agents must explicitly consult these results and current source.
 

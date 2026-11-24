@@ -64,6 +64,32 @@ class AgentOpsTests(unittest.TestCase):
         self.assertFalse(report['diff_check_pass'])
         self.assertTrue(report['warnings'])
 
+    def test_remote_scan_prioritizes_unoccupied_unreviewed_area(self):
+        for directory, name in [('available', 'x.py'), ('reviewed', 'y.py')]:
+            path = self.root / directory
+            path.mkdir()
+            (path / name).write_text('x = 1\n')
+        ops.CONFIG.write_text(json.dumps({
+            'schema': 1, 'repository': 'example/repo',
+            'areas': {'main-code': ['src'], 'available-code': ['available'],
+                      'reviewed-code': ['reviewed']},
+        }))
+        subprocess.run(['git', '-C', str(self.root), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.root), '-c', 'user.name=Tester',
+                        '-c', 'user.email=t@example.invalid', 'commit', '-m', 'areas'],
+                       check=True, capture_output=True)
+        ops.receipt('reviewed-code', 'Reviewed unchanged source')
+        self.assertEqual(ops.scan()['areas'][0]['area'], 'main-code')
+        with patch.object(ops, 'open_prs', return_value=[]), \
+             patch.object(ops, 'pr_areas', return_value={
+                 'main-code': [{'number': 12, 'branch': 'agent/other/task'}]}):
+            rows = ops.scan(remote=True)['areas']
+        self.assertEqual([row['area'] for row in rows],
+                         ['available-code', 'main-code', 'reviewed-code'])
+        self.assertEqual(rows[1]['status'], 'ACTIVE_PR_CHECK_BEFORE_WORK')
+        self.assertGreater(rows[1]['score'], rows[0]['score'])
+        self.assertEqual(rows[1]['active_prs'][0]['number'], 12)
+
     def test_remote_occupied_area_blocks_preflight(self):
         old = ops.git('rev-parse', 'origin/main')
         with patch.object(ops, 'api', return_value={'commit': {'sha': old}}), \
