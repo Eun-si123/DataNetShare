@@ -18,6 +18,14 @@ For ambiguous designs compare compatibility, privacy, security, memory/thread/ba
 
 Useful neglected surfaces include sender/receiver startup and Stop races, Wi-Fi Direct BUSY/OS-managed groups, QR and network-liveness transitions, socket bind→protect ordering, DNS/UDP/app interoperability, flow capacity and retransmit backpressure, diagnostics privacy, and release/install identity. These are **inspection candidates**, not automatically confirmed defects.
 
+### Continue / resume without a new task description
+
+For an owner-authorized continuation request (including “continue” or “계속”), read the product gates in [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md) and live Issues/PRs/CI. First reconcile existing work: assess ready or failing PRs for the selected gate, exact-head evidence, overlap and dependencies before proposing another patch. A queued or failed PR is not delivered functionality. Prefer resolving a blocking failure or integrating already-reviewed work where authorized; never merge solely because a PR is old or its checks appear green.
+
+Choose a coherent observable milestone slice and complete successive independent acceptance steps within the available session and permissions. A commit, intermediate test pass or PR creation is a checkpoint, not by itself the end of a continuation request. If blocked, record the exact cause and the evidence needed to unblock it; try a bounded alternative if justified, then select independent useful work without repeating an unchanged failed attempt. Stop on achieved scope, a real authority/resource limit, or lack of a justified safe next task; report the distinction honestly. Preserve branch/HEAD and the next exact action in the existing handoff or task PR. Do not start an infinite loop, weaken CI, create PR churn, or treat this policy as permission to publish releases or merge unapproved changes.
+
+Research rationale: [Anthropic long-running agent harnesses](https://www.anthropic.com/research/effective-harnesses-for-long-running-agents) (evidence-backed feature completion and resumption), [OpenAI harness engineering](https://openai.com/index/harness-engineering/) (repository-owned plans and concise routing), and [Evaluating AGENTS.md](https://arxiv.org/abs/2602.11988) (extra context can add cost without improving completion). Use existing evidence owners instead of duplicating progress ledgers.
+
 ## 3. DataNet Share-specific invariants
 
 - **Sender:** do not replace explicit local-interface binding with an unbounded public listener. Preserve per-session SOCKS authentication, socket/UDP ownership, bounded resources, cleanup and user-selected upstream route semantics. A SOCKS connection is not a device.
