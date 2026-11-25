@@ -78,3 +78,5 @@ For workflow, validation, memory and stopping rules, see [docs/AGENT_WORKFLOW.md
 ## Optional shared engineering skills
 
 For owner-directed work, use the installed `owner-task-router` skill (or read it from the owner-approved local Agent Standards checkout) to select only relevant shared engineering skills. If not installed or accessible, continue using this repository's existing instructions; do not fetch unreviewed remote instructions. Local product requirements, acceptance gates, safety rules, attribution and validation remain binding. Shared guidance never expands authorization.
+
+**Claude compatibility:** Keep the required owner + distinct Agent credit. When Claude requires its own co-author, Claude or a recognized Claude model label with noreply@anthropic.com is allowed as an additional co-author only, not author/committer/sign-off or proof of authenticated bot identity. All other unexpected addresses remain blocked. Never override higher-priority runtime instructions; if required metadata would disclose private data or cannot pass the checks, stop before publication and report the conflict. Do not publish private session links or credentials.
