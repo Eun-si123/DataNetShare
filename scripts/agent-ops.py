@@ -111,24 +111,35 @@ def open_prs(repo):
 
 
 def pr_areas(repo, prs, cfg):
+    """Classify both sides of open PR changes, refusing incomplete metadata."""
     occupied = {area: [] for area in cfg['areas']}
     for pr in prs:
-        # Do not guess from branch names: inspect the actual current file list.
         files = []
         for page in range(1, API_PAGE_CAP + 1):
             batch = api(f'repos/{repo}/pulls/{pr["number"]}/files?per_page=100&page={page}')
             if not isinstance(batch, list):
-                raise RuntimeError('Unexpected PR file response')
-            files.extend(f.get('filename', '') for f in batch)
+                raise RuntimeError(f'PR #{pr["number"]} file response is invalid; fail closed')
+            for entry in batch:
+                name = entry.get('filename') if isinstance(entry, dict) else None
+                if not isinstance(name, str) or not name:
+                    raise RuntimeError(f'PR #{pr["number"]} file entry lacks a valid filename; fail closed')
+                files.append(name)
+                # A rename removes the old path even when its destination is elsewhere.
+                if entry.get('status') == 'renamed' or 'previous_filename' in entry:
+                    previous = entry.get('previous_filename')
+                    if not isinstance(previous, str) or not previous:
+                        raise RuntimeError(f'PR #{pr["number"]} file rename lacks a valid previous filename; fail closed')
+                    files.append(previous)
             if len(batch) < 100:
                 break
         else:
-            raise RuntimeError('PR file list truncated; fail closed')
+            raise RuntimeError(f'PR #{pr["number"]} file list truncated; fail closed')
+        if not files:
+            raise RuntimeError(f'PR #{pr["number"]} file list is empty; fail closed')
         for area, paths in cfg['areas'].items():
             if any(belongs(name, paths) for name in files):
                 occupied[area].append({'number': pr['number'], 'branch': pr['head']['ref']})
     return occupied
-
 
 def scan(remote=False):
     cfg = config()
@@ -153,7 +164,14 @@ def scan(remote=False):
         areas.append({'area': area, 'status': status, 'score': score, 'files': len(selected),
                       'changes_since_review': changes, 'receipt_error': error,
                       'active_prs': blocked, 'hints': hints})
-    areas.sort(key=lambda a: (-a['score'], a['area']))
+    # A high review score never makes an occupied area available for new work.
+    # Keep occupied areas visible for PR reconciliation, not fresh claims.
+    if remote:
+        order = {'NEEDS_REINSPECTION': 0, 'ACTIVE_PR_CHECK_BEFORE_WORK': 1,
+                 'REVIEWED_UNCHANGED': 2}
+        areas.sort(key=lambda a: (order[a['status']], -a['score'], a['area']))
+    else:
+        areas.sort(key=lambda a: (-a['score'], a['area']))
     return {'repository': cfg['repository'], 'head': git('rev-parse', 'HEAD'),
             'mode': 'READ_ONLY_CANDIDATES_NOT_AI_TASKS', 'remote_verified': remote,
             'areas': areas, 'warning': 'TODOs are hints, not defects. A review receipt is not a test pass.'}

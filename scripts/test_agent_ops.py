@@ -64,6 +64,32 @@ class AgentOpsTests(unittest.TestCase):
         self.assertFalse(report['diff_check_pass'])
         self.assertTrue(report['warnings'])
 
+    def test_remote_scan_prioritizes_unoccupied_unreviewed_area(self):
+        for directory, name in [('available', 'x.py'), ('reviewed', 'y.py')]:
+            path = self.root / directory
+            path.mkdir()
+            (path / name).write_text('x = 1\n')
+        ops.CONFIG.write_text(json.dumps({
+            'schema': 1, 'repository': 'example/repo',
+            'areas': {'main-code': ['src'], 'available-code': ['available'],
+                      'reviewed-code': ['reviewed']},
+        }))
+        subprocess.run(['git', '-C', str(self.root), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.root), '-c', 'user.name=Tester',
+                        '-c', 'user.email=t@example.invalid', 'commit', '-m', 'areas'],
+                       check=True, capture_output=True)
+        ops.receipt('reviewed-code', 'Reviewed unchanged source')
+        self.assertEqual(ops.scan()['areas'][0]['area'], 'main-code')
+        with patch.object(ops, 'open_prs', return_value=[]), \
+             patch.object(ops, 'pr_areas', return_value={
+                 'main-code': [{'number': 12, 'branch': 'agent/other/task'}]}):
+            rows = ops.scan(remote=True)['areas']
+        self.assertEqual([row['area'] for row in rows],
+                         ['available-code', 'main-code', 'reviewed-code'])
+        self.assertEqual(rows[1]['status'], 'ACTIVE_PR_CHECK_BEFORE_WORK')
+        self.assertGreater(rows[1]['score'], rows[0]['score'])
+        self.assertEqual(rows[1]['active_prs'][0]['number'], 12)
+
     def test_remote_occupied_area_blocks_preflight(self):
         old = ops.git('rev-parse', 'origin/main')
         with patch.object(ops, 'api', return_value={'commit': {'sha': old}}), \
@@ -71,6 +97,34 @@ class AgentOpsTests(unittest.TestCase):
              patch.object(ops, 'pr_areas', return_value={'main-code': [{'number': 12, 'branch': 'agent/other/task'}]}):
             result = ops.preflight('main-code', 'agent/main-code/new-work', None)
         self.assertEqual(result['result'], 'CONFLICT_OR_REVIEW_REQUIRED')
+
+    def test_rename_occupies_both_source_and_destination_areas(self):
+        pr = {'number': 42, 'head': {'ref': 'agent/other/task'}}
+        cfg = {'areas': {'old-area': ['src'], 'new-area': ['dst']}}
+        payload = [{'status': 'renamed', 'filename': 'dst/main.py',
+                    'previous_filename': 'src/main.py'}]
+        with patch.object(ops, 'api', return_value=payload):
+            occupied = ops.pr_areas('example/repo', [pr], cfg)
+        for area in cfg['areas']:
+            self.assertEqual(occupied[area],
+                             [{'number': 42, 'branch': 'agent/other/task'}])
+
+    def test_incomplete_rename_fails_closed(self):
+        pr = {'number': 42, 'head': {'ref': 'agent/other/task'}}
+        for invalid in (None, '', 42):
+            payload = [{'status': 'renamed', 'filename': 'dst/main.py',
+                        'previous_filename': invalid}]
+            with self.subTest(invalid=invalid), patch.object(ops, 'api', return_value=payload):
+                with self.assertRaisesRegex(RuntimeError, r'PR #42 file'):
+                    ops.pr_areas('example/repo', [pr], ops.config())
+
+    def test_pr_areas_rejects_missing_or_empty_filenames(self):
+        pr = {'number': 42, 'head': {'ref': 'agent/other/task'}}
+        for payload in ([], [{'filename': ''}], [{'status': 'modified'}],
+                        [{'filename': 42}], [42], [None]):
+            with self.subTest(payload=payload), patch.object(ops, 'api', return_value=payload):
+                with self.assertRaisesRegex(RuntimeError, r'PR #42 file'):
+                    ops.pr_areas('example/repo', [pr], ops.config())
 
     def test_own_branch_is_not_foreign_lease(self):
         old = ops.git('rev-parse', 'origin/main')
