@@ -30,6 +30,7 @@ export function inspectCommit(item, owner, ownerId = null, publicName = null) {
   for (const line of message.split(/\r?\n/)) {
     if (!/^(?:co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by):/i.test(line.trim())) continue;
     const match = /<([^<>\s]+@[^<>\s]+)>\s*$/.exec(line);
+    if (/^Co-authored-by:\s*Claude(?: (?:Opus|Sonnet|Haiku|Fable)(?: [0-9]+(?:\.[0-9]+){0,2})?(?: \(1M context\))?)? <noreply@anthropic\.com>$/i.test(line.trim())) continue;
     if (!match || !noReply(normalized(match[1]))) {
       problems.push('identity trailer contains a non-no-reply address');
     } else if (normalized(match[1]) === 'ai-assisted@users.noreply.github.com') {
@@ -66,6 +67,10 @@ function selfTest() {
   assert.deepEqual(inspectCommit(agentTrailer('Privacy Guard Agent'),'owner',123),[]);
   assert.ok(inspectCommit(agentTrailer('Privacy Guard'),'owner',123).some(reason => reason.includes('Agent')));
   assert.deepEqual(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Other Human <456+other@users.noreply.github.com>'),'owner',123),[]);
+  assert.deepEqual(inspectCommit(item(masked,'owner','fix: test\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>'),'owner',123),[]);
+  for (const line of ['Co-authored-by: Claude <private@example.com>','Co-authored-by: Person <noreply@anthropic.com>','Signed-off-by: Claude <noreply@anthropic.com>','Co-authored-by: Claude <noreply@anthropic.com.evil>']) {
+    assert.ok(inspectCommit(item(masked,'owner','fix: test\n\n'+line),'owner',123).length);
+  }
   // A GitHub-signed merge commit can still leak an owner's profile name.
   assert.ok(inspectCommit({commit:{author:{name:'Private Display',email:masked},committer:{name:'owner',email:masked},message:'Merge PR'},author:{login:'owner'},committer:{login:'owner'}},'owner',123).length);
   // An independent linked human may deliberately use a public non-GitHub email.
