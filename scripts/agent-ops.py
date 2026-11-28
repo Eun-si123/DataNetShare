@@ -81,16 +81,30 @@ def todo_hints(files, cap=6):
     return found
 
 
-def api(path):
+def read_token():
     token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
-    if not token:
-        raise RuntimeError('Live GitHub preflight requires GITHUB_TOKEN/GH_TOKEN (fail closed)')
-    request = urllib.request.Request('https://api.github.com/' + path.lstrip('/'), headers={
-        'Authorization': 'Bearer ' + token,
+    if token:
+        return token
+    try:
+        run = subprocess.run(['gh', 'auth', 'token', '--hostname', 'github.com'],
+                             capture_output=True, text=True, timeout=5,
+                             stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (run.stdout.strip() or None) if run.returncode == 0 else None
+
+
+def api(path):
+    token = read_token()
+    headers = {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'agent-readiness-2026',
         'X-GitHub-Api-Version': '2022-11-28',
-    })
+    }
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    # Anonymous public reads are allowed; failed reads still fail closed.
+    request = urllib.request.Request('https://api.github.com/' + path.lstrip('/'), headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             return json.load(response)
