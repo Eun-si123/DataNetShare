@@ -30,6 +30,7 @@ sourceSets {
             "com/datanet/share/receiver/ReceiverWorkerLaunchGuard.kt",
             "com/datanet/share/receiver/BridgeWorkerStartup.kt",
             "com/datanet/share/receiver/UdpFlowPolicy.kt",
+            "com/datanet/share/receiver/ReceiverUdpErrorPolicy.kt",
             "com/datanet/share/receiver/TcpCapacityPolicy.kt",
             "com/datanet/share/receiver/FlowAdmission.kt",
             "com/datanet/share/receiver/SenderProbeRetryPolicy.kt",
