@@ -4,7 +4,7 @@ This directory is the maintained Kotlin Android project. The root upstream ZIP i
 
 ## Requirements
 
-- JDK 17 and a verified Gradle 8.14.6 installation.
+- JDK 17 and a verified Gradle 8.14.7 installation.
 - Android SDK platform 35 and build tools 35.0.0.
 - Android Gradle Plugin 8.13.2 and Kotlin 2.4.21 (declared in this project). The app compiles against SDK 35 while retaining targetSdk 34.
 
