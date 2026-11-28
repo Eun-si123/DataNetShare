@@ -83,13 +83,9 @@ class AndroidUpstream(
 
     private fun connectOver(network: Network?, host: String, port: Int): Socket {
         val addresses = network?.getAllByName(host) ?: InetAddress.getAllByName(host)
-        var last: IOException? = null
-        for (address in addresses) {
-            val socket = network?.socketFactory?.createSocket() ?: Socket()
-            try { return connectSocketOrClose(socket, InetSocketAddress(address, port), 15_000) }
-            catch (e: IOException) { last = e }
+        return connectAcrossAddresses(addresses, port) {
+            network?.socketFactory?.createSocket() ?: Socket()
         }
-        throw last ?: IOException("No address for destination")
     }
 
     /** Fail over only during DNS/socket setup, before sending any UDP payload.
