@@ -30,7 +30,7 @@ This is a **public, actively maintained Android networking fork**, not the archi
 | Task | Canonical place to inspect |
 | --- | --- |
 | Current user-facing preview and setup | `README.md`; Korean guide `docs/README.ko.md` |
-| Product purpose and open-ended design/feature exploration | `docs/PRODUCT_DIRECTION.md` (only when choosing or rethinking direction) |
+| Product purpose, milestone selection, open-ended feature exploration or “continue” | `docs/PRODUCT_DIRECTION.md`; continuation rules in `docs/AGENT_WORKFLOW.md` |
 | Code navigation / test ownership | `docs/CODEMAP.md`; then actual Kotlin source and tests |
 | Cross-agent feature-to-regression routing (advisory) | `agent-evals/feature-contracts.json`, `scripts/agent_feature_map.py`; actual CI and `docs/TESTING.md` remain evidence owners |
 | Architecture / trust boundaries | `docs/ARCHITECTURE.md` and **current implementation** |

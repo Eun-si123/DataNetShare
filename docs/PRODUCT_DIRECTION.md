@@ -6,6 +6,19 @@
 
 Make sharing one Android device's permitted Internet connectivity with another device easier, safer, more dependable and easier to diagnose across realistic conditions. The maintained fork currently provides authenticated SOCKS5 sharing over supported local connection types and an experimental Android VPN receiver. The **user outcome** matters more than retaining any particular proxy implementation, transport, screen flow, code shape or release-number sequence.
 
+## Proposed delivery milestones (select by evidence, not version number)
+
+Use these provisional planning gates for continued development; they are not a feature freeze, current capability claims, or release authorization. Reconcile with live source, Issues, PRs and [TESTING.md](TESTING.md) before selecting work. Do not mark a gate passed merely because an implementation or host test exists.
+
+| Gate | Observable user outcome / exit evidence |
+| --- | --- |
+| D1 — Safe basic sharing | Two physical Android devices complete authenticated sender/receiver setup, supported browser requests, and Stop/reconnect without leaked credentials, unintended listeners or stuck VPN/group state. |
+| D2 — Reliable everyday traffic | Representative browser, messaging and native app traffic exercises supported DNS/TCP/UDP paths; link loss, cancellation, resource limits and unsupported traffic fail predictably. Record tested app/protocol limits rather than claiming universal compatibility. |
+| D3 — Measurable robustness and performance | Repeat matched before/after workloads on the same device pair and link; demonstrate user-visible improvement in a selected metric without regressions in correctness, loaded latency, resource usage or recovery. |
+| D4 — Usable distribution and maintenance | Document installation/upgrade, permissions, supported devices, troubleshooting and rollback; verify exact source/build/CI and field evidence before any separately authorized release. |
+
+Advance the nearest unmet, actionable gate unless a confirmed higher-impact security, integrity or reliability issue warrants priority. Earlier field gates can remain pending while independent source work advances; later source progress does not imply earlier field acceptance. If the existing gates are satisfied, investigate the next meaningful user problem with a falsifiable outcome, rather than manufacturing cleanup work.
+
 ## Freedom to explore and invent
 
 There is **no fixed list of allowed technical ideas, algorithms, features, platforms, architectures or future Phases**. When an active task includes exploratory scope, an agent may:
