@@ -15,6 +15,26 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class UdpFlowTest {
+    @Test fun concurrentSendAndCloseNeverRetainQueuedPackets() {
+        repeat(40) { iteration ->
+            val flow = UdpFlow(FlowKey(1, 10000 + iteration, 2, 53),
+                "127.0.0.1", 1, "test", { true }, { true }, {}, {}, {}, {})
+            val start = CountDownLatch(1)
+            val sender = Thread {
+                start.await()
+                repeat(200) { flow.send(byteArrayOf(1)) }
+            }
+            sender.start()
+            start.countDown()
+            flow.close()
+            sender.join(3000)
+            assertFalse("sender must terminate", sender.isAlive)
+            val field = UdpFlow::class.java.getDeclaredField("queue")
+            field.isAccessible = true
+            val queue = field.get(flow) as java.util.concurrent.BlockingQueue<*>
+            assertTrue("closed flow must not retain packets", queue.isEmpty())
+        }
+    }
     @Test fun receiverCallbackFailureIsDiagnosedAndFlowClosed() = ProxyFixture().use { fixture ->
         val errors = LinkedBlockingQueue<String>()
         val closed = CountDownLatch(1)
@@ -32,6 +52,31 @@ class UdpFlowTest {
             assertFalse("exception message must not leak", diagnostic.contains("private payload"))
         } finally { flow.close() }
     }
+    @Test fun receiveAccountingCallbackFailureClosesFlowOnce() = ProxyFixture().use { fixture ->
+        val errors = LinkedBlockingQueue<String>()
+        val closed = CountDownLatch(1)
+        val closeCount = AtomicInteger()
+        val delivered = CountDownLatch(1)
+        val flow = UdpFlow(FlowKey(0x0a000001, 10009, 0x7f000001, fixture.udpPort),
+            "127.0.0.1", fixture.proxy.boundPort, fixture.password, { true }, { true },
+            { delivered.countDown() },
+            { throw IllegalStateException("sensitive accounting callback detail") },
+            {}, { closeCount.incrementAndGet(); closed.countDown() },
+            onError = { errors.add(it) })
+        try {
+            flow.send(byteArrayOf(42))
+            Thread({ flow.start() }, "test-udp-rx-callback-failure").apply { isDaemon = true; start() }
+            assertTrue("UDP reply must reach accounting", delivered.await(5, TimeUnit.SECONDS))
+            assertTrue("accounting failure must close flow", closed.await(5, TimeUnit.SECONDS))
+            val diagnostic = errors.poll(3, TimeUnit.SECONDS)
+            assertNotNull("accounting failure must be diagnosed", diagnostic)
+            assertTrue(diagnostic!!.contains("IllegalStateException"))
+            assertFalse("callback details must not leak", diagnostic.contains("sensitive accounting"))
+            flow.close()
+            assertEquals("concurrent close must be idempotent", 1, closeCount.get())
+        } finally { flow.close() }
+    }
+
     @Test fun oversizeReplyIsCountedAndNextReplyStillArrives() = ProxyFixture().use { fixture ->
         // The flow targets 127.0.0.1; bind the fixture to IPv4 even on IPv6-first JVMs.
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { server ->

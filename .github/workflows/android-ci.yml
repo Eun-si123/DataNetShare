@@ -3,6 +3,16 @@ name: Android source verification
 on:
   push:
     branches: [main]
+    # This build is not a required ruleset check. Do not start expensive Android
+    # builds on documentation-only main pushes; PRs retain the same scope.
+    paths:
+      - 'android/**'
+      - 'proxy-tests/**'
+      - '.github/workflows/android-ci.yml'
+      - '.github/workflows/codeql-advanced.yml'
+      - 'scripts/check_build_toolchain_alignment.py'
+      - 'scripts/test_build_toolchain_alignment.py'
+      - 'scripts/test_sensitive_view_state.py'
   pull_request:
     paths:
       - 'android/**'
@@ -13,6 +23,7 @@ on:
       - '.github/workflows/codeql-advanced.yml'
       - 'scripts/check_build_toolchain_alignment.py'
       - 'scripts/test_build_toolchain_alignment.py'
+      - 'scripts/test_sensitive_view_state.py'
 
 permissions:
   contents: read
@@ -32,7 +43,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_build_toolchain_alignment.py' -q
           python3 scripts/check_build_toolchain_alignment.py
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
         with:
           distribution: temurin
           java-version: '17'
@@ -58,7 +69,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_build_toolchain_alignment.py' -q
           python3 scripts/check_build_toolchain_alignment.py
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
         with:
           distribution: temurin
           java-version: '17'

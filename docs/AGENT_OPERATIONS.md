@@ -5,14 +5,14 @@ This is a **small GitHub-native extension** to the existing AGENTS.md and specia
 ## 1. Discover useful work without manufacturing activity
 
 - `python3 scripts/agent-ops.py scan` scans committed source areas, surfaces bounded TODO/FIXME/HACK hints, and ranks areas without a review receipt or with changes since a verified review commit. Markers are only leads; investigate the actual failure before writing code or opening an Issue.
-- `python3 scripts/agent-ops.py scan --remote` additionally queries open GitHub PRs **and their changed files** and marks overlapping areas. Requires `GITHUB_TOKEN` (or `GH_TOKEN`); missing/failed/truncated API reads fail closed. The GitHub Actions scheduled scan uses the ephemeral read-only token and posts its result in the job summary, not in an ever-growing status commit.
+- `python3 scripts/agent-ops.py scan --remote` additionally queries open GitHub PRs **and their changed files** and marks overlapping areas. Uses environment tokens, existing github.com CLI authentication, or anonymous public API reads. Failed, inaccessible, rate-limited or truncated reads fail closed. The GitHub Actions scheduled scan uses the ephemeral read-only token and posts its result in the job summary, not in an ever-growing status commit.
 - Choose the highest-impact **confirmed** bug, a meaningful unreviewed area, or a specific improvement backed by tests. Compare with no change. A candidate rank is not an authorization, proof of a bug, or a request to maximize commits.
 - The schedule is best effort and only discovers candidates. It does **not** launch a coding agent or guarantee a particular completion time. Existing external hourly development agents must explicitly consult these results and current source.
 
 ## 2. Coordinate independent agents
 
 1. Before claiming work, check fresh PRs, Issue scope, CI and current branch/worktree. Use DataNetShare's own `agent-ops.py preflight` and live Issue/PR overlap checks; do not import queue or claim rules from TeamForge or another repository.
-2. Use a distinct task branch/worktree. Run `python3 scripts/agent-ops.py preflight --area AREA --branch agent/AREA/short-task [--issue N]` with a GitHub read token before editing. A conflicting open PR touching the area blocks automatic selection, even if its branch name looks unrelated.
+2. Use a distinct task branch/worktree. Run `python3 scripts/agent-ops.py preflight --area AREA --branch agent/AREA/short-task [--issue N]` before editing (existing CLI credentials or anonymous public reads are supported). A conflicting open PR touching the area blocks automatic selection, even if its branch name looks unrelated.
 3. Prefer no simultaneous edits to the same area. If parallelism is necessary, explicitly separate independent files and test contracts; coordinate via Issues/PRs rather than editing the same checkout. GitHub Actions `concurrency` covers its own workflow group only; neither it nor Issue comments form an atomic lock across external agents. **Recheck** immediately before writes/PR submission.
 4. Do not discard any agent's branch, force-push over others, close unfamiliar Issues/PRs, or resolve conflicts by overwriting work. API/auth/pagination errors mean *unknown*, not available.
 
@@ -31,6 +31,6 @@ This is a **small GitHub-native extension** to the existing AGENTS.md and specia
 
 ## Maintenance and recovery
 
-`python3 -m unittest discover -s scripts -p 'test_agent_ops.py'` verifies discovery, stale-receipt detection, invalid paths, diff checks and conflict behavior with temporary Git fixtures. The scanner uses Python standard library and local `git`, no new service, vector DB, SQLite, or runtime dependencies. The scheduled job performs read-only HTTP GETs, does not write Issues/PRs, and produces no Actions artifacts (avoids storage churn).
+`python3 -m unittest discover -s scripts -p 'test_agent_ops*.py'` verifies discovery, stale-receipt detection, invalid paths, diff checks and conflict behavior with temporary Git fixtures. The scanner uses Python standard library and local `git`, no new service, vector DB, SQLite, or runtime dependencies. The scheduled job performs read-only HTTP GETs, does not write Issues/PRs, and produces no Actions artifacts (avoids storage churn).
 
 When an agent is interrupted, use the project's existing handoff/checkpoint mechanism. Before continuing verify live commits, working changes, PR and CI; a saved inspection receipt or advisory preflight is not a substitute for fresh observation.

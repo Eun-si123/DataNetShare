@@ -11,3 +11,12 @@ test('private trailer mail blocked and never emitted',()=>{const issues=inspectL
 test('missing co-author blocked for owner-directed Agent work',()=>assert.ok(inspectLocalCommit(make('test')).length));
 test('independent contributor must not be rewritten as owner by this mode',()=>assert.ok(inspectLocalCommit({...make(),author:{name:'Independent',email:'public@example.com'}}).length));
 test('parse exact Git metadata records',()=>assert.deepEqual(parseCommit('Eun-si123\0'+email+'\0Eun-si123\0'+email+'\0feat: test\n'),{author:{name:'Eun-si123',email},committer:{name:'Eun-si123',email},message:'feat: test\n'}));
+
+test('vendor Claude coauthor is permitted only alongside required Agent credit',()=>{
+  const vendor='Co-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>';
+  assert.deepEqual(inspectLocalCommit(make(make().message+'\n'+vendor)),[]);
+  assert.match(inspectLocalCommit(make('test\n\n'+vendor)).join(','),/missing distinct Agent/);
+  for(const trailer of ['Co-authored-by: Claude <private@example.com>','Co-authored-by: Human <noreply@anthropic.com>','Signed-off-by: Claude <noreply@anthropic.com>','Co-authored-by: Claude <noreply@anthropic.com.evil>']){
+    assert.ok(inspectLocalCommit(make(make().message+'\n'+trailer)).length);
+  }
+});

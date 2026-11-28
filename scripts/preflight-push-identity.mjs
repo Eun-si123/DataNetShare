@@ -26,6 +26,7 @@ export function inspectLocalCommit(item) {
     }
     if (!m) continue;
     const display=m[2];const email=norm(m[3]);
+    if (/^Co-authored-by:\s*Claude(?: (?:Opus|Sonnet|Haiku|Fable)(?: [0-9]+(?:\.[0-9]+){0,2})?(?: \(1M context\))?)? <noreply@anthropic\.com>$/i.test(line.trim())) continue;
     if (!email.endsWith('@users.noreply.github.com') && !['noreply@github.com','support@github.com'].includes(email))
       problems.push('identity trailer contains non-no-reply address (requires separate contributor-safe handling)');
     if (email === aiMail && !/(?:^|\s)Agent$/.test(display))
