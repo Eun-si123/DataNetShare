@@ -44,6 +44,19 @@ class QrPeerProbePolicyTest {
         assertEquals(0, waits)
     }
 
+    @Test fun cancellationDuringBackoffPreventsTheNextConnectionAttempt() {
+        var attempts = 0
+        var waits = 0
+        var stopped = false
+        assertFalse(QrPeerProbePolicy.reachable(
+            connect = { attempts++; throw IOException("synthetic transient failure") },
+            cancelled = { stopped },
+            delay = { waits++; stopped = true }
+        ))
+        assertEquals(1, attempts)
+        assertEquals(1, waits)
+    }
+
     @Test fun cancellationDuringSuccessfulConnectDoesNotReportReady() {
         var stopped = false
         var attempts = 0
