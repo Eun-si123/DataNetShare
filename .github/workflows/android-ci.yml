@@ -3,6 +3,16 @@ name: Android source verification
 on:
   push:
     branches: [main]
+    # This build is not a required ruleset check. Do not start expensive Android
+    # builds on documentation-only main pushes; PRs retain the same scope.
+    paths:
+      - 'android/**'
+      - 'proxy-tests/**'
+      - '.github/workflows/android-ci.yml'
+      - '.github/workflows/codeql-advanced.yml'
+      - 'scripts/check_build_toolchain_alignment.py'
+      - 'scripts/test_build_toolchain_alignment.py'
+      - 'scripts/test_sensitive_view_state.py'
   pull_request:
     paths:
       - 'android/**'
@@ -13,6 +23,7 @@ on:
       - '.github/workflows/codeql-advanced.yml'
       - 'scripts/check_build_toolchain_alignment.py'
       - 'scripts/test_build_toolchain_alignment.py'
+      - 'scripts/test_sensitive_view_state.py'
 
 permissions:
   contents: read
